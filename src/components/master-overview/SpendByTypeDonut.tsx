@@ -16,7 +16,7 @@ const CustomTooltip = ({ active, payload }: any) => {
       fontSize: 12,
     }}>
       <p style={{ color: payload[0].payload.color, fontWeight: 600 }}>{payload[0].name}</p>
-      <p style={{ color: "#e2e8f0" }}>₹{payload[0].value.toLocaleString("en-IN")}</p>
+      <p style={{ color: "#e2e8f0" }}>₹{Math.round(payload[0].value).toLocaleString()}</p>
     </div>
   );
 };
@@ -74,7 +74,7 @@ export default function SpendByTypeDonut({ data }: Props) {
                   borderRadius: 3,
                 }} />
               </div>
-              <span style={{ fontSize: 11, color: "#555f6e" }}>₹{d.value.toLocaleString("en-IN")}</span>
+              <span style={{ fontSize: 11, color: "#555f6e" }}>₹{Math.round(d.value).toLocaleString()}</span>
             </div>
           ))}
         </div>

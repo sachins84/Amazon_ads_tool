@@ -2,17 +2,27 @@ export function cn(...classes: (string | undefined | false | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+/** Format number with Indian comma grouping (no locale dependency) */
+function inrFormat(n: number): string {
+  const fixed = Math.round(n).toString();
+  if (fixed.length <= 3) return fixed;
+  const last3 = fixed.slice(-3);
+  const rest   = fixed.slice(0, -3);
+  return rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3;
+}
+
 export function fmt(n: number, type: "currency" | "percent" | "number" | "multiplier" | "compact") {
-  if (type === "currency") return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-  if (type === "percent") return `${n.toFixed(1)}%`;
+  if (type === "currency")   return `₹${inrFormat(n)}`;
+  if (type === "percent")    return `${n.toFixed(1)}%`;
   if (type === "multiplier") return `${n.toFixed(2)}x`;
+  if (type === "number")     return inrFormat(n);
   if (type === "compact") {
     if (n >= 10_000_000) return `${(n / 10_000_000).toFixed(1)}Cr`;
     if (n >= 100_000)    return `${(n / 100_000).toFixed(1)}L`;
     if (n >= 1_000)      return `${(n / 1_000).toFixed(1)}K`;
     return n.toString();
   }
-  return n.toLocaleString("en-IN");
+  return inrFormat(n);
 }
 
 export function acosColor(acos: number): string {

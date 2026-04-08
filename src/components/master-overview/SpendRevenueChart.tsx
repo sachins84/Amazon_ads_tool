@@ -28,7 +28,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
       <p style={{ color: "#8892a4", marginBottom: 6 }}>{label}</p>
       {payload.map((p: any) => (
         <p key={p.name} style={{ color: p.color, margin: "2px 0" }}>
-          {p.name}: <strong>₹{p.value.toLocaleString("en-IN")}</strong>
+          {p.name}: <strong>₹{Math.round(p.value).toLocaleString()}</strong>
         </p>
       ))}
     </div>

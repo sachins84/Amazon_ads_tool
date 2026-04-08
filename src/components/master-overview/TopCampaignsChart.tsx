@@ -29,7 +29,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
       maxWidth: 200,
     }}>
       <p style={{ color: "#8892a4", marginBottom: 4, fontSize: 11 }}>{label}</p>
-      <p style={{ color: "#6366f1" }}>Spend: <strong>₹{payload[0]?.value?.toLocaleString("en-IN")}</strong></p>
+      <p style={{ color: "#6366f1" }}>Spend: <strong>₹{Math.round(payload[0]?.value ?? 0).toLocaleString()}</strong></p>
     </div>
   );
 };
