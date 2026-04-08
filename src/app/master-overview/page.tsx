@@ -1,5 +1,4 @@
 "use client";
-"use client";
 import { useState, useEffect, useCallback } from "react";
 import TopNav from "@/components/shared/TopNav";
 import DateRangePicker from "@/components/shared/DateRangePicker";
@@ -7,7 +6,6 @@ import KpiCard from "@/components/shared/KpiCard";
 import { KpiCardSkeleton, ChartSkeleton } from "@/components/shared/Skeleton";
 import SpendRevenueChart from "@/components/master-overview/SpendRevenueChart";
 import { fetchSales, type SalesData } from "@/lib/api-client";
-import { generateTimeSeries } from "@/lib/mock-data";
 import type { TimeSeriesPoint } from "@/lib/types";
 import { useAccount } from "@/lib/account-context";
 
@@ -38,18 +36,10 @@ export default function MasterOverviewPage() {
   const scUnits    = salesData?.summary.totalUnits   ?? 0;
   const avgOrderValue = scOrders > 0 ? Math.round((scRevenue / scOrders) * 100) / 100 : 0;
 
-  // Build chart time series from real SP-API daily data
-  const timeSeries: TimeSeriesPoint[] = (() => {
-    if (salesData?._source === "live" && salesData.dailySeries.length > 0) {
-      return salesData.dailySeries.map((d) => ({
-        date:    d.date,
-        revenue: d.totalRevenue,
-        spend:   0,
-        acos:    0,
-      }));
-    }
-    return generateTimeSeries(30);
-  })();
+  // Build chart time series from real SP-API daily data (empty until loaded)
+  const timeSeries: TimeSeriesPoint[] = salesData?._source === "live"
+    ? salesData.dailySeries.map((d) => ({ date: d.date, revenue: d.totalRevenue, spend: 0, acos: 0 }))
+    : [];
 
   return (
     <div style={{ minHeight: "100vh", background: "#0d1117" }}>
