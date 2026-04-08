@@ -20,30 +20,29 @@ export default function MasterOverviewPage() {
   const [compare, setCompare]         = useState("prev-period");
   const [campaignType, setCampaignType] = useState<"ALL" | "SP" | "SB" | "SD">("ALL");
 
-  const [data, setData]         = useState<OverviewData | null>(null);
+  const [data, setData]           = useState<OverviewData | null>(null);
   const [salesData, setSalesData] = useState<SalesData | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [salesLoading, setSalesLoading] = useState(true);
+  const [error, setError]         = useState<string | null>(null);
 
   const { activeAccount } = useAccount();
   const accountId = activeAccount?.id ?? "";
 
   const load = useCallback(async () => {
     setLoading(true);
+    setSalesLoading(true);
     setError(null);
-    try {
-      // Fetch ads data + seller central data in parallel
-      const [adsResult, salesResult] = await Promise.all([
-        fetchOverview({ accountId: accountId || undefined, dateRange, campaignType }),
-        fetchSales({ accountId: accountId || undefined, dateRange }),
-      ]);
-      setData(adsResult);
-      setSalesData(salesResult);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
+
+    // Load ads data first — shows UI immediately
+    fetchOverview({ accountId: accountId || undefined, dateRange, campaignType })
+      .then((result) => { setData(result); setLoading(false); })
+      .catch((e) => { setError(String(e)); setLoading(false); });
+
+    // SC data loads independently — fills in revenue/TACoS/charts when ready
+    fetchSales({ accountId: accountId || undefined, dateRange })
+      .then((result) => { setSalesData(result); setSalesLoading(false); })
+      .catch(() => setSalesLoading(false));
   }, [accountId, dateRange, campaignType]);
 
   useEffect(() => { load(); }, [load]);
@@ -187,16 +186,23 @@ export default function MasterOverviewPage() {
             Array.from({ length: 6 }).map((_, i) => <KpiCardSkeleton key={i} />)
           ) : (
             <>
-              <KpiCard label="Impressions"  metric={data.kpis.impressions}                                        format="compact"  small />
-              <KpiCard label="Clicks"       metric={data.kpis.clicks}                                            format="compact"  small />
-              <KpiCard label="CTR"          metric={data.kpis.ctr}                                               format="percent"  small />
-              <KpiCard label="CPC"          metric={data.kpis.cpc}                                               format="currency" small />
-              <KpiCard label="Total Revenue"metric={{ value: totalRevenue, delta: 0, positive: true }}           format="currency" small />
+              <KpiCard label="Impressions"  metric={data.kpis.impressions}  format="compact"  small />
+              <KpiCard label="Clicks"       metric={data.kpis.clicks}       format="compact"  small />
+              <KpiCard label="CTR"          metric={data.kpis.ctr}          format="percent"  small />
+              <KpiCard label="CPC"          metric={data.kpis.cpc}          format="currency" small />
+              <KpiCard
+                label="SC Revenue"
+                metric={{ value: totalRevenue, delta: 0, positive: true }}
+                format="currency"
+                small
+                loading={salesLoading}
+              />
               <KpiCard
                 label={spApiLive ? "TACoS" : "TACoS (est.)"}
                 metric={{ value: tacos, delta: 0, positive: true }}
                 format="percent"
                 small
+                loading={salesLoading}
               />
             </>
           )}
