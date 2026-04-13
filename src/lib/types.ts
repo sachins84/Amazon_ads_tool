@@ -87,3 +87,50 @@ export interface TargetingFilters {
   acosMax: string;
   spendMin: string;
 }
+
+// ─── Brand Analytics ─────────────────────────────────────────────────────────
+
+/** Search Terms Report – top clicked/purchased ASINs per search term */
+export interface SearchTermRow {
+  searchTerm: string;
+  searchFrequencyRank: number;
+  asin1: string;
+  asin1ClickShare: number;
+  asin1ConversionShare: number;
+  asin2: string;
+  asin2ClickShare: number;
+  asin2ConversionShare: number;
+  asin3: string;
+  asin3ClickShare: number;
+  asin3ConversionShare: number;
+}
+
+/** Search Query Performance Report – brand-level keyword metrics */
+export interface SQPRow {
+  searchQuery: string;
+  totalSearchVolume: number;
+  impressions: number;
+  clicks: number;
+  purchases: number;
+  impressionShare: number;
+  clickShare: number;
+  purchaseShare: number;
+}
+
+/** Search Catalog Performance Report – ASIN × keyword performance */
+export interface CatalogPerformanceRow {
+  asin: string;
+  productTitle: string;
+  searchQuery: string;
+  impressions: number;
+  clicks: number;
+  addToCarts: number;
+  purchases: number;
+}
+
+export interface BrandAnalyticsData {
+  searchTerms: SearchTermRow[];
+  sqp: SQPRow[];
+  catalogPerformance: CatalogPerformanceRow[];
+  _source?: "live" | "mock";
+}

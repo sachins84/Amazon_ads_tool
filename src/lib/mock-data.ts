@@ -3,6 +3,9 @@ import type {
   TimeSeriesPoint,
   CampaignRow,
   Target,
+  SearchTermRow,
+  SQPRow,
+  CatalogPerformanceRow,
 } from "./types";
 
 // Seeded deterministic PRNG (mulberry32) — eliminates SSR/client hydration mismatch
@@ -180,3 +183,89 @@ export const spendByType = [
   { name: "Sponsored Brands",   value: 3840, color: "#8b5cf6" },
   { name: "Sponsored Display",  value: 2560, color: "#a78bfa" },
 ];
+
+// ─── Brand Analytics Mock Data ──────────────────────────────────────────────
+
+const searchTermsList = [
+  "running shoes men", "yoga mat thick", "wireless earbuds bluetooth",
+  "protein powder whey", "resistance bands", "air fryer large", "standing desk",
+  "blue light glasses", "mens shorts athletic", "womens leggings",
+  "foam roller", "jump rope", "pull up bar", "adjustable dumbbells",
+  "gym bag", "pre workout", "creatine powder", "melatonin gummies",
+  "vitamin d3 5000", "fish oil capsules", "water bottle insulated",
+  "running socks men", "yoga pants women", "noise cancelling headphones",
+  "mass gainer", "kettlebell adjustable", "exercise bike", "treadmill foldable",
+  "whey isolate", "bcaa powder",
+];
+
+const mockAsins = [
+  "B07XQ1N2X3", "B08K3NGLYQ", "B09NQKL7R2", "B0BF6NQ8M5", "B07YDVRBTZ",
+  "B0C12MKLP4", "B08QZP1RVN", "B09XRTY4MK", "B0A3FGHJ12", "B07PLQ8NMT",
+];
+
+const productTitles: Record<string, string> = {
+  "B07XQ1N2X3": "Men's Running Shoes Lightweight Breathable",
+  "B08K3NGLYQ": "Premium Yoga Mat 6mm Non-Slip",
+  "B09NQKL7R2": "True Wireless Earbuds ANC Bluetooth 5.3",
+  "B0BF6NQ8M5": "Whey Protein Isolate Chocolate 2kg",
+  "B07YDVRBTZ": "Resistance Bands Set of 5",
+  "B0C12MKLP4": "Digital Air Fryer 5.5L",
+  "B08QZP1RVN": "Adjustable Standing Desk Converter",
+  "B09XRTY4MK": "Blue Light Blocking Glasses",
+  "B0A3FGHJ12": "Men's Athletic Shorts Quick Dry",
+  "B07PLQ8NMT": "High Waist Yoga Leggings Women",
+};
+
+export const mockSearchTerms: SearchTermRow[] = searchTermsList.map((term, i) => {
+  const a1 = mockAsins[i % mockAsins.length];
+  const a2 = mockAsins[(i + 3) % mockAsins.length];
+  const a3 = mockAsins[(i + 6) % mockAsins.length];
+  return {
+    searchTerm: term,
+    searchFrequencyRank: Math.round(rnd(1, 8000)),
+    asin1: a1,
+    asin1ClickShare:     Math.round(rnd(15, 55) * 10) / 10,
+    asin1ConversionShare: Math.round(rnd(10, 45) * 10) / 10,
+    asin2: a2,
+    asin2ClickShare:     Math.round(rnd(8, 30) * 10) / 10,
+    asin2ConversionShare: Math.round(rnd(5, 25) * 10) / 10,
+    asin3: a3,
+    asin3ClickShare:     Math.round(rnd(3, 18) * 10) / 10,
+    asin3ConversionShare: Math.round(rnd(2, 15) * 10) / 10,
+  };
+});
+
+export const mockSQP: SQPRow[] = searchTermsList.map((term) => {
+  const vol = Math.round(rnd(500, 120000));
+  const impr = Math.round(vol * rnd(2, 8));
+  const clicks = Math.round(impr * rnd(0.01, 0.06));
+  const purchases = Math.round(clicks * rnd(0.02, 0.12));
+  return {
+    searchQuery: term,
+    totalSearchVolume: vol,
+    impressions: impr,
+    clicks,
+    purchases,
+    impressionShare: Math.round(rnd(1, 35) * 10) / 10,
+    clickShare:      Math.round(rnd(1, 28) * 10) / 10,
+    purchaseShare:   Math.round(rnd(1, 32) * 10) / 10,
+  };
+});
+
+export const mockCatalogPerformance: CatalogPerformanceRow[] = [];
+for (const asin of mockAsins) {
+  const queriesForAsin = searchTermsList.slice(0, 6 + Math.round(rnd(0, 6)));
+  for (const q of queriesForAsin) {
+    const impr = Math.round(rnd(200, 25000));
+    const clicks = Math.round(impr * rnd(0.01, 0.05));
+    mockCatalogPerformance.push({
+      asin,
+      productTitle: productTitles[asin] ?? asin,
+      searchQuery: q,
+      impressions: impr,
+      clicks,
+      addToCarts: Math.round(clicks * rnd(0.1, 0.4)),
+      purchases: Math.round(clicks * rnd(0.02, 0.15)),
+    });
+  }
+}

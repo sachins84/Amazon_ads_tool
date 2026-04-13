@@ -2,8 +2,10 @@
  * Frontend fetch helpers that call our Next.js API routes.
  * Falls back to mock data when credentials / profileId are not configured.
  */
-import type { Target, OverviewKpis } from "./types";
-import { mockKpis, mockCampaigns, mockTargets, spendByType as mockSpendByType } from "./mock-data";
+import type { Target, OverviewKpis, SearchTermRow, SQPRow, CatalogPerformanceRow } from "./types";
+export type { BrandAnalyticsData } from "./types";
+import type { BrandAnalyticsData } from "./types";
+import { mockKpis, mockCampaigns, mockTargets, spendByType as mockSpendByType, mockSearchTerms, mockSQP, mockCatalogPerformance } from "./mock-data";
 
 const BASE = "";
 
@@ -205,6 +207,55 @@ export async function bulkUpdateTargets(payload: {
   }
 }
 
+// ─── Brand Analytics ─────────────────────────────────────────────────────────
+
+export async function fetchBrandAnalytics(params: {
+  accountId?: string;
+  dateRange?: string;
+} = {}): Promise<BrandAnalyticsData> {
+  const qs = new URLSearchParams();
+  if (params.accountId) qs.set("accountId", params.accountId);
+  if (params.dateRange) qs.set("dateRange", params.dateRange);
+
+  async function fetchReport<T>(report: string, key: string): Promise<T> {
+    const rqs = new URLSearchParams(qs);
+    rqs.set("report", report);
+    try {
+      const res = await fetch(`${BASE}/api/brand-analytics?${rqs}`);
+      const json = await res.json();
+      if (isMockSignal(json)) return null as T;
+      if (!res.ok) throw new Error(json.error ?? `Failed to fetch ${report}`);
+      return json[key] as T;
+    } catch (e) {
+      if (e instanceof TypeError) return null as T;
+      throw e;
+    }
+  }
+
+  try {
+    const [searchTerms, sqp, catalogPerformance] = await Promise.all([
+      fetchReport<SearchTermRow[] | null>("search-terms", "searchTerms"),
+      fetchReport<SQPRow[] | null>("sqp", "sqp"),
+      fetchReport<CatalogPerformanceRow[] | null>("catalog", "catalogPerformance"),
+    ]);
+
+    // If all came back null, it means mock/config-missing
+    if (!searchTerms && !sqp && !catalogPerformance) {
+      return getMockBrandAnalytics();
+    }
+
+    return {
+      searchTerms: searchTerms ?? mockSearchTerms,
+      sqp: sqp ?? mockSQP,
+      catalogPerformance: catalogPerformance ?? mockCatalogPerformance,
+      _source: "live",
+    };
+  } catch (e) {
+    if (e instanceof TypeError) return getMockBrandAnalytics();
+    throw e;
+  }
+}
+
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────
 
 function getMockOverview(): Omit<OverviewData, "_source"> {
@@ -253,6 +304,15 @@ function getMockSales(): SalesData {
   return {
     summary: { totalRevenue, totalOrders, totalUnits },
     dailySeries,
+    _source: "mock",
+  };
+}
+
+function getMockBrandAnalytics(): BrandAnalyticsData {
+  return {
+    searchTerms: mockSearchTerms,
+    sqp: mockSQP,
+    catalogPerformance: mockCatalogPerformance,
     _source: "mock",
   };
 }

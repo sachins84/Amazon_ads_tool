@@ -4,8 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAccount } from "@/lib/account-context";
 
 const tabs = [
-  { label: "Master Overview", href: "/master-overview" },
-  { label: "Targeting 360",   href: "/targeting-360"   },
+  { label: "Master Overview",   href: "/master-overview"   },
+  { label: "Targeting 360",     href: "/targeting-360"     },
+  { label: "Brand Analytics",   href: "/brand-analytics"   },
 ];
 
 export default function TopNav() {
