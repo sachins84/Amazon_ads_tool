@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
 
   // Fast bail — no marketplace or no SP-API credentials → mock immediately
   if (!marketplaceId || !hasSpCredentials) {
+    console.log("[brand-analytics] bail:", { marketplaceId: !!marketplaceId, hasSpCredentials, accountId });
     return Response.json(CONFIG_MISSING_RESPONSE, { status: 200 });
   }
 
@@ -74,13 +75,13 @@ export async function GET(req: NextRequest) {
     let data: Record<string, unknown>;
     switch (report) {
       case "search-terms":
-        data = { searchTerms: await fetchSearchTermsReport(marketplaceId, startDate, endDate, accountId || undefined) };
+        data = { searchTerms: await fetchSearchTermsReport(marketplaceId, startDate, endDate, accountId || undefined, datePreset) };
         break;
       case "sqp":
-        data = { sqp: await fetchSQPReport(marketplaceId, startDate, endDate, accountId || undefined) };
+        data = { sqp: await fetchSQPReport(marketplaceId, startDate, endDate, accountId || undefined, datePreset) };
         break;
       case "catalog":
-        data = { catalogPerformance: await fetchCatalogPerformanceReport(marketplaceId, startDate, endDate, accountId || undefined) };
+        data = { catalogPerformance: await fetchCatalogPerformanceReport(marketplaceId, startDate, endDate, accountId || undefined, datePreset) };
         break;
       default:
         return Response.json({ error: `Unknown report: ${report}` }, { status: 400 });
