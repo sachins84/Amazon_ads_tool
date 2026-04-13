@@ -209,9 +209,15 @@ export async function bulkUpdateTargets(payload: {
 
 // ─── Brand Analytics ─────────────────────────────────────────────────────────
 
+/**
+ * Fetch Brand Analytics data.
+ * Returns mock data immediately. If `onLiveData` callback is provided, attempts
+ * to fetch real data from SP-API in the background and calls back with it.
+ */
 export async function fetchBrandAnalytics(params: {
   accountId?: string;
   dateRange?: string;
+  onLiveData?: (data: BrandAnalyticsData) => void;
 } = {}): Promise<BrandAnalyticsData> {
   const qs = new URLSearchParams();
   if (params.accountId) qs.set("accountId", params.accountId);
@@ -224,30 +230,33 @@ export async function fetchBrandAnalytics(params: {
       const res = await fetch(`${BASE}/api/brand-analytics?${rqs}`);
       const json = await res.json();
       if (isMockSignal(json)) return null;
-      if (!res.ok) return null; // API error (e.g. report FATAL) → fall back to mock
+      if (!res.ok) return null;
       return json[key] as T;
     } catch {
-      return null; // Network or parse error → fall back to mock
+      return null;
     }
   }
 
-  const [searchTerms, sqp, catalogPerformance] = await Promise.all([
-    fetchReport<SearchTermRow[]>("search-terms", "searchTerms"),
-    fetchReport<SQPRow[]>("sqp", "sqp"),
-    fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance"),
-  ]);
-
-  // If all came back null, full mock mode
-  if (!searchTerms && !sqp && !catalogPerformance) {
-    return getMockBrandAnalytics();
+  // If caller wants background upgrade, fire-and-forget the real API calls
+  if (params.onLiveData) {
+    Promise.all([
+      fetchReport<SearchTermRow[]>("search-terms", "searchTerms"),
+      fetchReport<SQPRow[]>("sqp", "sqp"),
+      fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance"),
+    ]).then(([searchTerms, sqp, catalogPerformance]) => {
+      if (searchTerms || sqp || catalogPerformance) {
+        params.onLiveData!({
+          searchTerms: searchTerms ?? mockSearchTerms,
+          sqp: sqp ?? mockSQP,
+          catalogPerformance: catalogPerformance ?? mockCatalogPerformance,
+          _source: "live",
+        });
+      }
+    }).catch(() => { /* stay on mock */ });
   }
 
-  return {
-    searchTerms: searchTerms ?? mockSearchTerms,
-    sqp: sqp ?? mockSQP,
-    catalogPerformance: catalogPerformance ?? mockCatalogPerformance,
-    _source: searchTerms || sqp || catalogPerformance ? "live" : "mock",
-  };
+  // Return mock data instantly
+  return getMockBrandAnalytics();
 }
 
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-export default function MockBanner() {
+export default function MockBanner({ message }: { message?: string } = {}) {
   return (
     <div style={{
       background: "rgba(245,158,11,0.08)",
@@ -16,23 +16,27 @@ export default function MockBanner() {
           Demo Mode — showing mock data.
         </span>
         <span style={{ fontSize: 12, color: "#8892a4", marginLeft: 6 }}>
-          Add your Amazon Ads credentials to{" "}
-          <code style={{
-            background: "#1c2333", padding: "1px 5px",
-            borderRadius: 3, fontSize: 11, color: "#e2e8f0",
-          }}>
-            .env.local
-          </code>{" "}
-          to connect live data.
-          {" "}
-          <a
-            href="https://advertising.amazon.com/API/docs/en-us/onboarding/overview"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: "#6366f1", textDecoration: "none" }}
-          >
-            Setup guide →
-          </a>
+          {message ?? (
+            <>
+              Add your Amazon Ads credentials to{" "}
+              <code style={{
+                background: "#1c2333", padding: "1px 5px",
+                borderRadius: 3, fontSize: 11, color: "#e2e8f0",
+              }}>
+                .env.local
+              </code>{" "}
+              to connect live data.
+              {" "}
+              <a
+                href="https://advertising.amazon.com/API/docs/en-us/onboarding/overview"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "#6366f1", textDecoration: "none" }}
+              >
+                Setup guide →
+              </a>
+            </>
+          )}
         </span>
       </div>
     </div>

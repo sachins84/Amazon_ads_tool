@@ -44,6 +44,11 @@ export default function BrandAnalyticsPage() {
       const result = await fetchBrandAnalytics({
         accountId: accountId || undefined,
         dateRange,
+        onLiveData: (liveData) => {
+          // Upgrade from mock to live if real data arrives
+          setData(liveData);
+          setIsMock(false);
+        },
       });
       setData(result);
       setIsMock(result._source === "mock");
@@ -109,7 +114,9 @@ export default function BrandAnalyticsPage() {
           </div>
         </div>
 
-        {isMock && !loading && <MockBanner />}
+        {isMock && !loading && (
+          <MockBanner message="Brand Analytics requires SP-API credentials with Brand Registry access. Configure SP_API_REFRESH_TOKEN in .env.local to connect live data." />
+        )}
 
         {error && (
           <div style={{
