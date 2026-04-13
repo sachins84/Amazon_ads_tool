@@ -217,43 +217,37 @@ export async function fetchBrandAnalytics(params: {
   if (params.accountId) qs.set("accountId", params.accountId);
   if (params.dateRange) qs.set("dateRange", params.dateRange);
 
-  async function fetchReport<T>(report: string, key: string): Promise<T> {
+  async function fetchReport<T>(report: string, key: string): Promise<T | null> {
     const rqs = new URLSearchParams(qs);
     rqs.set("report", report);
     try {
       const res = await fetch(`${BASE}/api/brand-analytics?${rqs}`);
       const json = await res.json();
-      if (isMockSignal(json)) return null as T;
-      if (!res.ok) throw new Error(json.error ?? `Failed to fetch ${report}`);
+      if (isMockSignal(json)) return null;
+      if (!res.ok) return null; // API error (e.g. report FATAL) → fall back to mock
       return json[key] as T;
-    } catch (e) {
-      if (e instanceof TypeError) return null as T;
-      throw e;
+    } catch {
+      return null; // Network or parse error → fall back to mock
     }
   }
 
-  try {
-    const [searchTerms, sqp, catalogPerformance] = await Promise.all([
-      fetchReport<SearchTermRow[] | null>("search-terms", "searchTerms"),
-      fetchReport<SQPRow[] | null>("sqp", "sqp"),
-      fetchReport<CatalogPerformanceRow[] | null>("catalog", "catalogPerformance"),
-    ]);
+  const [searchTerms, sqp, catalogPerformance] = await Promise.all([
+    fetchReport<SearchTermRow[]>("search-terms", "searchTerms"),
+    fetchReport<SQPRow[]>("sqp", "sqp"),
+    fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance"),
+  ]);
 
-    // If all came back null, it means mock/config-missing
-    if (!searchTerms && !sqp && !catalogPerformance) {
-      return getMockBrandAnalytics();
-    }
-
-    return {
-      searchTerms: searchTerms ?? mockSearchTerms,
-      sqp: sqp ?? mockSQP,
-      catalogPerformance: catalogPerformance ?? mockCatalogPerformance,
-      _source: "live",
-    };
-  } catch (e) {
-    if (e instanceof TypeError) return getMockBrandAnalytics();
-    throw e;
+  // If all came back null, full mock mode
+  if (!searchTerms && !sqp && !catalogPerformance) {
+    return getMockBrandAnalytics();
   }
+
+  return {
+    searchTerms: searchTerms ?? mockSearchTerms,
+    sqp: sqp ?? mockSQP,
+    catalogPerformance: catalogPerformance ?? mockCatalogPerformance,
+    _source: searchTerms || sqp || catalogPerformance ? "live" : "mock",
+  };
 }
 
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────
