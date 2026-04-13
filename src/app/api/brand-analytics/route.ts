@@ -54,10 +54,12 @@ export async function GET(req: NextRequest) {
 
     return Response.json({ ...data, _source: "live" });
   } catch (err) {
-    if (err instanceof SpConfigError) {
-      return Response.json({ error: err.message, code: "CONFIG_MISSING" }, { status: 200 });
-    }
+    // Any SP-API failure (config missing, report FATAL, auth error, etc.)
+    // → signal CONFIG_MISSING so the frontend falls back to mock instantly
     console.error("[brand-analytics] Error:", err);
-    return Response.json({ error: String(err) }, { status: 500 });
+    return Response.json(
+      { error: String(err), code: "CONFIG_MISSING" },
+      { status: 200 }
+    );
   }
 }

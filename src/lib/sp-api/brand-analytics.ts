@@ -54,6 +54,7 @@ async function pollAndDownload<T>(
   accountId: string | undefined,
   reportId: string
 ): Promise<T> {
+  // Poll intervals: check quickly at first (2s, 4s, 8s…), then settle at 15s
   const MAX_POLLS = 20;
   for (let i = 0; i < MAX_POLLS; i++) {
     const status = await spReq<ReportStatusRes>(
@@ -73,7 +74,8 @@ async function pollAndDownload<T>(
       throw new Error(`Brand analytics report ${reportId} failed: ${status.processingStatus}`);
     }
 
-    await new Promise((r) => setTimeout(r, 15_000));
+    const delay = i < 4 ? Math.min(2000 * Math.pow(2, i), 15_000) : 15_000;
+    await new Promise((r) => setTimeout(r, delay));
   }
   throw new Error(`Brand analytics report ${reportId} timed out`);
 }
