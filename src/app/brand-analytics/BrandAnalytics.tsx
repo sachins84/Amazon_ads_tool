@@ -473,24 +473,29 @@ function CatalogTable({
     return sortRows(r, sortCol, sortDir);
   }, [rows, search, sortCol, sortDir]);
 
-  // Compute per-ASIN aggregated stats for the summary cards
+  // Check if we have per-query data or ASIN-level only
+  const hasQueryData = useMemo(() => rows.some((r) => r.searchQuery), [rows]);
+
+  // Top ASINs summary cards (always show)
   const asinSummary = useMemo(() => {
-    const map = new Map<string, { asin: string; title: string; impressions: number; clicks: number; purchases: number; queries: number }>();
+    const map = new Map<string, { asin: string; title: string; impressions: number; clicks: number; addToCarts: number; purchases: number; count: number }>();
     for (const row of rows) {
       const existing = map.get(row.asin);
       if (existing) {
         existing.impressions += row.impressions;
         existing.clicks += row.clicks;
+        existing.addToCarts += row.addToCarts;
         existing.purchases += row.purchases;
-        existing.queries += 1;
+        existing.count += 1;
       } else {
         map.set(row.asin, {
           asin: row.asin,
           title: row.productTitle,
           impressions: row.impressions,
           clicks: row.clicks,
+          addToCarts: row.addToCarts,
           purchases: row.purchases,
-          queries: 1,
+          count: 1,
         });
       }
     }
@@ -520,12 +525,12 @@ function CatalogTable({
                 <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(a.clicks, "compact")}</div>
               </div>
               <div>
-                <div style={{ color: "#555f6e" }}>Purchases</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{a.purchases}</div>
+                <div style={{ color: "#555f6e" }}>ATC</div>
+                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{a.addToCarts}</div>
               </div>
               <div>
-                <div style={{ color: "#555f6e" }}>Queries</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{a.queries}</div>
+                <div style={{ color: "#555f6e" }}>Purchases</div>
+                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{a.purchases}</div>
               </div>
             </div>
           </div>
@@ -535,7 +540,7 @@ function CatalogTable({
       <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a3245", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 12, color: "#8892a4" }}>
-            <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{filtered.length.toLocaleString()}</span> ASIN x keyword rows
+            <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{filtered.length.toLocaleString()}</span> {hasQueryData ? "ASIN x keyword rows" : "ASINs"}
           </span>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -543,8 +548,8 @@ function CatalogTable({
             <thead>
               <tr>
                 <th style={thStyle} onClick={() => onSort("asin")}>ASIN<SortArrow col="asin" sortCol={sortCol} sortDir={sortDir} /></th>
-                <th style={thStyle} onClick={() => onSort("productTitle")}>Product Title<SortArrow col="productTitle" sortCol={sortCol} sortDir={sortDir} /></th>
-                <th style={thStyle} onClick={() => onSort("searchQuery")}>Search Query<SortArrow col="searchQuery" sortCol={sortCol} sortDir={sortDir} /></th>
+                {hasQueryData && <th style={thStyle} onClick={() => onSort("productTitle")}>Product Title<SortArrow col="productTitle" sortCol={sortCol} sortDir={sortDir} /></th>}
+                {hasQueryData && <th style={thStyle} onClick={() => onSort("searchQuery")}>Search Query<SortArrow col="searchQuery" sortCol={sortCol} sortDir={sortDir} /></th>}
                 <th style={numTh} onClick={() => onSort("impressions")}>Impressions<SortArrow col="impressions" sortCol={sortCol} sortDir={sortDir} /></th>
                 <th style={numTh} onClick={() => onSort("clicks")}>Clicks<SortArrow col="clicks" sortCol={sortCol} sortDir={sortDir} /></th>
                 <th style={numTh} onClick={() => onSort("addToCarts")}>Add to Cart<SortArrow col="addToCarts" sortCol={sortCol} sortDir={sortDir} /></th>
@@ -558,12 +563,16 @@ function CatalogTable({
                 return (
                   <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                     <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
-                    <td style={{ ...tdStyle, maxWidth: 220 }}>
-                      <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{row.productTitle}</span>
-                    </td>
-                    <td style={{ ...tdStyle, fontWeight: 500, maxWidth: 220 }}>
-                      <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{row.searchQuery}</span>
-                    </td>
+                    {hasQueryData && (
+                      <td style={{ ...tdStyle, maxWidth: 220 }}>
+                        <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{row.productTitle}</span>
+                      </td>
+                    )}
+                    {hasQueryData && (
+                      <td style={{ ...tdStyle, fontWeight: 500, maxWidth: 220 }}>
+                        <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{row.searchQuery}</span>
+                      </td>
+                    )}
                     <td style={numTd}>{fmt(row.impressions, "compact")}</td>
                     <td style={numTd}>
                       {fmt(row.clicks, "number")}
@@ -578,7 +587,7 @@ function CatalogTable({
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} style={{ ...tdStyle, textAlign: "center", color: "#555f6e", padding: 32 }}>No catalog data found</td></tr>
+                <tr><td colSpan={hasQueryData ? 7 : 5} style={{ ...tdStyle, textAlign: "center", color: "#555f6e", padding: 32 }}>No catalog data found</td></tr>
               )}
             </tbody>
           </table>

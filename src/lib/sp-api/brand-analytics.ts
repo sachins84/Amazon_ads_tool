@@ -87,17 +87,29 @@ async function createReport(
   end: string,
   reportOptions: Record<string, string>
 ): Promise<string> {
-  const res = await spReq<CreateReportRes>(accountId, "/reports/2021-06-30/reports", {
-    method: "POST",
-    body: {
-      reportType,
-      marketplaceIds: [marketplaceId],
-      dataStartTime: `${start}T00:00:00Z`,
-      dataEndTime:   `${end}T23:59:59Z`,
-      reportOptions,
-    },
-  });
-  return res.reportId;
+  // Retry with backoff on 429 rate limits
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await spReq<CreateReportRes>(accountId, "/reports/2021-06-30/reports", {
+        method: "POST",
+        body: {
+          reportType,
+          marketplaceIds: [marketplaceId],
+          dataStartTime: `${start}T00:00:00Z`,
+          dataEndTime:   `${end}T23:59:59Z`,
+          reportOptions,
+        },
+      });
+      return res.reportId;
+    } catch (err) {
+      const isRateLimit = err instanceof Error && err.message.includes("429") || err instanceof Error && err.message.includes("rate limit");
+      if (!isRateLimit || attempt === 3) throw err;
+      const waitMs = Math.pow(2, attempt + 1) * 5000; // 10s, 20s, 40s
+      console.log(`[brand-analytics] Rate limited creating ${reportType}, retrying in ${waitMs / 1000}s...`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+  throw new Error("Max retries exceeded for report creation");
 }
 
 async function pollAndDownload<T>(
@@ -220,27 +232,53 @@ async function streamParseGzip<T>(res: Response, maxRows: number): Promise<T> {
  * Finds the first array `[` and parses individual objects from it.
  */
 function extractPartialArray<T>(text: string, maxRows: number): T {
-  // Find the first '[' that starts an array of objects
-  const arrayStart = text.indexOf("[{");
-  if (arrayStart === -1) {
-    // Try parsing as-is (might be a simple array)
-    const bracketStart = text.indexOf("[");
-    if (bracketStart === -1) throw new Error("Could not find array in report JSON");
-    // Try to close the array
-    const partial = text.slice(bracketStart);
-    const lastComplete = partial.lastIndexOf("}");
-    if (lastComplete === -1) throw new Error("No complete objects found in report");
-    const closedArray = partial.slice(0, lastComplete + 1) + "]";
-    const rows = JSON.parse(closedArray) as unknown[];
-    return rows.slice(0, maxRows) as T;
+  // Find the data array — look for known Brand Analytics keys
+  const dataKeys = [
+    "dataByDepartmentAndSearchTerm",
+    "dataByAsin",
+    "searchQueryPerformanceData",
+    "searchCatalogPerformance",
+    "searchQueryPerformance",
+  ];
+
+  let key = "";
+  let arrayStart = -1;
+
+  for (const dk of dataKeys) {
+    const idx = text.indexOf(`"${dk}"`);
+    if (idx !== -1) {
+      // Find the opening '[' after this key
+      const bracketIdx = text.indexOf("[", idx + dk.length + 2);
+      if (bracketIdx !== -1) {
+        key = dk;
+        arrayStart = bracketIdx;
+        break;
+      }
+    }
   }
 
-  // Extract the key name before the array
-  const beforeArray = text.slice(0, arrayStart);
-  const keyMatch = beforeArray.match(/"([^"]+)"\s*:\s*$/);
-  const key = keyMatch?.[1] ?? "";
+  // Fallback: find the first large array (skip small ones like marketplaceIds)
+  if (arrayStart === -1) {
+    // Find first '[' followed eventually by '{'
+    const re = /\[\s*\{/g;
+    let match;
+    while ((match = re.exec(text)) !== null) {
+      // Skip if it's a small array (like marketplaceIds)
+      const before = text.slice(Math.max(0, match.index - 50), match.index);
+      if (before.includes("marketplaceIds")) continue;
+      arrayStart = match.index;
+      // Try to extract key name
+      const keyMatch = before.match(/"([^"]+)"\s*:\s*$/);
+      if (keyMatch) key = keyMatch[1];
+      break;
+    }
+  }
 
-  // Extract individual objects from the array
+  if (arrayStart === -1) {
+    throw new Error("Could not find data array in report JSON");
+  }
+
+  // Extract individual objects by tracking { } depth
   const arrayContent = text.slice(arrayStart + 1); // skip '['
   const rows: unknown[] = [];
   let depth = 0;
@@ -256,11 +294,13 @@ function extractPartialArray<T>(text: string, maxRows: number): T {
       if (depth === 0 && objStart >= 0) {
         try {
           rows.push(JSON.parse(arrayContent.slice(objStart, i + 1)));
-        } catch { /* skip malformed */ }
+        } catch { /* skip malformed / truncated object */ }
         objStart = -1;
       }
     }
   }
+
+  console.log(`[brand-analytics] extractPartialArray: key="${key}", found ${rows.length} rows`);
 
   // Reconstruct the original shape
   if (key) {
@@ -447,6 +487,7 @@ function normaliseCatalog(raw: Record<string, unknown>): CatalogPerformanceRow[]
       clicks:       Number(click?.clickCount ?? r.clicks ?? 0),
       addToCarts:   Number(cart?.cartAddCount ?? r.addToCarts ?? r.cartAdds ?? 0),
       purchases:    Number(purchase?.purchaseCount ?? r.purchases ?? 0),
+      clickRate:    Number(click?.clickRate ?? 0),
     };
   });
 }

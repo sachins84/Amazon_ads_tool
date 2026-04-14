@@ -117,7 +117,7 @@ export interface SQPRow {
   purchaseShare: number;
 }
 
-/** Search Catalog Performance Report – ASIN × keyword performance */
+/** Search Catalog Performance Report – ASIN-level performance */
 export interface CatalogPerformanceRow {
   asin: string;
   productTitle: string;
@@ -126,6 +126,7 @@ export interface CatalogPerformanceRow {
   clicks: number;
   addToCarts: number;
   purchases: number;
+  clickRate?: number;
 }
 
 export interface BrandAnalyticsData {
