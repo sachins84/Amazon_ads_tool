@@ -240,10 +240,25 @@ export async function fetchBrandAnalytics(params: {
     }
   }
 
+  // Generate mock weekly trends so magnifying glass works in mock mode
+  const mockWeekly: Record<string, import("./types").AsinWeeklyTrend> = {};
+  for (const r of mockCatalogPerformance) {
+    if (!mockWeekly[r.asin]) {
+      const vary = (base: number) => [0.85, 0.92, 0.96, 1].map((f) => Math.round(base * f * (0.9 + Math.random() * 0.2)));
+      mockWeekly[r.asin] = {
+        impressions: vary(r.impressions),
+        clicks: vary(r.clicks),
+        addToCarts: vary(r.addToCarts),
+        purchases: vary(r.purchases),
+      };
+    }
+  }
+
   const live: BrandAnalyticsData = {
     searchTerms: mockSearchTerms,
     sqp: mockSQP,
     catalogPerformance: mockCatalogPerformance,
+    weeklyTrends: mockWeekly,
     _source: "mock",
   };
 
