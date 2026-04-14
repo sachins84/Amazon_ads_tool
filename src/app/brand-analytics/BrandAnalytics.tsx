@@ -745,7 +745,7 @@ function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabe
               const viewShr = totals.impressions > 0 ? (row.impressions / totals.impressions * 100) : 0;
               const purchShr = totals.purchases > 0 ? (row.purchases / totals.purchases * 100) : 0;
               return (
-                <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
+                <tr key={`${row.asin}-${i}`} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                   <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
                   <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
                   <td style={{ ...tdStyle, maxWidth: 200 }}>
@@ -846,7 +846,7 @@ function AllBrandsTable({ rows, prevMap, weeklyTrends, search, periodLabel }: {
             const viewShr = totalImpr > 0 ? (row.impressions / totalImpr * 100) : 0;
             const purchShr = totalPurch > 0 ? (row.purchases / totalPurch * 100) : 0;
             return (
-              <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
+              <tr key={`${row.asin}-${i}`} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                 <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
                 <td style={{ ...tdStyle, fontSize: 11 }}>
                   {row.brandName ? (
