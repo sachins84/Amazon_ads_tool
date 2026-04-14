@@ -24,6 +24,22 @@ export interface AsinInfo {
   brand: string;
 }
 
+/** Known brand prefixes — extract brand from product title when SP-API doesn't return brandName */
+const KNOWN_BRANDS = [
+  "Man Matters",
+  "Be Bodywise",
+  "Little Joys",
+  "Bodywise",
+];
+
+function inferBrand(title: string): string {
+  const lower = title.toLowerCase();
+  for (const brand of KNOWN_BRANDS) {
+    if (lower.startsWith(brand.toLowerCase())) return brand;
+  }
+  return "";
+}
+
 async function spReq<T>(
   accountId: string | undefined,
   path: string,
@@ -50,12 +66,14 @@ async function fetchCatalogBatch(
 
   try {
     const res = await spReq<CatalogResponse>(accountId, path);
+    if (res.items?.[0]) {
+      console.log("[catalog] Sample item keys:", JSON.stringify(res.items[0]).slice(0, 500));
+    }
     for (const item of res.items ?? []) {
       const summary = item.summaries?.[0];
-      result.set(item.asin, {
-        title: summary?.itemName ?? "",
-        brand: summary?.brandName ?? "",
-      });
+      const title = summary?.itemName ?? "";
+      const brand = summary?.brandName ?? inferBrand(title);
+      result.set(item.asin, { title, brand });
     }
   } catch (err) {
     console.error("[catalog] Error fetching ASIN info:", err);
