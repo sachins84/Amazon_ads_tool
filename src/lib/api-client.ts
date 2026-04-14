@@ -237,22 +237,32 @@ export async function fetchBrandAnalytics(params: {
     }
   }
 
-  // If caller wants background upgrade, fire-and-forget the real API calls
+  // If caller wants background upgrade, fire each report independently
+  // and call onLiveData progressively as each completes
   if (params.onLiveData) {
-    Promise.all([
-      fetchReport<SearchTermRow[]>("search-terms", "searchTerms"),
-      fetchReport<SQPRow[]>("sqp", "sqp"),
-      fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance"),
-    ]).then(([searchTerms, sqp, catalogPerformance]) => {
-      if (searchTerms || sqp || catalogPerformance) {
-        params.onLiveData!({
-          searchTerms: searchTerms ?? mockSearchTerms,
-          sqp: sqp ?? mockSQP,
-          catalogPerformance: catalogPerformance ?? mockCatalogPerformance,
-          _source: "live",
-        });
-      }
-    }).catch(() => { /* stay on mock */ });
+    const live: { searchTerms: SearchTermRow[] | null; sqp: SQPRow[] | null; catalogPerformance: CatalogPerformanceRow[] | null } = {
+      searchTerms: null, sqp: null, catalogPerformance: null,
+    };
+
+    const pushUpdate = () => {
+      if (!live.searchTerms && !live.sqp && !live.catalogPerformance) return;
+      params.onLiveData!({
+        searchTerms: live.searchTerms ?? mockSearchTerms,
+        sqp: live.sqp ?? mockSQP,
+        catalogPerformance: live.catalogPerformance ?? mockCatalogPerformance,
+        _source: "live",
+      });
+    };
+
+    fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance")
+      .then((r) => { if (r && r.length) { live.catalogPerformance = r; pushUpdate(); } })
+      .catch(() => {});
+    fetchReport<SearchTermRow[]>("search-terms", "searchTerms")
+      .then((r) => { if (r && r.length) { live.searchTerms = r; pushUpdate(); } })
+      .catch(() => {});
+    fetchReport<SQPRow[]>("sqp", "sqp")
+      .then((r) => { if (r && r.length) { live.sqp = r; pushUpdate(); } })
+      .catch(() => {});
   }
 
   // Return mock data instantly
