@@ -136,5 +136,7 @@ export interface BrandAnalyticsData {
   searchTerms: SearchTermRow[];
   sqp: SQPRow[];
   catalogPerformance: CatalogPerformanceRow[];
+  previousCatalog?: CatalogPerformanceRow[];
+  periodLabel?: string;  // "WoW" or "MoM"
   _source?: "live" | "mock";
 }

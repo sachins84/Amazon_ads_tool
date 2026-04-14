@@ -230,6 +230,8 @@ export default function BrandAnalyticsPage() {
             {subTab === "catalog" && data && (
               <CatalogTable
                 rows={data.catalogPerformance}
+                prevRows={data.previousCatalog ?? []}
+                periodLabel={data.periodLabel ?? "WoW"}
                 search={search}
                 sortCol={sortCol}
                 sortDir={sortDir}
@@ -474,10 +476,27 @@ function SQPTable({
 
 // ─── Catalog Performance Table ───────────────────────────────────────────────
 
+function DeltaBadge({ current, previous, suffix }: { current: number; previous: number; suffix?: string }) {
+  if (!previous) return null;
+  const delta = previous > 0 ? ((current - previous) / previous * 100) : 0;
+  if (Math.abs(delta) < 0.1) return null;
+  const up = delta > 0;
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 500, marginLeft: 4,
+      color: up ? "#22c55e" : "#ef4444",
+    }}>
+      {up ? "\u2191" : "\u2193"}{Math.abs(delta).toFixed(1)}%{suffix ? ` ${suffix}` : ""}
+    </span>
+  );
+}
+
 function CatalogTable({
-  rows, search, sortCol, sortDir, onSort,
+  rows, prevRows, periodLabel, search, sortCol, sortDir, onSort,
 }: {
   rows: CatalogPerformanceRow[];
+  prevRows: CatalogPerformanceRow[];
+  periodLabel: string;
   search: string;
   sortCol: string;
   sortDir: "asc" | "desc";
@@ -527,8 +546,24 @@ function CatalogTable({
     purchases: Math.max(...filtered.map((r) => r.purchases), 1),
   }), [filtered]);
 
+  // Map previous period data by ASIN for delta comparison
+  const prevMap = useMemo(() => {
+    const m = new Map<string, CatalogPerformanceRow>();
+    for (const row of prevRows) m.set(row.asin, row);
+    return m;
+  }, [prevRows]);
+
+  const hasPrev = prevRows.length > 0;
+
   return (
     <>
+      {/* Period indicator */}
+      {hasPrev && (
+        <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 8 }}>
+          Showing <span style={{ color: "#6366f1", fontWeight: 600 }}>{periodLabel}</span> trends ({prevRows.length} ASINs in previous period)
+        </div>
+      )}
+
       {/* Brand filter pills */}
       {brands.length > 0 && (
         <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
@@ -611,13 +646,30 @@ function CatalogTable({
                         <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 500, background: "rgba(99,102,241,0.1)", color: "#a78bfa" }}>{row.brandName}</span>
                       ) : <span style={{ color: "#555f6e" }}>--</span>}
                     </td>
-                    <td style={numTd}><MetricBar value={row.impressions} max={maxes.impressions} color="#6366f1" label={fmt(row.impressions, "compact")} /></td>
-                    <td style={numTd}><MetricBar value={row.clicks} max={maxes.clicks} color="#8b5cf6" label={fmt(row.clicks, "number")} /></td>
-                    <td style={numTd}><MetricBar value={row.addToCarts} max={maxes.addToCarts} color="#a78bfa" label={fmt(row.addToCarts, "number")} /></td>
-                    <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
-                    <td style={numTd}><MetricBar value={row.purchases} max={maxes.purchases} color="#22c55e" label={String(row.purchases)} /></td>
-                    <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
-                    <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                    {(() => {
+                      const prev = prevMap.get(row.asin);
+                      return (<>
+                        <td style={numTd}>
+                          <MetricBar value={row.impressions} max={maxes.impressions} color="#6366f1" label={fmt(row.impressions, "compact")} />
+                          {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                        </td>
+                        <td style={numTd}>
+                          <MetricBar value={row.clicks} max={maxes.clicks} color="#8b5cf6" label={fmt(row.clicks, "number")} />
+                          {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
+                        </td>
+                        <td style={numTd}>
+                          <MetricBar value={row.addToCarts} max={maxes.addToCarts} color="#a78bfa" label={fmt(row.addToCarts, "number")} />
+                          {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
+                        </td>
+                        <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
+                        <td style={numTd}>
+                          <MetricBar value={row.purchases} max={maxes.purchases} color="#22c55e" label={String(row.purchases)} />
+                          {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
+                        </td>
+                        <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
+                        <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                      </>);
+                    })()}
                   </tr>
                 );
               })}

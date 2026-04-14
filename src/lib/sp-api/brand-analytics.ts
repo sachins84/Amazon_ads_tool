@@ -65,16 +65,32 @@ function lastCompleteMonth(): { start: string; end: string } {
  * Pick the best period for a given date-range preset.
  * Brand Analytics only supports WEEK or MONTH — not arbitrary ranges.
  */
-function resolvePeriod(datePreset: string): { start: string; end: string; period: "WEEK" | "MONTH" } {
+export function resolvePeriod(datePreset: string): { start: string; end: string; period: "WEEK" | "MONTH" } {
   if (datePreset === "Last Month") {
     return { ...lastCompleteMonth(), period: "MONTH" };
   }
   if (datePreset === "This Month") {
-    // Use last complete week within this month
     return { ...lastCompleteWeek(), period: "WEEK" };
   }
-  // For Last 7D, 14D, 30D — use last complete week
   return { ...lastCompleteWeek(), period: "WEEK" };
+}
+
+/** Get the previous period (for WoW / MoM comparison) */
+export function previousPeriod(p: { start: string; end: string; period: "WEEK" | "MONTH" }): { start: string; end: string; period: "WEEK" | "MONTH" } {
+  const startD = new Date(p.start + "T00:00:00Z");
+  const endD = new Date(p.end + "T00:00:00Z");
+  if (p.period === "MONTH") {
+    const prevEnd = new Date(startD);
+    prevEnd.setUTCDate(0); // last day of previous month
+    const prevStart = new Date(prevEnd.getUTCFullYear(), prevEnd.getUTCMonth(), 1);
+    return { start: fmtDate(prevStart), end: fmtDate(prevEnd), period: "MONTH" };
+  }
+  // WEEK: go back 7 days
+  const prevStart = new Date(startD);
+  prevStart.setUTCDate(prevStart.getUTCDate() - 7);
+  const prevEnd = new Date(endD);
+  prevEnd.setUTCDate(prevEnd.getUTCDate() - 7);
+  return { start: fmtDate(prevStart), end: fmtDate(prevEnd), period: "WEEK" };
 }
 
 // ─── Report creation & polling ───────────────────────────────────────────────
@@ -504,6 +520,17 @@ export async function fetchCatalogPerformanceReport(
   datePreset?: string,
 ): Promise<CatalogPerformanceRow[]> {
   const { start, end, period } = resolvePeriod(datePreset ?? "Last 30D");
+  return fetchCatalogDirect(marketplaceId, start, end, period, accountId);
+}
+
+/** Fetch catalog report with explicit dates (for previous-period comparison) */
+export async function fetchCatalogDirect(
+  marketplaceId: string,
+  start: string,
+  end: string,
+  period: "WEEK" | "MONTH",
+  accountId?: string,
+): Promise<CatalogPerformanceRow[]> {
   const reportId = await createReport(
     accountId, marketplaceId,
     "GET_BRAND_ANALYTICS_SEARCH_CATALOG_PERFORMANCE_REPORT",
@@ -512,7 +539,6 @@ export async function fetchCatalogPerformanceReport(
   );
   const raw = await pollAndDownload<Record<string, unknown>>(accountId, reportId);
   const dataArr = (raw.dataByAsin ?? []) as unknown[];
-  console.log("[brand-analytics] Catalog: dataByAsin has", dataArr.length, "rows");
-  if (dataArr.length > 0) console.log("[brand-analytics] Catalog first row:", JSON.stringify(dataArr[0]));
+  console.log("[brand-analytics] Catalog: dataByAsin has", dataArr.length, "rows for", start, "to", end);
   return normaliseCatalog(raw);
 }

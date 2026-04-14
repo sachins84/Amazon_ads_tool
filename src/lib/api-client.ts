@@ -224,51 +224,53 @@ export async function fetchBrandAnalytics(params: {
   if (params.accountId) qs.set("accountId", params.accountId);
   if (params.dateRange) qs.set("dateRange", params.dateRange);
 
-  async function fetchReport<T>(report: string, key: string): Promise<T | null> {
-    if (params.signal?.aborted) return null;
+  async function fetchReport<T>(report: string, key: string, extraParams?: Record<string, string>): Promise<{ data: T | null; raw: Record<string, unknown> | null }> {
+    if (params.signal?.aborted) return { data: null, raw: null };
     const rqs = new URLSearchParams(qs);
     rqs.set("report", report);
+    if (extraParams) Object.entries(extraParams).forEach(([k, v]) => rqs.set(k, v));
     try {
       const res = await fetch(`${BASE}/api/brand-analytics?${rqs}`, { signal: params.signal });
       const json = await res.json();
-      if (isMockSignal(json)) return null;
-      if (!res.ok) return null;
-      return json[key] as T;
+      if (isMockSignal(json)) return { data: null, raw: null };
+      if (!res.ok) return { data: null, raw: null };
+      return { data: json[key] as T, raw: json };
     } catch {
-      return null;
+      return { data: null, raw: null };
     }
   }
 
-  const live: { searchTerms: SearchTermRow[] | null; sqp: SQPRow[] | null; catalogPerformance: CatalogPerformanceRow[] | null } = {
-    searchTerms: null, sqp: null, catalogPerformance: null,
+  const live: BrandAnalyticsData = {
+    searchTerms: mockSearchTerms,
+    sqp: mockSQP,
+    catalogPerformance: mockCatalogPerformance,
+    _source: "mock",
   };
 
   const pushUpdate = () => {
     if (params.signal?.aborted) return;
-    params.onUpdate?.({
-      searchTerms: live.searchTerms ?? mockSearchTerms,
-      sqp: live.sqp ?? mockSQP,
-      catalogPerformance: live.catalogPerformance ?? mockCatalogPerformance,
-      _source: (live.searchTerms || live.sqp || live.catalogPerformance) ? "live" : "mock",
-    });
+    params.onUpdate?.({ ...live });
   };
 
   // Fire all 3 independently — push updates as each completes
-  const catalogP = fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance")
-    .then((r) => { if (r?.length) { live.catalogPerformance = r; pushUpdate(); } });
+  const catalogP = fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance", { compare: "true" })
+    .then(({ data, raw }) => {
+      if (data?.length) {
+        live.catalogPerformance = data;
+        live.previousCatalog = (raw?.previousPeriod as CatalogPerformanceRow[] | undefined) ?? [];
+        live.periodLabel = (raw?.periodLabel as string) ?? "WoW";
+        live._source = "live";
+        pushUpdate();
+      }
+    });
   const searchP = fetchReport<SearchTermRow[]>("search-terms", "searchTerms")
-    .then((r) => { if (r?.length) { live.searchTerms = r; pushUpdate(); } });
+    .then(({ data }) => { if (data?.length) { live.searchTerms = data; live._source = "live"; pushUpdate(); } });
   const sqpP = fetchReport<SQPRow[]>("sqp", "sqp")
-    .then((r) => { if (r?.length) { live.sqp = r; pushUpdate(); } });
+    .then(({ data }) => { if (data?.length) { live.sqp = data; live._source = "live"; pushUpdate(); } });
 
   await Promise.allSettled([catalogP, searchP, sqpP]);
 
-  return {
-    searchTerms: live.searchTerms ?? mockSearchTerms,
-    sqp: live.sqp ?? mockSQP,
-    catalogPerformance: live.catalogPerformance ?? mockCatalogPerformance,
-    _source: (live.searchTerms || live.sqp || live.catalogPerformance) ? "live" : "mock",
-  };
+  return { ...live };
 }
 
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────
