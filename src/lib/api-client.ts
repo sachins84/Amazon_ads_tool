@@ -211,23 +211,25 @@ export async function bulkUpdateTargets(payload: {
 
 /**
  * Fetch Brand Analytics data.
- * Returns mock data immediately. If `onLiveData` callback is provided, attempts
- * to fetch real data from SP-API in the background and calls back with it.
+ * Fires all 3 reports in parallel and calls onUpdate progressively as each completes.
+ * The returned promise resolves once all reports have been attempted.
  */
 export async function fetchBrandAnalytics(params: {
   accountId?: string;
   dateRange?: string;
-  onLiveData?: (data: BrandAnalyticsData) => void;
+  onUpdate?: (data: BrandAnalyticsData) => void;
+  signal?: AbortSignal;
 } = {}): Promise<BrandAnalyticsData> {
   const qs = new URLSearchParams();
   if (params.accountId) qs.set("accountId", params.accountId);
   if (params.dateRange) qs.set("dateRange", params.dateRange);
 
   async function fetchReport<T>(report: string, key: string): Promise<T | null> {
+    if (params.signal?.aborted) return null;
     const rqs = new URLSearchParams(qs);
     rqs.set("report", report);
     try {
-      const res = await fetch(`${BASE}/api/brand-analytics?${rqs}`);
+      const res = await fetch(`${BASE}/api/brand-analytics?${rqs}`, { signal: params.signal });
       const json = await res.json();
       if (isMockSignal(json)) return null;
       if (!res.ok) return null;
@@ -237,36 +239,36 @@ export async function fetchBrandAnalytics(params: {
     }
   }
 
-  // If caller wants background upgrade, fire each report independently
-  // and call onLiveData progressively as each completes
-  if (params.onLiveData) {
-    const live: { searchTerms: SearchTermRow[] | null; sqp: SQPRow[] | null; catalogPerformance: CatalogPerformanceRow[] | null } = {
-      searchTerms: null, sqp: null, catalogPerformance: null,
-    };
+  const live: { searchTerms: SearchTermRow[] | null; sqp: SQPRow[] | null; catalogPerformance: CatalogPerformanceRow[] | null } = {
+    searchTerms: null, sqp: null, catalogPerformance: null,
+  };
 
-    const pushUpdate = () => {
-      if (!live.searchTerms && !live.sqp && !live.catalogPerformance) return;
-      params.onLiveData!({
-        searchTerms: live.searchTerms ?? mockSearchTerms,
-        sqp: live.sqp ?? mockSQP,
-        catalogPerformance: live.catalogPerformance ?? mockCatalogPerformance,
-        _source: "live",
-      });
-    };
+  const pushUpdate = () => {
+    if (params.signal?.aborted) return;
+    params.onUpdate?.({
+      searchTerms: live.searchTerms ?? mockSearchTerms,
+      sqp: live.sqp ?? mockSQP,
+      catalogPerformance: live.catalogPerformance ?? mockCatalogPerformance,
+      _source: (live.searchTerms || live.sqp || live.catalogPerformance) ? "live" : "mock",
+    });
+  };
 
-    fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance")
-      .then((r) => { if (r && r.length) { live.catalogPerformance = r; pushUpdate(); } })
-      .catch(() => {});
-    fetchReport<SearchTermRow[]>("search-terms", "searchTerms")
-      .then((r) => { if (r && r.length) { live.searchTerms = r; pushUpdate(); } })
-      .catch(() => {});
-    fetchReport<SQPRow[]>("sqp", "sqp")
-      .then((r) => { if (r && r.length) { live.sqp = r; pushUpdate(); } })
-      .catch(() => {});
-  }
+  // Fire all 3 independently — push updates as each completes
+  const catalogP = fetchReport<CatalogPerformanceRow[]>("catalog", "catalogPerformance")
+    .then((r) => { if (r?.length) { live.catalogPerformance = r; pushUpdate(); } });
+  const searchP = fetchReport<SearchTermRow[]>("search-terms", "searchTerms")
+    .then((r) => { if (r?.length) { live.searchTerms = r; pushUpdate(); } });
+  const sqpP = fetchReport<SQPRow[]>("sqp", "sqp")
+    .then((r) => { if (r?.length) { live.sqp = r; pushUpdate(); } });
 
-  // Return mock data instantly
-  return getMockBrandAnalytics();
+  await Promise.allSettled([catalogP, searchP, sqpP]);
+
+  return {
+    searchTerms: live.searchTerms ?? mockSearchTerms,
+    sqp: live.sqp ?? mockSQP,
+    catalogPerformance: live.catalogPerformance ?? mockCatalogPerformance,
+    _source: (live.searchTerms || live.sqp || live.catalogPerformance) ? "live" : "mock",
+  };
 }
 
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────

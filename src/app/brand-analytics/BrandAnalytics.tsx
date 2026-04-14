@@ -37,29 +37,39 @@ export default function BrandAnalyticsPage() {
   const { activeAccount } = useAccount();
   const accountId = activeAccount?.id ?? "";
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
       const result = await fetchBrandAnalytics({
         accountId: accountId || undefined,
         dateRange,
-        onLiveData: (liveData) => {
-          // Upgrade from mock to live if real data arrives
+        signal,
+        onUpdate: (liveData) => {
+          if (signal?.aborted) return;
           setData(liveData);
-          setIsMock(false);
+          setIsMock(liveData._source === "mock");
+          setLoading(false);
         },
       });
-      setData(result);
-      setIsMock(result._source === "mock");
+      if (!signal?.aborted) {
+        setData(result);
+        setIsMock(result._source === "mock");
+        setLoading(false);
+      }
     } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setError(String(e));
+        setLoading(false);
+      }
     }
   }, [accountId, dateRange]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
   // Reset sort when switching tabs
   useEffect(() => { setSortCol(""); setSortDir("asc"); setSearch(""); }, [subTab]);
@@ -98,7 +108,7 @@ export default function BrandAnalyticsPage() {
             </select>
 
             <button
-              onClick={load}
+              onClick={() => load()}
               disabled={loading}
               style={{
                 padding: "6px 12px", borderRadius: 6,
@@ -125,7 +135,7 @@ export default function BrandAnalyticsPage() {
             fontSize: 13, color: "#ef4444",
           }}>
             {error}
-            <button onClick={load} style={{ marginLeft: 12, color: "#6366f1", background: "transparent", border: "none", cursor: "pointer", fontSize: 12 }}>
+            <button onClick={() => load()} style={{ marginLeft: 12, color: "#6366f1", background: "transparent", border: "none", cursor: "pointer", fontSize: 12 }}>
               Retry
             </button>
           </div>
@@ -262,6 +272,19 @@ const tdStyle: React.CSSProperties = {
 };
 
 const numTd: React.CSSProperties = { ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" };
+
+/** Inline horizontal bar showing value relative to max — gives visual trend across rows */
+function MetricBar({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+      <span style={{ fontSize: 12, color: "#e2e8f0", fontVariantNumeric: "tabular-nums", minWidth: 36, textAlign: "right" }}>{label}</span>
+      <div style={{ width: 50, height: 6, borderRadius: 3, background: "#1c2333", overflow: "hidden", flexShrink: 0 }}>
+        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: color, transition: "width 0.3s" }} />
+      </div>
+    </div>
+  );
+}
 const numTh: React.CSSProperties = { ...thStyle, textAlign: "right" };
 
 function SortArrow({ col, sortCol, sortDir }: { col: string; sortCol: string; sortDir: "asc" | "desc" }) {
@@ -493,8 +516,16 @@ function CatalogTable({
       if (e) { e.impressions += row.impressions; e.clicks += row.clicks; e.addToCarts += row.addToCarts; e.purchases += row.purchases; }
       else map.set(row.asin, { asin: row.asin, title: row.productTitle, brand: row.brandName, impressions: row.impressions, clicks: row.clicks, addToCarts: row.addToCarts, purchases: row.purchases });
     }
-    return Array.from(map.values()).sort((a, b) => b.impressions - a.impressions).slice(0, 5);
+    return Array.from(map.values()).sort((a, b) => b.purchases - a.purchases).slice(0, 5);
   }, [rows, filtered, brandFilter]);
+
+  // Max values for relative bars
+  const maxes = useMemo(() => ({
+    impressions: Math.max(...filtered.map((r) => r.impressions), 1),
+    clicks: Math.max(...filtered.map((r) => r.clicks), 1),
+    addToCarts: Math.max(...filtered.map((r) => r.addToCarts), 1),
+    purchases: Math.max(...filtered.map((r) => r.purchases), 1),
+  }), [filtered]);
 
   return (
     <>
@@ -580,11 +611,11 @@ function CatalogTable({
                         <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 500, background: "rgba(99,102,241,0.1)", color: "#a78bfa" }}>{row.brandName}</span>
                       ) : <span style={{ color: "#555f6e" }}>--</span>}
                     </td>
-                    <td style={numTd}>{fmt(row.impressions, "compact")}</td>
-                    <td style={numTd}>{fmt(row.clicks, "number")}</td>
-                    <td style={numTd}>{fmt(row.addToCarts, "number")}</td>
+                    <td style={numTd}><MetricBar value={row.impressions} max={maxes.impressions} color="#6366f1" label={fmt(row.impressions, "compact")} /></td>
+                    <td style={numTd}><MetricBar value={row.clicks} max={maxes.clicks} color="#8b5cf6" label={fmt(row.clicks, "number")} /></td>
+                    <td style={numTd}><MetricBar value={row.addToCarts} max={maxes.addToCarts} color="#a78bfa" label={fmt(row.addToCarts, "number")} /></td>
                     <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
-                    <td style={numTd}>{row.purchases}</td>
+                    <td style={numTd}><MetricBar value={row.purchases} max={maxes.purchases} color="#22c55e" label={String(row.purchases)} /></td>
                     <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                     <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
                   </tr>
