@@ -479,15 +479,19 @@ function normaliseCatalog(raw: Record<string, unknown>): CatalogPerformanceRow[]
     const click = r.clickData as Record<string, unknown> | undefined;
     const cart = r.cartAddData as Record<string, unknown> | undefined;
     const purchase = r.purchaseData as Record<string, unknown> | undefined;
+    const sales = purchase?.searchTrafficSales as Record<string, unknown> | undefined;
     return {
-      asin:         String(r.asin ?? ""),
-      productTitle: String(r.productTitle ?? ""),
-      searchQuery:  String(r.searchQuery ?? r.queryString ?? ""),
-      impressions:  Number(impr?.impressionCount ?? r.impressions ?? 0),
-      clicks:       Number(click?.clickCount ?? r.clicks ?? 0),
-      addToCarts:   Number(cart?.cartAddCount ?? r.addToCarts ?? r.cartAdds ?? 0),
-      purchases:    Number(purchase?.purchaseCount ?? r.purchases ?? 0),
-      clickRate:    Number(click?.clickRate ?? 0),
+      asin:           String(r.asin ?? ""),
+      productTitle:   String(r.productTitle ?? ""),
+      brandName:      String(r.brandName ?? ""),
+      searchQuery:    String(r.searchQuery ?? r.queryString ?? ""),
+      impressions:    Number(impr?.impressionCount ?? r.impressions ?? 0),
+      clicks:         Number(click?.clickCount ?? r.clicks ?? 0),
+      addToCarts:     Number(cart?.cartAddCount ?? r.addToCarts ?? r.cartAdds ?? 0),
+      purchases:      Number(purchase?.purchaseCount ?? r.purchases ?? 0),
+      clickRate:      Number(click?.clickRate ?? 0),
+      conversionRate: Number(purchase?.conversionRate ?? 0),
+      salesAmount:    Number(sales?.amount ?? 0),
     };
   });
 }
@@ -509,6 +513,6 @@ export async function fetchCatalogPerformanceReport(
   const raw = await pollAndDownload<Record<string, unknown>>(accountId, reportId);
   const dataArr = (raw.dataByAsin ?? []) as unknown[];
   console.log("[brand-analytics] Catalog: dataByAsin has", dataArr.length, "rows");
-  if (dataArr.length > 0) console.log("[brand-analytics] Catalog first row:", JSON.stringify(dataArr[0]).slice(0, 500));
+  if (dataArr.length > 0) console.log("[brand-analytics] Catalog first row:", JSON.stringify(dataArr[0]));
   return normaliseCatalog(raw);
 }

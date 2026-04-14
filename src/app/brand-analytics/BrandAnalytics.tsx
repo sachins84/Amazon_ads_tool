@@ -460,87 +460,90 @@ function CatalogTable({
   sortDir: "asc" | "desc";
   onSort: (col: string) => void;
 }) {
+  const [brandFilter, setBrandFilter] = useState("ALL");
+
+  // Get unique brands for filter
+  const brands = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of rows) if (row.brandName) set.add(row.brandName);
+    return Array.from(set).sort();
+  }, [rows]);
+
   const filtered = useMemo(() => {
     let r = rows;
+    if (brandFilter !== "ALL") r = r.filter((row) => row.brandName === brandFilter);
     if (search) {
       const q = search.toLowerCase();
       r = r.filter((row) =>
         row.asin.toLowerCase().includes(q) ||
         row.productTitle.toLowerCase().includes(q) ||
+        row.brandName.toLowerCase().includes(q) ||
         row.searchQuery.toLowerCase().includes(q)
       );
     }
     return sortRows(r, sortCol, sortDir);
-  }, [rows, search, sortCol, sortDir]);
+  }, [rows, search, sortCol, sortDir, brandFilter]);
 
-  // Check if we have per-query data or ASIN-level only
-  const hasQueryData = useMemo(() => rows.some((r) => r.searchQuery), [rows]);
-
-  // Top ASINs summary cards (always show)
+  // Top ASINs summary
   const asinSummary = useMemo(() => {
-    const map = new Map<string, { asin: string; title: string; impressions: number; clicks: number; addToCarts: number; purchases: number; count: number }>();
-    for (const row of rows) {
-      const existing = map.get(row.asin);
-      if (existing) {
-        existing.impressions += row.impressions;
-        existing.clicks += row.clicks;
-        existing.addToCarts += row.addToCarts;
-        existing.purchases += row.purchases;
-        existing.count += 1;
-      } else {
-        map.set(row.asin, {
-          asin: row.asin,
-          title: row.productTitle,
-          impressions: row.impressions,
-          clicks: row.clicks,
-          addToCarts: row.addToCarts,
-          purchases: row.purchases,
-          count: 1,
-        });
-      }
+    const src = brandFilter !== "ALL" ? filtered : rows;
+    const map = new Map<string, { asin: string; title: string; brand: string; impressions: number; clicks: number; addToCarts: number; purchases: number }>();
+    for (const row of src) {
+      const e = map.get(row.asin);
+      if (e) { e.impressions += row.impressions; e.clicks += row.clicks; e.addToCarts += row.addToCarts; e.purchases += row.purchases; }
+      else map.set(row.asin, { asin: row.asin, title: row.productTitle, brand: row.brandName, impressions: row.impressions, clicks: row.clicks, addToCarts: row.addToCarts, purchases: row.purchases });
     }
     return Array.from(map.values()).sort((a, b) => b.impressions - a.impressions).slice(0, 5);
-  }, [rows]);
+  }, [rows, filtered, brandFilter]);
 
   return (
     <>
-      {/* Top ASINs summary */}
+      {/* Brand filter pills */}
+      {brands.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+          <button onClick={() => setBrandFilter("ALL")} style={{
+            padding: "5px 14px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer",
+            background: brandFilter === "ALL" ? "#6366f1" : "#1c2333",
+            border: `1px solid ${brandFilter === "ALL" ? "#6366f1" : "#2a3245"}`,
+            color: brandFilter === "ALL" ? "#fff" : "#8892a4",
+          }}>All Brands</button>
+          {brands.map((b) => (
+            <button key={b} onClick={() => setBrandFilter(brandFilter === b ? "ALL" : b)} style={{
+              padding: "5px 14px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer",
+              background: brandFilter === b ? "#6366f1" : "#1c2333",
+              border: `1px solid ${brandFilter === b ? "#6366f1" : "#2a3245"}`,
+              color: brandFilter === b ? "#fff" : "#8892a4",
+            }}>{b}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Top ASINs summary cards */}
       <div style={{ display: "flex", gap: 10, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
-        {asinSummary.map((a) => (
-          <div key={a.asin} style={{
-            background: "#161b27", border: "1px solid #2a3245", borderRadius: 8,
-            padding: "12px 16px", minWidth: 200, flex: "0 0 auto",
-          }}>
-            <div style={{ fontSize: 11, fontFamily: "monospace", color: "#a78bfa", marginBottom: 4 }}>{a.asin}</div>
-            <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 8, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {a.title}
-            </div>
-            <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
-              <div>
-                <div style={{ color: "#555f6e" }}>Impr</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(a.impressions, "compact")}</div>
-              </div>
-              <div>
-                <div style={{ color: "#555f6e" }}>Clicks</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(a.clicks, "compact")}</div>
-              </div>
-              <div>
-                <div style={{ color: "#555f6e" }}>ATC</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{a.addToCarts}</div>
-              </div>
-              <div>
-                <div style={{ color: "#555f6e" }}>Purchases</div>
-                <div style={{ color: "#e2e8f0", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{a.purchases}</div>
+        {asinSummary.map((a) => {
+          const cvr = a.impressions > 0 ? (a.purchases / a.impressions * 100) : 0;
+          const atcPct = a.impressions > 0 ? (a.addToCarts / a.impressions * 100) : 0;
+          return (
+            <div key={a.asin} style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 8, padding: "12px 16px", minWidth: 220, flex: "0 0 auto" }}>
+              <div style={{ fontSize: 11, fontFamily: "monospace", color: "#a78bfa", marginBottom: 2 }}>{a.asin}</div>
+              {a.title && <div style={{ fontSize: 11, color: "#e2e8f0", marginBottom: 2, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</div>}
+              {a.brand && <div style={{ fontSize: 10, color: "#8892a4", marginBottom: 6 }}>{a.brand}</div>}
+              <div style={{ display: "flex", gap: 10, fontSize: 11, flexWrap: "wrap" }}>
+                <div><div style={{ color: "#555f6e" }}>Views</div><div style={{ color: "#e2e8f0", fontWeight: 600 }}>{fmt(a.impressions, "compact")}</div></div>
+                <div><div style={{ color: "#555f6e" }}>CVR</div><div style={{ color: cvr > 0.5 ? "#22c55e" : "#f59e0b", fontWeight: 600 }}>{cvr.toFixed(2)}%</div></div>
+                <div><div style={{ color: "#555f6e" }}>ATC%</div><div style={{ color: "#e2e8f0", fontWeight: 600 }}>{atcPct.toFixed(1)}%</div></div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
+      {/* Main table */}
       <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a3245", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: 12, color: "#8892a4" }}>
-            <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{filtered.length.toLocaleString()}</span> {hasQueryData ? "ASIN x keyword rows" : "ASINs"}
+            <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{filtered.length.toLocaleString()}</span> ASINs
+            {brandFilter !== "ALL" && <span style={{ color: "#6366f1", marginLeft: 6 }}>{brandFilter}</span>}
           </span>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -548,46 +551,47 @@ function CatalogTable({
             <thead>
               <tr>
                 <th style={thStyle} onClick={() => onSort("asin")}>ASIN<SortArrow col="asin" sortCol={sortCol} sortDir={sortDir} /></th>
-                {hasQueryData && <th style={thStyle} onClick={() => onSort("productTitle")}>Product Title<SortArrow col="productTitle" sortCol={sortCol} sortDir={sortDir} /></th>}
-                {hasQueryData && <th style={thStyle} onClick={() => onSort("searchQuery")}>Search Query<SortArrow col="searchQuery" sortCol={sortCol} sortDir={sortDir} /></th>}
-                <th style={numTh} onClick={() => onSort("impressions")}>Impressions<SortArrow col="impressions" sortCol={sortCol} sortDir={sortDir} /></th>
+                <th style={thStyle} onClick={() => onSort("productTitle")}>Product<SortArrow col="productTitle" sortCol={sortCol} sortDir={sortDir} /></th>
+                <th style={thStyle} onClick={() => onSort("brandName")}>Brand<SortArrow col="brandName" sortCol={sortCol} sortDir={sortDir} /></th>
+                <th style={numTh} onClick={() => onSort("impressions")}>Page Views<SortArrow col="impressions" sortCol={sortCol} sortDir={sortDir} /></th>
                 <th style={numTh} onClick={() => onSort("clicks")}>Clicks<SortArrow col="clicks" sortCol={sortCol} sortDir={sortDir} /></th>
-                <th style={numTh} onClick={() => onSort("addToCarts")}>Add to Cart<SortArrow col="addToCarts" sortCol={sortCol} sortDir={sortDir} /></th>
+                <th style={numTh} onClick={() => onSort("addToCarts")}>ATC<SortArrow col="addToCarts" sortCol={sortCol} sortDir={sortDir} /></th>
+                <th style={numTh}>ATC %</th>
                 <th style={numTh} onClick={() => onSort("purchases")}>Purchases<SortArrow col="purchases" sortCol={sortCol} sortDir={sortDir} /></th>
+                <th style={numTh}>CVR</th>
+                <th style={numTh}>%P (P/ATC)</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((row, i) => {
-                const ctr = row.impressions > 0 ? (row.clicks / row.impressions * 100) : 0;
-                const cvr = row.clicks > 0 ? (row.purchases / row.clicks * 100) : 0;
+                const cvr = row.impressions > 0 ? (row.purchases / row.impressions * 100) : 0;
+                const atcPct = row.impressions > 0 ? (row.addToCarts / row.impressions * 100) : 0;
+                const pPct = row.addToCarts > 0 ? (row.purchases / row.addToCarts * 100) : 0;
                 return (
                   <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                     <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
-                    {hasQueryData && (
-                      <td style={{ ...tdStyle, maxWidth: 220 }}>
-                        <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{row.productTitle}</span>
-                      </td>
-                    )}
-                    {hasQueryData && (
-                      <td style={{ ...tdStyle, fontWeight: 500, maxWidth: 220 }}>
-                        <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{row.searchQuery}</span>
-                      </td>
-                    )}
+                    <td style={{ ...tdStyle, maxWidth: 240 }}>
+                      <span style={{ display: "inline-block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {row.productTitle || <span style={{ color: "#555f6e" }}>--</span>}
+                      </span>
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: 11 }}>
+                      {row.brandName ? (
+                        <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 500, background: "rgba(99,102,241,0.1)", color: "#a78bfa" }}>{row.brandName}</span>
+                      ) : <span style={{ color: "#555f6e" }}>--</span>}
+                    </td>
                     <td style={numTd}>{fmt(row.impressions, "compact")}</td>
-                    <td style={numTd}>
-                      {fmt(row.clicks, "number")}
-                      <span style={{ fontSize: 10, color: "#555f6e", marginLeft: 4 }}>{ctr.toFixed(1)}%</span>
-                    </td>
+                    <td style={numTd}>{fmt(row.clicks, "number")}</td>
                     <td style={numTd}>{fmt(row.addToCarts, "number")}</td>
-                    <td style={numTd}>
-                      {row.purchases}
-                      <span style={{ fontSize: 10, color: cvr > 5 ? "#22c55e" : "#555f6e", marginLeft: 4 }}>{cvr.toFixed(1)}%</span>
-                    </td>
+                    <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
+                    <td style={numTd}>{row.purchases}</td>
+                    <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
+                    <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={hasQueryData ? 7 : 5} style={{ ...tdStyle, textAlign: "center", color: "#555f6e", padding: 32 }}>No catalog data found</td></tr>
+                <tr><td colSpan={10} style={{ ...tdStyle, textAlign: "center", color: "#555f6e", padding: 32 }}>No catalog data found</td></tr>
               )}
             </tbody>
           </table>

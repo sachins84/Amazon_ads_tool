@@ -203,6 +203,9 @@ const mockAsins = [
   "B0C12MKLP4", "B08QZP1RVN", "B09XRTY4MK", "B0A3FGHJ12", "B07PLQ8NMT",
 ];
 
+const mockBrands = ["Man Matters", "Be Bodywise", "Little Joys", "Man Matters", "Be Bodywise",
+  "Little Joys", "Man Matters", "Be Bodywise", "Little Joys", "Man Matters"];
+
 const productTitles: Record<string, string> = {
   "B07XQ1N2X3": "Men's Running Shoes Lightweight Breathable",
   "B08K3NGLYQ": "Premium Yoga Mat 6mm Non-Slip",
@@ -258,14 +261,19 @@ for (const asin of mockAsins) {
   for (const q of queriesForAsin) {
     const impr = Math.round(rnd(200, 25000));
     const clicks = Math.round(impr * rnd(0.01, 0.05));
+    const purchases = Math.round(clicks * rnd(0.02, 0.15));
+    const addToCarts = Math.round(clicks * rnd(0.1, 0.4));
     mockCatalogPerformance.push({
       asin,
       productTitle: productTitles[asin] ?? asin,
+      brandName: mockBrands[mockAsins.indexOf(asin)] ?? "Man Matters",
       searchQuery: q,
       impressions: impr,
       clicks,
-      addToCarts: Math.round(clicks * rnd(0.1, 0.4)),
-      purchases: Math.round(clicks * rnd(0.02, 0.15)),
+      addToCarts,
+      purchases,
+      conversionRate: impr > 0 ? Math.round((purchases / impr) * 10000) / 10000 : 0,
+      salesAmount: Math.round(purchases * rnd(200, 800)),
     });
   }
 }

@@ -80,9 +80,24 @@ export async function GET(req: NextRequest) {
       case "sqp":
         data = { sqp: await fetchSQPReport(marketplaceId, startDate, endDate, accountId || undefined, datePreset) };
         break;
-      case "catalog":
-        data = { catalogPerformance: await fetchCatalogPerformanceReport(marketplaceId, startDate, endDate, accountId || undefined, datePreset) };
+      case "catalog": {
+        const rows = await fetchCatalogPerformanceReport(marketplaceId, startDate, endDate, accountId || undefined, datePreset);
+        // Enrich with product titles and brand names
+        if (rows.length > 0) {
+          const { lookupAsins } = await import("@/lib/sp-api/catalog");
+          const asins = [...new Set(rows.map((r) => r.asin).filter(Boolean))];
+          const asinInfo = await lookupAsins(asins, marketplaceId, accountId || undefined);
+          for (const row of rows) {
+            const info = asinInfo.get(row.asin);
+            if (info) {
+              row.productTitle = info.title;
+              row.brandName = info.brand;
+            }
+          }
+        }
+        data = { catalogPerformance: rows };
         break;
+      }
       default:
         return Response.json({ error: `Unknown report: ${report}` }, { status: 400 });
     }

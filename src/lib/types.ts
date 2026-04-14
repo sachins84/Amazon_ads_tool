@@ -121,12 +121,15 @@ export interface SQPRow {
 export interface CatalogPerformanceRow {
   asin: string;
   productTitle: string;
+  brandName: string;
   searchQuery: string;
   impressions: number;
   clicks: number;
   addToCarts: number;
   purchases: number;
   clickRate?: number;
+  conversionRate?: number;    // purchases / impressions (from SP-API)
+  salesAmount?: number;       // searchTrafficSales in INR
 }
 
 export interface BrandAnalyticsData {
