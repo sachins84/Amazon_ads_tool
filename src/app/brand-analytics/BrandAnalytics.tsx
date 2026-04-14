@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import TopNav from "@/components/shared/TopNav";
 import MockBanner from "@/components/shared/MockBanner";
 import { TableRowSkeleton } from "@/components/shared/Skeleton";
@@ -272,6 +272,15 @@ const tdStyle: React.CSSProperties = {
 
 const numTd: React.CSSProperties = { ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
+/** Aligned metric cell: value + delta + trend icon in a single row */
+function MC({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2, flexWrap: "nowrap" }}>
+      {children}
+    </div>
+  );
+}
+
 /** SVG sparkline for trend data */
 function Sparkline({ data, color, width = 160, height = 40 }: { data: number[]; color: string; width?: number; height?: number }) {
   if (data.length < 2) return null;
@@ -315,53 +324,75 @@ function TrendIcon({ trendData, label, periodLabel, suffix }: {
   suffix?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+  const [dropDown, setDropDown] = useState(false);
+
   if (!trendData || trendData.length < 2) return null;
   const current = trendData[trendData.length - 1];
   const previous = trendData[trendData.length - 2];
   const delta = previous > 0 ? ((current - previous) / previous * 100) : 0;
   const up = delta > 0;
   const weekLabels = trendData.map((_, i) => `W${i - trendData.length + 1}`).map((l, i, a) => i === a.length - 1 ? "Now" : l);
+
+  const handleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropDown(rect.top < 260);
+    }
+    setOpen(!open);
+  };
+
   return (
-    <span style={{ position: "relative", display: "inline-block" }}>
+    <span style={{ position: "relative", display: "inline-block", verticalAlign: "middle" }}>
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        ref={btnRef}
+        onClick={handleOpen}
         style={{
-          background: "transparent", border: "none", cursor: "pointer", padding: "0 2px",
-          color: "#555f6e", fontSize: 11, lineHeight: 1, verticalAlign: "middle",
+          background: "transparent", border: "none", cursor: "pointer",
+          padding: "1px 3px", color: "#555f6e", fontSize: 10, lineHeight: 1,
+          verticalAlign: "middle", borderRadius: 3,
         }}
-        title={`${periodLabel ?? "WoW"} trend for ${label}`}
+        title={`${periodLabel ?? "WoW"} trend`}
       >
         {"\uD83D\uDD0D"}
       </button>
       {open && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: "absolute", bottom: "100%", right: 0, marginBottom: 6,
-            background: "#1c2333", border: "1px solid #2a3245", borderRadius: 10,
-            padding: "12px 16px", zIndex: 100, minWidth: 240,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{label}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
-              {up ? "\u2191" : "\u2193"}{Math.abs(delta).toFixed(1)}% {periodLabel ?? "WoW"}
-            </span>
+        <>
+          {/* Backdrop to close on outside click */}
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              ...(dropDown
+                ? { top: "100%", marginTop: 6 }
+                : { bottom: "100%", marginBottom: 6 }),
+              right: 0,
+              background: "#1c2333", border: "1px solid #2a3245", borderRadius: 10,
+              padding: "12px 16px", zIndex: 200, width: 250,
+              boxShadow: "0 12px 32px rgba(0,0,0,0.6)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{label}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
+                {up ? "\u2191" : "\u2193"}{Math.abs(delta).toFixed(1)}% {periodLabel ?? "WoW"}
+              </span>
+            </div>
+            <Sparkline data={trendData} color={up ? "#22c55e" : "#ef4444"} width={218} height={50} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, color: "#555f6e" }}>
+              {weekLabels.map((l, i) => <span key={i}>{l}</span>)}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2, fontSize: 10, color: "#8892a4" }}>
+              {trendData.map((v, i) => (
+                <span key={i} style={{ fontWeight: i === trendData.length - 1 ? 600 : 400, color: i === trendData.length - 1 ? "#e2e8f0" : "#8892a4" }}>
+                  {fmt(v, v >= 1000 ? "compact" : "number")}{suffix ?? ""}
+                </span>
+              ))}
+            </div>
           </div>
-          {/* Sparkline chart */}
-          <Sparkline data={trendData} color={up ? "#22c55e" : "#ef4444"} width={210} height={50} />
-          {/* Week labels */}
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, color: "#555f6e" }}>
-            {weekLabels.map((l, i) => <span key={i}>{l}</span>)}
-          </div>
-          {/* Values row */}
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2, fontSize: 10, color: "#8892a4" }}>
-            {trendData.map((v, i) => <span key={i} style={{ fontWeight: i === trendData.length - 1 ? 600 : 400, color: i === trendData.length - 1 ? "#e2e8f0" : "#8892a4" }}>{fmt(v, v >= 1000 ? "compact" : "number")}{suffix ?? ""}</span>)}
-          </div>
-          {/* Close */}
-          <button onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "absolute", top: 6, right: 8, background: "transparent", border: "none", color: "#555f6e", cursor: "pointer", fontSize: 12 }}>x</button>
-        </div>
+        </>
       )}
     </span>
   );
@@ -757,33 +788,27 @@ function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabe
                     const t = weeklyTrends[row.asin];
                     return (<>
                       <td style={{ ...numTd, background: "rgba(99,102,241,0.04)" }}>
-                        <ShareBar value={viewShr} color="#6366f1" />
-                        <TrendIcon trendData={t?.impressions.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
+                        <MC><ShareBar value={viewShr} color="#6366f1" /><TrendIcon trendData={t?.impressions.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" /></MC>
                       </td>
                       <td style={{ ...numTd, background: "rgba(34,197,94,0.04)" }}>
-                        <ShareBar value={purchShr} color="#22c55e" />
-                        <TrendIcon trendData={t?.purchases.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
+                        <MC><ShareBar value={purchShr} color="#22c55e" /><TrendIcon trendData={t?.purchases.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" /></MC>
                       </td>
                       <td style={numTd}>
-                        <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
-                        {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
-                        <TrendIcon trendData={t?.impressions ?? []} label="Page Views" periodLabel={periodLabel} />
+                        <MC>
+                          <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
+                          {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                          <TrendIcon trendData={t?.impressions ?? []} label="Page Views" periodLabel={periodLabel} />
+                        </MC>
                       </td>
                       <td style={numTd}>
-                        {fmt(row.clicks, "number")}
-                        {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
-                        <TrendIcon trendData={t?.clicks ?? []} label="Clicks" periodLabel={periodLabel} />
+                        <MC>{fmt(row.clicks, "number")}{prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}<TrendIcon trendData={t?.clicks ?? []} label="Clicks" periodLabel={periodLabel} /></MC>
                       </td>
                       <td style={numTd}>
-                        {fmt(row.addToCarts, "number")}
-                        {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
-                        <TrendIcon trendData={t?.addToCarts ?? []} label="ATC" periodLabel={periodLabel} />
+                        <MC>{fmt(row.addToCarts, "number")}{prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}<TrendIcon trendData={t?.addToCarts ?? []} label="ATC" periodLabel={periodLabel} /></MC>
                       </td>
                       <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
                       <td style={numTd}>
-                        {row.purchases}
-                        {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
-                        <TrendIcon trendData={t?.purchases ?? []} label="Purchases" periodLabel={periodLabel} />
+                        <MC>{row.purchases}{prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}<TrendIcon trendData={t?.purchases ?? []} label="Purchases" periodLabel={periodLabel} /></MC>
                       </td>
                       <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                       <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
@@ -861,32 +886,22 @@ function AllBrandsTable({ rows, prevMap, weeklyTrends, search, periodLabel }: {
                   const t = weeklyTrends[row.asin];
                   return (<>
                     <td style={{ ...numTd, background: "rgba(99,102,241,0.04)" }}>
-                      <ShareBar value={viewShr} color="#6366f1" />
-                      <TrendIcon trendData={t?.impressions.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
+                      <MC><ShareBar value={viewShr} color="#6366f1" /><TrendIcon trendData={t?.impressions.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" /></MC>
                     </td>
                     <td style={{ ...numTd, background: "rgba(34,197,94,0.04)" }}>
-                      <ShareBar value={purchShr} color="#22c55e" />
-                      <TrendIcon trendData={t?.purchases.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
+                      <MC><ShareBar value={purchShr} color="#22c55e" /><TrendIcon trendData={t?.purchases.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" /></MC>
                     </td>
                     <td style={numTd}>
-                      {fmt(row.impressions, "compact")}
-                      {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
-                      <TrendIcon trendData={t?.impressions ?? []} label="Page Views" periodLabel={periodLabel} />
+                      <MC>{fmt(row.impressions, "compact")}{prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}<TrendIcon trendData={t?.impressions ?? []} label="Page Views" periodLabel={periodLabel} /></MC>
                     </td>
                     <td style={numTd}>
-                      {fmt(row.clicks, "number")}
-                      {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
-                      <TrendIcon trendData={t?.clicks ?? []} label="Clicks" periodLabel={periodLabel} />
+                      <MC>{fmt(row.clicks, "number")}{prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}<TrendIcon trendData={t?.clicks ?? []} label="Clicks" periodLabel={periodLabel} /></MC>
                     </td>
                     <td style={numTd}>
-                      {fmt(row.addToCarts, "number")}
-                      {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
-                      <TrendIcon trendData={t?.addToCarts ?? []} label="ATC" periodLabel={periodLabel} />
+                      <MC>{fmt(row.addToCarts, "number")}{prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}<TrendIcon trendData={t?.addToCarts ?? []} label="ATC" periodLabel={periodLabel} /></MC>
                     </td>
                     <td style={numTd}>
-                      {row.purchases}
-                      {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
-                      <TrendIcon trendData={t?.purchases ?? []} label="Purchases" periodLabel={periodLabel} />
+                      <MC>{row.purchases}{prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}<TrendIcon trendData={t?.purchases ?? []} label="Purchases" periodLabel={periodLabel} /></MC>
                     </td>
                     <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                     <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
