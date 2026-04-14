@@ -271,6 +271,65 @@ const tdStyle: React.CSSProperties = {
 
 const numTd: React.CSSProperties = { ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
+/** Magnifying glass icon that opens a WoW trend tooltip */
+function TrendIcon({ current, previous, label, periodLabel }: { current: number; previous: number; label: string; periodLabel?: string }) {
+  const [open, setOpen] = useState(false);
+  if (!previous) return null;
+  const delta = previous > 0 ? ((current - previous) / previous * 100) : 0;
+  const up = delta > 0;
+  const max = Math.max(current, previous, 1);
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        style={{
+          background: "transparent", border: "none", cursor: "pointer", padding: "0 2px",
+          color: "#555f6e", fontSize: 11, lineHeight: 1, verticalAlign: "middle",
+        }}
+        title={`${periodLabel ?? "WoW"} trend for ${label}`}
+      >
+        {"\uD83D\uDD0D"}
+      </button>
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", bottom: "100%", right: 0, marginBottom: 6,
+            background: "#1c2333", border: "1px solid #2a3245", borderRadius: 8,
+            padding: "10px 14px", zIndex: 100, minWidth: 200,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>{label} — {periodLabel ?? "WoW"}</div>
+          {/* Current period bar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 10, color: "#8892a4", width: 55 }}>Current</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#0d1117", overflow: "hidden" }}>
+              <div style={{ width: `${(current / max) * 100}%`, height: "100%", borderRadius: 4, background: "#6366f1", transition: "width 0.3s" }} />
+            </div>
+            <span style={{ fontSize: 11, color: "#e2e8f0", fontWeight: 600, minWidth: 50, textAlign: "right" }}>{fmt(current, current >= 1000 ? "compact" : "number")}</span>
+          </div>
+          {/* Previous period bar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, color: "#555f6e", width: 55 }}>Previous</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#0d1117", overflow: "hidden" }}>
+              <div style={{ width: `${(previous / max) * 100}%`, height: "100%", borderRadius: 4, background: "#555f6e", transition: "width 0.3s" }} />
+            </div>
+            <span style={{ fontSize: 11, color: "#8892a4", minWidth: 50, textAlign: "right" }}>{fmt(previous, previous >= 1000 ? "compact" : "number")}</span>
+          </div>
+          {/* Delta */}
+          <div style={{ fontSize: 12, fontWeight: 600, color: up ? "#22c55e" : "#ef4444", textAlign: "center" }}>
+            {up ? "\u2191" : "\u2193"} {Math.abs(delta).toFixed(1)}% {up ? "increase" : "decrease"}
+          </div>
+          <div style={{ fontSize: 10, color: "#555f6e", textAlign: "center", marginTop: 2 }}>
+            {up ? "+" : ""}{(current - previous).toLocaleString()} units
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
 /** Inline horizontal bar showing value relative to max — gives visual trend across rows */
 function MetricBar({ value, max, color, label }: { value: number; max: number; color: string; label: string }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
@@ -584,6 +643,7 @@ function BrandProductView({
           prevMap={prevMap}
           periodLabel={periodLabel}
           color={BRAND_COLORS[expandedBrand] ?? "#8892a4"}
+          totals={totals}
         />
       )}
 
@@ -595,19 +655,20 @@ function BrandProductView({
               Click a brand card above to see its top products, or view <span style={{ color: "#e2e8f0", fontWeight: 600 }}>all top products</span> below
             </span>
           </div>
-          <AllBrandsTable rows={rows} prevMap={prevMap} search={search} />
+          <AllBrandsTable rows={rows} prevMap={prevMap} search={search} periodLabel={periodLabel} />
         </div>
       )}
     </>
   );
 }
 
-function BrandProductsTable({ brand, products, prevMap, periodLabel, color }: {
+function BrandProductsTable({ brand, products, prevMap, periodLabel, color, totals }: {
   brand: string;
   products: CatalogPerformanceRow[];
   prevMap: Map<string, CatalogPerformanceRow>;
   periodLabel: string;
   color: string;
+  totals: { impressions: number; clicks: number; purchases: number };
 }) {
   const maxImpr = Math.max(...products.map((r) => r.impressions), 1);
   return (
@@ -631,6 +692,8 @@ function BrandProductsTable({ brand, products, prevMap, periodLabel, color }: {
               <th style={numTh}>Purchases</th>
               <th style={numTh}>CVR</th>
               <th style={numTh}>%P</th>
+              <th style={numTh}>View Shr</th>
+              <th style={numTh}>Purch Shr</th>
             </tr>
           </thead>
           <tbody>
@@ -639,25 +702,42 @@ function BrandProductsTable({ brand, products, prevMap, periodLabel, color }: {
               const cvr = row.impressions > 0 ? (row.purchases / row.impressions * 100) : 0;
               const atcPct = row.impressions > 0 ? (row.addToCarts / row.impressions * 100) : 0;
               const pPct = row.addToCarts > 0 ? (row.purchases / row.addToCarts * 100) : 0;
+              const viewShr = totals.impressions > 0 ? (row.impressions / totals.impressions * 100) : 0;
+              const purchShr = totals.purchases > 0 ? (row.purchases / totals.purchases * 100) : 0;
               return (
                 <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                   <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
                   <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
-                  <td style={{ ...tdStyle, maxWidth: 260 }}>
-                    <span style={{ display: "inline-block", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ ...tdStyle, maxWidth: 240 }}>
+                    <span style={{ display: "inline-block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {row.productTitle || "--"}
                     </span>
                   </td>
                   <td style={numTd}>
                     <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
                     {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                    <TrendIcon current={row.impressions} previous={prev?.impressions ?? 0} label="Page Views" periodLabel={periodLabel} />
                   </td>
-                  <td style={numTd}>{fmt(row.clicks, "number")}{prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}</td>
-                  <td style={numTd}>{fmt(row.addToCarts, "number")}{prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}</td>
+                  <td style={numTd}>
+                    {fmt(row.clicks, "number")}
+                    {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
+                    <TrendIcon current={row.clicks} previous={prev?.clicks ?? 0} label="Clicks" periodLabel={periodLabel} />
+                  </td>
+                  <td style={numTd}>
+                    {fmt(row.addToCarts, "number")}
+                    {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
+                    <TrendIcon current={row.addToCarts} previous={prev?.addToCarts ?? 0} label="ATC" periodLabel={periodLabel} />
+                  </td>
                   <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
-                  <td style={numTd}>{row.purchases}{prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}</td>
+                  <td style={numTd}>
+                    {row.purchases}
+                    {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
+                    <TrendIcon current={row.purchases} previous={prev?.purchases ?? 0} label="Purchases" periodLabel={periodLabel} />
+                  </td>
                   <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                   <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                  <td style={numTd}><ShareBar value={viewShr} color="#6366f1" /></td>
+                  <td style={numTd}><ShareBar value={purchShr} color="#22c55e" /></td>
                 </tr>
               );
             })}
@@ -668,10 +748,11 @@ function BrandProductsTable({ brand, products, prevMap, periodLabel, color }: {
   );
 }
 
-function AllBrandsTable({ rows, prevMap, search }: {
+function AllBrandsTable({ rows, prevMap, search, periodLabel }: {
   rows: CatalogPerformanceRow[];
   prevMap: Map<string, CatalogPerformanceRow>;
   search: string;
+  periodLabel: string;
 }) {
   const filtered = useMemo(() => {
     let r = [...rows].sort((a, b) => b.purchases - a.purchases).slice(0, 50);
@@ -681,6 +762,9 @@ function AllBrandsTable({ rows, prevMap, search }: {
     }
     return r;
   }, [rows, search]);
+
+  const totalImpr = rows.reduce((s, r) => s + r.impressions, 0);
+  const totalPurch = rows.reduce((s, r) => s + r.purchases, 0);
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -697,6 +781,8 @@ function AllBrandsTable({ rows, prevMap, search }: {
             <th style={numTh}>Purchases</th>
             <th style={numTh}>CVR</th>
             <th style={numTh}>%P</th>
+            <th style={numTh}>View Shr</th>
+            <th style={numTh}>Purch Shr</th>
           </tr>
         </thead>
         <tbody>
@@ -705,6 +791,8 @@ function AllBrandsTable({ rows, prevMap, search }: {
             const cvr = row.impressions > 0 ? (row.purchases / row.impressions * 100) : 0;
             const pPct = row.addToCarts > 0 ? (row.purchases / row.addToCarts * 100) : 0;
             const brandColor = BRAND_COLORS[row.brandName] ?? "#555f6e";
+            const viewShr = totalImpr > 0 ? (row.impressions / totalImpr * 100) : 0;
+            const purchShr = totalPurch > 0 ? (row.purchases / totalPurch * 100) : 0;
             return (
               <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                 <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
@@ -714,15 +802,33 @@ function AllBrandsTable({ rows, prevMap, search }: {
                   ) : <span style={{ color: "#555f6e" }}>--</span>}
                 </td>
                 <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
-                <td style={{ ...tdStyle, maxWidth: 220 }}>
-                  <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.productTitle || "--"}</span>
+                <td style={{ ...tdStyle, maxWidth: 200 }}>
+                  <span style={{ display: "inline-block", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.productTitle || "--"}</span>
                 </td>
-                <td style={numTd}>{fmt(row.impressions, "compact")}{prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}</td>
-                <td style={numTd}>{fmt(row.clicks, "number")}{prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}</td>
-                <td style={numTd}>{fmt(row.addToCarts, "number")}{prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}</td>
-                <td style={numTd}>{row.purchases}{prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}</td>
+                <td style={numTd}>
+                  {fmt(row.impressions, "compact")}
+                  {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                  <TrendIcon current={row.impressions} previous={prev?.impressions ?? 0} label="Page Views" periodLabel={periodLabel} />
+                </td>
+                <td style={numTd}>
+                  {fmt(row.clicks, "number")}
+                  {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
+                  <TrendIcon current={row.clicks} previous={prev?.clicks ?? 0} label="Clicks" periodLabel={periodLabel} />
+                </td>
+                <td style={numTd}>
+                  {fmt(row.addToCarts, "number")}
+                  {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
+                  <TrendIcon current={row.addToCarts} previous={prev?.addToCarts ?? 0} label="ATC" periodLabel={periodLabel} />
+                </td>
+                <td style={numTd}>
+                  {row.purchases}
+                  {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
+                  <TrendIcon current={row.purchases} previous={prev?.purchases ?? 0} label="Purchases" periodLabel={periodLabel} />
+                </td>
                 <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                 <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                <td style={numTd}><ShareBar value={viewShr} color="#6366f1" /></td>
+                <td style={numTd}><ShareBar value={purchShr} color="#22c55e" /></td>
               </tr>
             );
           })}
