@@ -16,8 +16,8 @@ type SubTab = "search-terms" | "sqp" | "catalog";
 
 const SUB_TABS: { key: SubTab; label: string; desc: string }[] = [
   { key: "search-terms", label: "Search Terms", desc: "SFR + Top Clicked/Purchased ASINs" },
-  { key: "sqp",          label: "Search Query Performance", desc: "Brand-level keyword market share" },
-  { key: "catalog",      label: "Catalog Performance", desc: "ASIN x keyword performance" },
+  { key: "sqp",          label: "Brand & Product Performance", desc: "Brand-wise top ASINs — funnel metrics & WoW trends" },
+  { key: "catalog",      label: "Catalog Performance", desc: "ASIN-level performance with trend bars" },
 ];
 
 export default function BrandAnalyticsPage() {
@@ -216,15 +216,11 @@ export default function BrandAnalyticsPage() {
               />
             )}
             {subTab === "sqp" && data && (
-              <SQPTable
-                rows={data.sqp}
+              <BrandProductView
+                rows={data.catalogPerformance}
+                prevRows={data.previousCatalog ?? []}
+                periodLabel={data.periodLabel ?? "WoW"}
                 search={search}
-                sortCol={sortCol}
-                sortDir={sortDir}
-                onSort={(col) => {
-                  if (sortCol === col) setSortDir((d) => d === "asc" ? "desc" : "asc");
-                  else { setSortCol(col); setSortDir("asc"); }
-                }}
               />
             )}
             {subTab === "catalog" && data && (
@@ -408,68 +404,330 @@ function SearchTermsTable({
   );
 }
 
-// ─── SQP Table ───────────────────────────────────────────────────────────────
+// ─── Brand & Product Performance View ────────────────────────────────────────
 
-function SQPTable({
-  rows, search, sortCol, sortDir, onSort,
+const BRAND_COLORS: Record<string, string> = {
+  "Man Matters": "#6366f1",
+  "Be Bodywise": "#ec4899",
+  "Little Joys": "#f59e0b",
+  "Bodywise": "#8b5cf6",
+};
+
+interface BrandSummary {
+  brand: string;
+  impressions: number;
+  clicks: number;
+  addToCarts: number;
+  purchases: number;
+  asinCount: number;
+  prevImpressions: number;
+  prevClicks: number;
+  prevAddToCarts: number;
+  prevPurchases: number;
+}
+
+function BrandProductView({
+  rows, prevRows, periodLabel, search,
 }: {
-  rows: SQPRow[];
+  rows: CatalogPerformanceRow[];
+  prevRows: CatalogPerformanceRow[];
+  periodLabel: string;
   search: string;
-  sortCol: string;
-  sortDir: "asc" | "desc";
-  onSort: (col: string) => void;
 }) {
-  const filtered = useMemo(() => {
-    let r = rows;
-    if (search) {
-      const q = search.toLowerCase();
-      r = r.filter((row) => row.searchQuery.toLowerCase().includes(q));
+  const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
+
+  // Previous period map by ASIN
+  const prevMap = useMemo(() => {
+    const m = new Map<string, CatalogPerformanceRow>();
+    for (const r of prevRows) m.set(r.asin, r);
+    return m;
+  }, [prevRows]);
+
+  // Aggregate by brand
+  const brandData = useMemo(() => {
+    const map = new Map<string, BrandSummary>();
+    for (const row of rows) {
+      const b = row.brandName || "Other";
+      const existing = map.get(b);
+      if (existing) {
+        existing.impressions += row.impressions;
+        existing.clicks += row.clicks;
+        existing.addToCarts += row.addToCarts;
+        existing.purchases += row.purchases;
+        existing.asinCount += 1;
+      } else {
+        map.set(b, { brand: b, impressions: row.impressions, clicks: row.clicks, addToCarts: row.addToCarts, purchases: row.purchases, asinCount: 1, prevImpressions: 0, prevClicks: 0, prevAddToCarts: 0, prevPurchases: 0 });
+      }
     }
-    return sortRows(r, sortCol, sortDir);
-  }, [rows, search, sortCol, sortDir]);
+    // Aggregate previous period by brand
+    for (const row of prevRows) {
+      const b = row.brandName || "Other";
+      const existing = map.get(b);
+      if (existing) {
+        existing.prevImpressions += row.impressions;
+        existing.prevClicks += row.clicks;
+        existing.prevAddToCarts += row.addToCarts;
+        existing.prevPurchases += row.purchases;
+      }
+    }
+    // Sort: known brands first, then by purchases desc
+    const known = ["Man Matters", "Be Bodywise", "Little Joys"];
+    return Array.from(map.values()).sort((a, b) => {
+      const ai = known.indexOf(a.brand);
+      const bi = known.indexOf(b.brand);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return b.purchases - a.purchases;
+    });
+  }, [rows, prevRows]);
+
+  // Products per brand sorted by purchases
+  const brandProducts = useMemo(() => {
+    const map = new Map<string, CatalogPerformanceRow[]>();
+    for (const row of rows) {
+      const b = row.brandName || "Other";
+      const arr = map.get(b) ?? [];
+      arr.push(row);
+      map.set(b, arr);
+    }
+    for (const [k, v] of map) map.set(k, v.sort((a, b) => b.purchases - a.purchases));
+    return map;
+  }, [rows]);
+
+  // Total across all brands (for market share)
+  const totals = useMemo(() => {
+    return rows.reduce((acc, r) => ({
+      impressions: acc.impressions + r.impressions,
+      clicks: acc.clicks + r.clicks,
+      addToCarts: acc.addToCarts + r.addToCarts,
+      purchases: acc.purchases + r.purchases,
+    }), { impressions: 0, clicks: 0, addToCarts: 0, purchases: 0 });
+  }, [rows]);
+
+  const filteredBrands = useMemo(() => {
+    if (!search) return brandData;
+    const q = search.toLowerCase();
+    return brandData.filter((b) => b.brand.toLowerCase().includes(q));
+  }, [brandData, search]);
 
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, overflow: "hidden" }}>
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a3245", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: "#8892a4" }}>
-          <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{filtered.length.toLocaleString()}</span> search queries
-        </span>
+    <>
+      {/* Brand summary cards */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+        {filteredBrands.filter((b) => b.brand !== "Other").map((b) => {
+          const color = BRAND_COLORS[b.brand] ?? "#8892a4";
+          const cvr = b.impressions > 0 ? (b.purchases / b.impressions * 100) : 0;
+          const atcPct = b.impressions > 0 ? (b.addToCarts / b.impressions * 100) : 0;
+          const pPct = b.addToCarts > 0 ? (b.purchases / b.addToCarts * 100) : 0;
+          const mktShare = totals.purchases > 0 ? (b.purchases / totals.purchases * 100) : 0;
+          const isExpanded = expandedBrand === b.brand;
+          return (
+            <div key={b.brand}
+              onClick={() => setExpandedBrand(isExpanded ? null : b.brand)}
+              style={{
+                background: isExpanded ? "rgba(99,102,241,0.08)" : "#161b27",
+                border: `1px solid ${isExpanded ? color + "60" : "#2a3245"}`,
+                borderRadius: 10, padding: "14px 18px", minWidth: 260, cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>{b.brand}</span>
+                <span style={{ fontSize: 11, color: "#555f6e", marginLeft: "auto" }}>{b.asinCount} ASINs</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px 16px", fontSize: 11 }}>
+                <div>
+                  <div style={{ color: "#555f6e" }}>Page Views</div>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{fmt(b.impressions, "compact")}<DeltaBadge current={b.impressions} previous={b.prevImpressions} /></div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>Clicks</div>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{fmt(b.clicks, "compact")}<DeltaBadge current={b.clicks} previous={b.prevClicks} /></div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>ATC</div>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{fmt(b.addToCarts, "number")}<DeltaBadge current={b.addToCarts} previous={b.prevAddToCarts} /></div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>Purchases</div>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{b.purchases}<DeltaBadge current={b.purchases} previous={b.prevPurchases} /></div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>CVR</div>
+                  <div style={{ color: cvr > 0.5 ? "#22c55e" : "#f59e0b", fontWeight: 600 }}>{cvr.toFixed(2)}%</div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>ATC %</div>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{atcPct.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>%P (P/ATC)</div>
+                  <div style={{ color: pPct > 40 ? "#22c55e" : "#f59e0b", fontWeight: 600 }}>{pPct.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div style={{ color: "#555f6e" }}>Mkt Share</div>
+                  <div style={{ color: "#6366f1", fontWeight: 600 }}>{mktShare.toFixed(1)}%</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Expanded brand: top products table */}
+      {expandedBrand && (
+        <BrandProductsTable
+          brand={expandedBrand}
+          products={brandProducts.get(expandedBrand) ?? []}
+          prevMap={prevMap}
+          periodLabel={periodLabel}
+          color={BRAND_COLORS[expandedBrand] ?? "#8892a4"}
+        />
+      )}
+
+      {/* If no brand expanded, show all top products across brands */}
+      {!expandedBrand && (
+        <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a3245" }}>
+            <span style={{ fontSize: 12, color: "#8892a4" }}>
+              Click a brand card above to see its top products, or view <span style={{ color: "#e2e8f0", fontWeight: 600 }}>all top products</span> below
+            </span>
+          </div>
+          <AllBrandsTable rows={rows} prevMap={prevMap} search={search} />
+        </div>
+      )}
+    </>
+  );
+}
+
+function BrandProductsTable({ brand, products, prevMap, periodLabel, color }: {
+  brand: string;
+  products: CatalogPerformanceRow[];
+  prevMap: Map<string, CatalogPerformanceRow>;
+  periodLabel: string;
+  color: string;
+}) {
+  const maxImpr = Math.max(...products.map((r) => r.impressions), 1);
+  return (
+    <div style={{ background: "#161b27", border: `1px solid ${color}40`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
+      <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a3245", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{brand}</span>
+        <span style={{ fontSize: 11, color: "#555f6e" }}>{products.length} products &middot; {periodLabel} trends</span>
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={thStyle} onClick={() => onSort("searchQuery")}>Search Query<SortArrow col="searchQuery" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("totalSearchVolume")}>Search Volume<SortArrow col="totalSearchVolume" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("impressions")}>Impressions<SortArrow col="impressions" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("clicks")}>Clicks<SortArrow col="clicks" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("purchases")}>Purchases<SortArrow col="purchases" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("impressionShare")}>Impr. Share<SortArrow col="impressionShare" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("clickShare")}>Click Share<SortArrow col="clickShare" sortCol={sortCol} sortDir={sortDir} /></th>
-              <th style={numTh} onClick={() => onSort("purchaseShare")}>Purchase Share<SortArrow col="purchaseShare" sortCol={sortCol} sortDir={sortDir} /></th>
+              <th style={{ ...thStyle, width: 40 }}>#</th>
+              <th style={thStyle}>ASIN</th>
+              <th style={thStyle}>Product</th>
+              <th style={numTh}>Page Views</th>
+              <th style={numTh}>Clicks</th>
+              <th style={numTh}>ATC</th>
+              <th style={numTh}>ATC %</th>
+              <th style={numTh}>Purchases</th>
+              <th style={numTh}>CVR</th>
+              <th style={numTh}>%P</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((row, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
-                <td style={{ ...tdStyle, fontWeight: 500, maxWidth: 280 }}>
-                  <span style={{ display: "inline-block", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{row.searchQuery}</span>
-                </td>
-                <td style={numTd}>{fmt(row.totalSearchVolume, "compact")}</td>
-                <td style={numTd}>{fmt(row.impressions, "compact")}</td>
-                <td style={numTd}>{fmt(row.clicks, "compact")}</td>
-                <td style={numTd}>{fmt(row.purchases, "number")}</td>
-                <td style={numTd}><ShareBar value={row.impressionShare} color="#6366f1" /></td>
-                <td style={numTd}><ShareBar value={row.clickShare} color="#8b5cf6" /></td>
-                <td style={numTd}><ShareBar value={row.purchaseShare} color="#22c55e" /></td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#555f6e", padding: 32 }}>No search queries found</td></tr>
-            )}
+            {products.map((row, i) => {
+              const prev = prevMap.get(row.asin);
+              const cvr = row.impressions > 0 ? (row.purchases / row.impressions * 100) : 0;
+              const atcPct = row.impressions > 0 ? (row.addToCarts / row.impressions * 100) : 0;
+              const pPct = row.addToCarts > 0 ? (row.purchases / row.addToCarts * 100) : 0;
+              return (
+                <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
+                  <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
+                  <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
+                  <td style={{ ...tdStyle, maxWidth: 260 }}>
+                    <span style={{ display: "inline-block", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {row.productTitle || "--"}
+                    </span>
+                  </td>
+                  <td style={numTd}>
+                    <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
+                    {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                  </td>
+                  <td style={numTd}>{fmt(row.clicks, "number")}{prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}</td>
+                  <td style={numTd}>{fmt(row.addToCarts, "number")}{prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}</td>
+                  <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
+                  <td style={numTd}>{row.purchases}{prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}</td>
+                  <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
+                  <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function AllBrandsTable({ rows, prevMap, search }: {
+  rows: CatalogPerformanceRow[];
+  prevMap: Map<string, CatalogPerformanceRow>;
+  search: string;
+}) {
+  const filtered = useMemo(() => {
+    let r = [...rows].sort((a, b) => b.purchases - a.purchases).slice(0, 50);
+    if (search) {
+      const q = search.toLowerCase();
+      r = r.filter((row) => row.asin.toLowerCase().includes(q) || row.productTitle.toLowerCase().includes(q) || row.brandName.toLowerCase().includes(q));
+    }
+    return r;
+  }, [rows, search]);
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ ...thStyle, width: 40 }}>#</th>
+            <th style={thStyle}>Brand</th>
+            <th style={thStyle}>ASIN</th>
+            <th style={thStyle}>Product</th>
+            <th style={numTh}>Page Views</th>
+            <th style={numTh}>Clicks</th>
+            <th style={numTh}>ATC</th>
+            <th style={numTh}>Purchases</th>
+            <th style={numTh}>CVR</th>
+            <th style={numTh}>%P</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((row, i) => {
+            const prev = prevMap.get(row.asin);
+            const cvr = row.impressions > 0 ? (row.purchases / row.impressions * 100) : 0;
+            const pPct = row.addToCarts > 0 ? (row.purchases / row.addToCarts * 100) : 0;
+            const brandColor = BRAND_COLORS[row.brandName] ?? "#555f6e";
+            return (
+              <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
+                <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
+                <td style={{ ...tdStyle, fontSize: 11 }}>
+                  {row.brandName ? (
+                    <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 500, background: brandColor + "18", color: brandColor }}>{row.brandName}</span>
+                  ) : <span style={{ color: "#555f6e" }}>--</span>}
+                </td>
+                <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
+                <td style={{ ...tdStyle, maxWidth: 220 }}>
+                  <span style={{ display: "inline-block", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.productTitle || "--"}</span>
+                </td>
+                <td style={numTd}>{fmt(row.impressions, "compact")}{prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}</td>
+                <td style={numTd}>{fmt(row.clicks, "number")}{prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}</td>
+                <td style={numTd}>{fmt(row.addToCarts, "number")}{prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}</td>
+                <td style={numTd}>{row.purchases}{prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}</td>
+                <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
+                <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -563,6 +821,42 @@ function CatalogTable({
           Showing <span style={{ color: "#6366f1", fontWeight: 600 }}>{periodLabel}</span> trends ({prevRows.length} ASINs in previous period)
         </div>
       )}
+
+      {/* Brand market share summary */}
+      {brands.length > 0 && (() => {
+        const totalImpr = rows.reduce((s, r) => s + r.impressions, 0);
+        const totalPurch = rows.reduce((s, r) => s + r.purchases, 0);
+        return (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
+            {brands.filter((b) => b !== "").map((b) => {
+              const brandRows = rows.filter((r) => r.brandName === b);
+              const bImpr = brandRows.reduce((s, r) => s + r.impressions, 0);
+              const bPurch = brandRows.reduce((s, r) => s + r.purchases, 0);
+              const imprShare = totalImpr > 0 ? (bImpr / totalImpr * 100) : 0;
+              const purchShare = totalPurch > 0 ? (bPurch / totalPurch * 100) : 0;
+              const color = BRAND_COLORS[b] ?? "#8892a4";
+              return (
+                <div key={b} style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 8, padding: "8px 14px", minWidth: 150 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0" }}>{b}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, fontSize: 10 }}>
+                    <div>
+                      <div style={{ color: "#555f6e" }}>View Share</div>
+                      <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 12 }}>{imprShare.toFixed(1)}%</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "#555f6e" }}>Purchase Share</div>
+                      <div style={{ color: "#22c55e", fontWeight: 600, fontSize: 12 }}>{purchShare.toFixed(1)}%</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Brand filter pills */}
       {brands.length > 0 && (
