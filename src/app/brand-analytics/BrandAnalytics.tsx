@@ -219,6 +219,7 @@ export default function BrandAnalyticsPage() {
               <BrandProductView
                 rows={data.catalogPerformance}
                 prevRows={data.previousCatalog ?? []}
+                weeklyTrends={data.weeklyTrends ?? {}}
                 periodLabel={data.periodLabel ?? "WoW"}
                 search={search}
               />
@@ -271,13 +272,55 @@ const tdStyle: React.CSSProperties = {
 
 const numTd: React.CSSProperties = { ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
-/** Magnifying glass icon that opens a WoW trend tooltip */
-function TrendIcon({ current, previous, label, periodLabel }: { current: number; previous: number; label: string; periodLabel?: string }) {
+/** SVG sparkline for trend data */
+function Sparkline({ data, color, width = 160, height = 40 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (data.length < 2) return null;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const pad = 4;
+  const w = width - pad * 2;
+  const h = height - pad * 2;
+  const points = data.map((v, i) => {
+    const x = pad + (i / (data.length - 1)) * w;
+    const y = pad + h - ((v - min) / range) * h;
+    return `${x},${y}`;
+  });
+  // Gradient fill under the line
+  const fillPoints = [...points, `${pad + w},${pad + h}`, `${pad},${pad + h}`];
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <defs>
+        <linearGradient id={`sg-${color.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <polygon points={fillPoints.join(" ")} fill={`url(#sg-${color.replace("#","")})`} />
+      <polyline points={points.join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {data.map((v, i) => {
+        const x = pad + (i / (data.length - 1)) * w;
+        const y = pad + h - ((v - min) / range) * h;
+        return <circle key={i} cx={x} cy={y} r={i === data.length - 1 ? 3.5 : 2} fill={i === data.length - 1 ? color : "#1c2333"} stroke={color} strokeWidth="1.5" />;
+      })}
+    </svg>
+  );
+}
+
+/** Magnifying glass icon — click to see multi-week trendline popup */
+function TrendIcon({ trendData, label, periodLabel, suffix }: {
+  trendData: number[];
+  label: string;
+  periodLabel?: string;
+  suffix?: string;
+}) {
   const [open, setOpen] = useState(false);
-  if (!previous) return null;
+  if (!trendData || trendData.length < 2) return null;
+  const current = trendData[trendData.length - 1];
+  const previous = trendData[trendData.length - 2];
   const delta = previous > 0 ? ((current - previous) / previous * 100) : 0;
   const up = delta > 0;
-  const max = Math.max(current, previous, 1);
+  const weekLabels = trendData.map((_, i) => `W${i - trendData.length + 1}`).map((l, i, a) => i === a.length - 1 ? "Now" : l);
   return (
     <span style={{ position: "relative", display: "inline-block" }}>
       <button
@@ -295,35 +338,29 @@ function TrendIcon({ current, previous, label, periodLabel }: { current: number;
           onClick={(e) => e.stopPropagation()}
           style={{
             position: "absolute", bottom: "100%", right: 0, marginBottom: 6,
-            background: "#1c2333", border: "1px solid #2a3245", borderRadius: 8,
-            padding: "10px 14px", zIndex: 100, minWidth: 200,
+            background: "#1c2333", border: "1px solid #2a3245", borderRadius: 10,
+            padding: "12px 16px", zIndex: 100, minWidth: 240,
             boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>{label} — {periodLabel ?? "WoW"}</div>
-          {/* Current period bar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 10, color: "#8892a4", width: 55 }}>Current</span>
-            <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#0d1117", overflow: "hidden" }}>
-              <div style={{ width: `${(current / max) * 100}%`, height: "100%", borderRadius: 4, background: "#6366f1", transition: "width 0.3s" }} />
-            </div>
-            <span style={{ fontSize: 11, color: "#e2e8f0", fontWeight: 600, minWidth: 50, textAlign: "right" }}>{fmt(current, current >= 1000 ? "compact" : "number")}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{label}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: up ? "#22c55e" : "#ef4444" }}>
+              {up ? "\u2191" : "\u2193"}{Math.abs(delta).toFixed(1)}% {periodLabel ?? "WoW"}
+            </span>
           </div>
-          {/* Previous period bar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 10, color: "#555f6e", width: 55 }}>Previous</span>
-            <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#0d1117", overflow: "hidden" }}>
-              <div style={{ width: `${(previous / max) * 100}%`, height: "100%", borderRadius: 4, background: "#555f6e", transition: "width 0.3s" }} />
-            </div>
-            <span style={{ fontSize: 11, color: "#8892a4", minWidth: 50, textAlign: "right" }}>{fmt(previous, previous >= 1000 ? "compact" : "number")}</span>
+          {/* Sparkline chart */}
+          <Sparkline data={trendData} color={up ? "#22c55e" : "#ef4444"} width={210} height={50} />
+          {/* Week labels */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, color: "#555f6e" }}>
+            {weekLabels.map((l, i) => <span key={i}>{l}</span>)}
           </div>
-          {/* Delta */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: up ? "#22c55e" : "#ef4444", textAlign: "center" }}>
-            {up ? "\u2191" : "\u2193"} {Math.abs(delta).toFixed(1)}% {up ? "increase" : "decrease"}
+          {/* Values row */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2, fontSize: 10, color: "#8892a4" }}>
+            {trendData.map((v, i) => <span key={i} style={{ fontWeight: i === trendData.length - 1 ? 600 : 400, color: i === trendData.length - 1 ? "#e2e8f0" : "#8892a4" }}>{fmt(v, v >= 1000 ? "compact" : "number")}{suffix ?? ""}</span>)}
           </div>
-          <div style={{ fontSize: 10, color: "#555f6e", textAlign: "center", marginTop: 2 }}>
-            {up ? "+" : ""}{(current - previous).toLocaleString()} units
-          </div>
+          {/* Close */}
+          <button onClick={(e) => { e.stopPropagation(); setOpen(false); }} style={{ position: "absolute", top: 6, right: 8, background: "transparent", border: "none", color: "#555f6e", cursor: "pointer", fontSize: 12 }}>x</button>
         </div>
       )}
     </span>
@@ -486,10 +523,11 @@ interface BrandSummary {
 }
 
 function BrandProductView({
-  rows, prevRows, periodLabel, search,
+  rows, prevRows, weeklyTrends, periodLabel, search,
 }: {
   rows: CatalogPerformanceRow[];
   prevRows: CatalogPerformanceRow[];
+  weeklyTrends: Record<string, import("@/lib/types").AsinWeeklyTrend>;
   periodLabel: string;
   search: string;
 }) {
@@ -641,6 +679,7 @@ function BrandProductView({
           brand={expandedBrand}
           products={brandProducts.get(expandedBrand) ?? []}
           prevMap={prevMap}
+          weeklyTrends={weeklyTrends}
           periodLabel={periodLabel}
           color={BRAND_COLORS[expandedBrand] ?? "#8892a4"}
           totals={totals}
@@ -655,17 +694,18 @@ function BrandProductView({
               Click a brand card above to see its top products, or view <span style={{ color: "#e2e8f0", fontWeight: 600 }}>all top products</span> below
             </span>
           </div>
-          <AllBrandsTable rows={rows} prevMap={prevMap} search={search} periodLabel={periodLabel} />
+          <AllBrandsTable rows={rows} prevMap={prevMap} weeklyTrends={weeklyTrends} search={search} periodLabel={periodLabel} />
         </div>
       )}
     </>
   );
 }
 
-function BrandProductsTable({ brand, products, prevMap, periodLabel, color, totals }: {
+function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabel, color, totals }: {
   brand: string;
   products: CatalogPerformanceRow[];
   prevMap: Map<string, CatalogPerformanceRow>;
+  weeklyTrends: Record<string, import("@/lib/types").AsinWeeklyTrend>;
   periodLabel: string;
   color: string;
   totals: { impressions: number; clicks: number; purchases: number };
@@ -713,31 +753,42 @@ function BrandProductsTable({ brand, products, prevMap, periodLabel, color, tota
                       {row.productTitle || "--"}
                     </span>
                   </td>
-                  <td style={numTd}>
-                    <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
-                    {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
-                    <TrendIcon current={row.impressions} previous={prev?.impressions ?? 0} label="Page Views" periodLabel={periodLabel} />
-                  </td>
-                  <td style={numTd}>
-                    {fmt(row.clicks, "number")}
-                    {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
-                    <TrendIcon current={row.clicks} previous={prev?.clicks ?? 0} label="Clicks" periodLabel={periodLabel} />
-                  </td>
-                  <td style={numTd}>
-                    {fmt(row.addToCarts, "number")}
-                    {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
-                    <TrendIcon current={row.addToCarts} previous={prev?.addToCarts ?? 0} label="ATC" periodLabel={periodLabel} />
-                  </td>
-                  <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
-                  <td style={numTd}>
-                    {row.purchases}
-                    {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
-                    <TrendIcon current={row.purchases} previous={prev?.purchases ?? 0} label="Purchases" periodLabel={periodLabel} />
-                  </td>
-                  <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
-                  <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
-                  <td style={numTd}><ShareBar value={viewShr} color="#6366f1" /></td>
-                  <td style={numTd}><ShareBar value={purchShr} color="#22c55e" /></td>
+                  {(() => {
+                    const t = weeklyTrends[row.asin];
+                    return (<>
+                      <td style={numTd}>
+                        <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
+                        {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                        <TrendIcon trendData={t?.impressions ?? []} label="Page Views" periodLabel={periodLabel} />
+                      </td>
+                      <td style={numTd}>
+                        {fmt(row.clicks, "number")}
+                        {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
+                        <TrendIcon trendData={t?.clicks ?? []} label="Clicks" periodLabel={periodLabel} />
+                      </td>
+                      <td style={numTd}>
+                        {fmt(row.addToCarts, "number")}
+                        {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
+                        <TrendIcon trendData={t?.addToCarts ?? []} label="ATC" periodLabel={periodLabel} />
+                      </td>
+                      <td style={numTd}><span style={{ color: atcPct > 5 ? "#22c55e" : atcPct > 2 ? "#f59e0b" : "#555f6e" }}>{atcPct.toFixed(1)}%</span></td>
+                      <td style={numTd}>
+                        {row.purchases}
+                        {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
+                        <TrendIcon trendData={t?.purchases ?? []} label="Purchases" periodLabel={periodLabel} />
+                      </td>
+                      <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
+                      <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                      <td style={numTd}>
+                        <ShareBar value={viewShr} color="#6366f1" />
+                        <TrendIcon trendData={t?.impressions.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
+                      </td>
+                      <td style={numTd}>
+                        <ShareBar value={purchShr} color="#22c55e" />
+                        <TrendIcon trendData={t?.purchases.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
+                      </td>
+                    </>);
+                  })()}
                 </tr>
               );
             })}
@@ -748,9 +799,10 @@ function BrandProductsTable({ brand, products, prevMap, periodLabel, color, tota
   );
 }
 
-function AllBrandsTable({ rows, prevMap, search, periodLabel }: {
+function AllBrandsTable({ rows, prevMap, weeklyTrends, search, periodLabel }: {
   rows: CatalogPerformanceRow[];
   prevMap: Map<string, CatalogPerformanceRow>;
+  weeklyTrends: Record<string, import("@/lib/types").AsinWeeklyTrend>;
   search: string;
   periodLabel: string;
 }) {
@@ -805,30 +857,41 @@ function AllBrandsTable({ rows, prevMap, search, periodLabel }: {
                 <td style={{ ...tdStyle, maxWidth: 200 }}>
                   <span style={{ display: "inline-block", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.productTitle || "--"}</span>
                 </td>
-                <td style={numTd}>
-                  {fmt(row.impressions, "compact")}
-                  {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
-                  <TrendIcon current={row.impressions} previous={prev?.impressions ?? 0} label="Page Views" periodLabel={periodLabel} />
-                </td>
-                <td style={numTd}>
-                  {fmt(row.clicks, "number")}
-                  {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
-                  <TrendIcon current={row.clicks} previous={prev?.clicks ?? 0} label="Clicks" periodLabel={periodLabel} />
-                </td>
-                <td style={numTd}>
-                  {fmt(row.addToCarts, "number")}
-                  {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
-                  <TrendIcon current={row.addToCarts} previous={prev?.addToCarts ?? 0} label="ATC" periodLabel={periodLabel} />
-                </td>
-                <td style={numTd}>
-                  {row.purchases}
-                  {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
-                  <TrendIcon current={row.purchases} previous={prev?.purchases ?? 0} label="Purchases" periodLabel={periodLabel} />
-                </td>
-                <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
-                <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
-                <td style={numTd}><ShareBar value={viewShr} color="#6366f1" /></td>
-                <td style={numTd}><ShareBar value={purchShr} color="#22c55e" /></td>
+                {(() => {
+                  const t = weeklyTrends[row.asin];
+                  return (<>
+                    <td style={numTd}>
+                      {fmt(row.impressions, "compact")}
+                      {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
+                      <TrendIcon trendData={t?.impressions ?? []} label="Page Views" periodLabel={periodLabel} />
+                    </td>
+                    <td style={numTd}>
+                      {fmt(row.clicks, "number")}
+                      {prev && <DeltaBadge current={row.clicks} previous={prev.clicks} />}
+                      <TrendIcon trendData={t?.clicks ?? []} label="Clicks" periodLabel={periodLabel} />
+                    </td>
+                    <td style={numTd}>
+                      {fmt(row.addToCarts, "number")}
+                      {prev && <DeltaBadge current={row.addToCarts} previous={prev.addToCarts} />}
+                      <TrendIcon trendData={t?.addToCarts ?? []} label="ATC" periodLabel={periodLabel} />
+                    </td>
+                    <td style={numTd}>
+                      {row.purchases}
+                      {prev && <DeltaBadge current={row.purchases} previous={prev.purchases} />}
+                      <TrendIcon trendData={t?.purchases ?? []} label="Purchases" periodLabel={periodLabel} />
+                    </td>
+                    <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
+                    <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
+                    <td style={numTd}>
+                      <ShareBar value={viewShr} color="#6366f1" />
+                      <TrendIcon trendData={t?.impressions.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
+                    </td>
+                    <td style={numTd}>
+                      <ShareBar value={purchShr} color="#22c55e" />
+                      <TrendIcon trendData={t?.purchases.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
+                    </td>
+                  </>);
+                })()}
               </tr>
             );
           })}

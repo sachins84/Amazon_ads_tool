@@ -132,11 +132,19 @@ export interface CatalogPerformanceRow {
   salesAmount?: number;       // searchTrafficSales in INR
 }
 
+export interface AsinWeeklyTrend {
+  impressions: number[];
+  clicks: number[];
+  addToCarts: number[];
+  purchases: number[];
+}
+
 export interface BrandAnalyticsData {
   searchTerms: SearchTermRow[];
   sqp: SQPRow[];
   catalogPerformance: CatalogPerformanceRow[];
   previousCatalog?: CatalogPerformanceRow[];
-  periodLabel?: string;  // "WoW" or "MoM"
+  weeklyTrends?: Record<string, AsinWeeklyTrend>;
+  periodLabel?: string;
   _source?: "live" | "mock";
 }

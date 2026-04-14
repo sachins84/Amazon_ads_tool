@@ -93,28 +93,59 @@ export async function GET(req: NextRequest) {
         const rows = await fetchCatalogPerformanceReport(marketplaceId, "", "", acctId, datePreset);
         await enrichCatalog(rows, marketplaceId, acctId);
 
-        // Fetch previous period for WoW/MoM comparison
-        let prev: CatalogPerformanceRow[] = [];
+        // Fetch last 4 weeks for trendline (current + 3 previous)
+        const weeklyData: CatalogPerformanceRow[][] = [rows]; // index 0 = current
         if (compare) {
-          const pp = previousPeriod(period);
-          const prevCacheKey = `brand-analytics:catalog:${marketplaceId}:${pp.start}:${pp.end}`;
-          const prevCached = cacheGet<{ catalogPerformance: CatalogPerformanceRow[] }>(prevCacheKey);
-          if (prevCached) {
-            prev = prevCached.catalogPerformance;
-          } else {
-            try {
-              prev = await fetchCatalogDirect(marketplaceId, pp.start, pp.end, pp.period, acctId);
-              await enrichCatalog(prev, marketplaceId, acctId);
-              cacheSet(prevCacheKey, { catalogPerformance: prev });
-            } catch {
-              prev = [];
+          let pp = period;
+          for (let w = 0; w < 3; w++) {
+            pp = previousPeriod(pp);
+            const wCacheKey = `brand-analytics:catalog:${marketplaceId}:${pp.start}:${pp.end}`;
+            const wCached = cacheGet<{ catalogPerformance: CatalogPerformanceRow[] }>(wCacheKey);
+            if (wCached) {
+              weeklyData.push(wCached.catalogPerformance);
+            } else {
+              try {
+                const wRows = await fetchCatalogDirect(marketplaceId, pp.start, pp.end, pp.period, acctId);
+                await enrichCatalog(wRows, marketplaceId, acctId);
+                cacheSet(wCacheKey, { catalogPerformance: wRows });
+                weeklyData.push(wRows);
+              } catch {
+                weeklyData.push([]);
+              }
+            }
+          }
+        }
+
+        // Build per-ASIN weekly trend: { asin -> [w0(oldest), w1, w2, w3(current)] }
+        const weeklyTrends: Record<string, { impressions: number[]; clicks: number[]; addToCarts: number[]; purchases: number[] }> = {};
+        if (weeklyData.length > 1) {
+          // weeklyData[0]=current, [1]=prev1, [2]=prev2, [3]=prev3 — reverse to chronological
+          const chronological = [...weeklyData].reverse();
+          for (const weekRows of chronological) {
+            for (const r of weekRows) {
+              if (!weeklyTrends[r.asin]) weeklyTrends[r.asin] = { impressions: [], clicks: [], addToCarts: [], purchases: [] };
+            }
+          }
+          for (const asin of Object.keys(weeklyTrends)) {
+            for (const weekRows of chronological) {
+              const row = weekRows.find((r) => r.asin === asin);
+              weeklyTrends[asin].impressions.push(row?.impressions ?? 0);
+              weeklyTrends[asin].clicks.push(row?.clicks ?? 0);
+              weeklyTrends[asin].addToCarts.push(row?.addToCarts ?? 0);
+              weeklyTrends[asin].purchases.push(row?.purchases ?? 0);
             }
           }
         }
 
         data = {
           catalogPerformance: rows,
-          ...(compare && { previousPeriod: prev, periodLabel: period.period === "MONTH" ? "MoM" : "WoW", currentRange: `${period.start} to ${period.end}` }),
+          ...(compare && {
+            previousPeriod: weeklyData[1] ?? [],
+            weeklyTrends,
+            periodLabel: period.period === "MONTH" ? "MoM" : "WoW",
+            currentRange: `${period.start} to ${period.end}`,
+            weeksLoaded: weeklyData.length,
+          }),
         };
         break;
       }

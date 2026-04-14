@@ -258,6 +258,7 @@ export async function fetchBrandAnalytics(params: {
       if (data?.length) {
         live.catalogPerformance = data;
         live.previousCatalog = (raw?.previousPeriod as CatalogPerformanceRow[] | undefined) ?? [];
+        live.weeklyTrends = (raw?.weeklyTrends as Record<string, import("./types").AsinWeeklyTrend> | undefined) ?? {};
         live.periodLabel = (raw?.periodLabel as string) ?? "WoW";
         live._source = "live";
         pushUpdate();
