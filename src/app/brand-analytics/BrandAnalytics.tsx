@@ -725,6 +725,8 @@ function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabe
               <th style={{ ...thStyle, width: 40 }}>#</th>
               <th style={thStyle}>ASIN</th>
               <th style={thStyle}>Product</th>
+              <th style={{ ...numTh, background: "rgba(99,102,241,0.06)" }}>View Shr</th>
+              <th style={{ ...numTh, background: "rgba(34,197,94,0.06)" }}>Purch Shr</th>
               <th style={numTh}>Page Views</th>
               <th style={numTh}>Clicks</th>
               <th style={numTh}>ATC</th>
@@ -732,8 +734,6 @@ function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabe
               <th style={numTh}>Purchases</th>
               <th style={numTh}>CVR</th>
               <th style={numTh}>%P</th>
-              <th style={numTh}>View Shr</th>
-              <th style={numTh}>Purch Shr</th>
             </tr>
           </thead>
           <tbody>
@@ -748,14 +748,22 @@ function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabe
                 <tr key={row.asin} style={{ background: i % 2 === 0 ? "transparent" : "rgba(28,35,51,0.3)" }}>
                   <td style={{ ...tdStyle, color: "#555f6e", textAlign: "center" }}>{i + 1}</td>
                   <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>{row.asin}</td>
-                  <td style={{ ...tdStyle, maxWidth: 240 }}>
-                    <span style={{ display: "inline-block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ ...tdStyle, maxWidth: 200 }}>
+                    <span style={{ display: "inline-block", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {row.productTitle || "--"}
                     </span>
                   </td>
                   {(() => {
                     const t = weeklyTrends[row.asin];
                     return (<>
+                      <td style={{ ...numTd, background: "rgba(99,102,241,0.04)" }}>
+                        <ShareBar value={viewShr} color="#6366f1" />
+                        <TrendIcon trendData={t?.impressions.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
+                      </td>
+                      <td style={{ ...numTd, background: "rgba(34,197,94,0.04)" }}>
+                        <ShareBar value={purchShr} color="#22c55e" />
+                        <TrendIcon trendData={t?.purchases.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
+                      </td>
                       <td style={numTd}>
                         <MetricBar value={row.impressions} max={maxImpr} color={color} label={fmt(row.impressions, "compact")} />
                         {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
@@ -779,14 +787,6 @@ function BrandProductsTable({ brand, products, prevMap, weeklyTrends, periodLabe
                       </td>
                       <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                       <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
-                      <td style={numTd}>
-                        <ShareBar value={viewShr} color="#6366f1" />
-                        <TrendIcon trendData={t?.impressions.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
-                      </td>
-                      <td style={numTd}>
-                        <ShareBar value={purchShr} color="#22c55e" />
-                        <TrendIcon trendData={t?.purchases.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
-                      </td>
                     </>);
                   })()}
                 </tr>
@@ -827,14 +827,14 @@ function AllBrandsTable({ rows, prevMap, weeklyTrends, search, periodLabel }: {
             <th style={thStyle}>Brand</th>
             <th style={thStyle}>ASIN</th>
             <th style={thStyle}>Product</th>
+            <th style={{ ...numTh, background: "rgba(99,102,241,0.06)" }}>View Shr</th>
+            <th style={{ ...numTh, background: "rgba(34,197,94,0.06)" }}>Purch Shr</th>
             <th style={numTh}>Page Views</th>
             <th style={numTh}>Clicks</th>
             <th style={numTh}>ATC</th>
             <th style={numTh}>Purchases</th>
             <th style={numTh}>CVR</th>
             <th style={numTh}>%P</th>
-            <th style={numTh}>View Shr</th>
-            <th style={numTh}>Purch Shr</th>
           </tr>
         </thead>
         <tbody>
@@ -860,6 +860,14 @@ function AllBrandsTable({ rows, prevMap, weeklyTrends, search, periodLabel }: {
                 {(() => {
                   const t = weeklyTrends[row.asin];
                   return (<>
+                    <td style={{ ...numTd, background: "rgba(99,102,241,0.04)" }}>
+                      <ShareBar value={viewShr} color="#6366f1" />
+                      <TrendIcon trendData={t?.impressions.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
+                    </td>
+                    <td style={{ ...numTd, background: "rgba(34,197,94,0.04)" }}>
+                      <ShareBar value={purchShr} color="#22c55e" />
+                      <TrendIcon trendData={t?.purchases.map((v, idx) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[idx] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
+                    </td>
                     <td style={numTd}>
                       {fmt(row.impressions, "compact")}
                       {prev && <DeltaBadge current={row.impressions} previous={prev.impressions} />}
@@ -882,14 +890,6 @@ function AllBrandsTable({ rows, prevMap, weeklyTrends, search, periodLabel }: {
                     </td>
                     <td style={numTd}><span style={{ color: cvr > 0.5 ? "#22c55e" : cvr > 0.2 ? "#f59e0b" : "#555f6e" }}>{cvr.toFixed(2)}%</span></td>
                     <td style={numTd}><span style={{ color: pPct > 40 ? "#22c55e" : pPct > 20 ? "#f59e0b" : "#555f6e" }}>{pPct.toFixed(1)}%</span></td>
-                    <td style={numTd}>
-                      <ShareBar value={viewShr} color="#6366f1" />
-                      <TrendIcon trendData={t?.impressions.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.impressions[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="View Share" periodLabel={periodLabel} suffix="%" />
-                    </td>
-                    <td style={numTd}>
-                      <ShareBar value={purchShr} color="#22c55e" />
-                      <TrendIcon trendData={t?.purchases.map((v, i) => { const tot = Object.values(weeklyTrends).reduce((s, wt) => s + (wt.purchases[i] ?? 0), 0); return tot > 0 ? v / tot * 100 : 0; }) ?? []} label="Purchase Share" periodLabel={periodLabel} suffix="%" />
-                    </td>
                   </>);
                 })()}
               </tr>
