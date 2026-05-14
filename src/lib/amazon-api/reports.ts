@@ -59,6 +59,20 @@ export const SD_CAMPAIGN_COLUMNS = [
   "impressions", "clicks", "cost", "purchases", "sales",
 ];
 
+export const SP_ADGROUP_COLUMNS = [
+  "date", "campaignId", "adGroupId", "adGroupName",
+  "impressions", "clicks", "cost",
+  "purchases7d", "sales7d",
+];
+export const SB_ADGROUP_COLUMNS = [
+  "date", "campaignId", "adGroupId", "adGroupName",
+  "impressions", "clicks", "cost", "purchases", "sales",
+];
+export const SD_ADGROUP_COLUMNS = [
+  "date", "campaignId", "adGroupId", "adGroupName",
+  "impressions", "clicks", "cost", "purchases", "sales",
+];
+
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
 export async function createReport(
@@ -267,6 +281,115 @@ export async function fetchAllProgramReports(
   ]);
 
   const rows: UnifiedCampaignRow[] = [];
+  const errors: { program: Program; error: string }[] = [];
+  const programs: Program[] = ["SP", "SB", "SD"];
+
+  results.forEach((res, i) => {
+    if (res.status === "fulfilled") rows.push(...res.value);
+    else errors.push({ program: programs[i], error: String(res.reason) });
+  });
+
+  return { rows, errors };
+}
+
+// ─── Ad-group level report (SP+SB+SD, daily) ────────────────────────────────
+
+export interface UnifiedAdGroupRow {
+  program: Program;
+  date: string;
+  campaignId: string;
+  adGroupId:  string;
+  adGroupName: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  orders: number;
+  sales: number;
+}
+
+function spAdGroupReport(start: string, end: string): ReportRequest {
+  return {
+    name: `SP adGroups ${start}..${end}`,
+    startDate: start, endDate: end,
+    configuration: {
+      adProduct: "SPONSORED_PRODUCTS",
+      groupBy: ["adGroup"],
+      columns: SP_ADGROUP_COLUMNS,
+      reportTypeId: "spAdGroup",
+      timeUnit: "DAILY",
+      format: "GZIP_JSON",
+    },
+  };
+}
+
+function sbAdGroupReport(start: string, end: string): ReportRequest {
+  return {
+    name: `SB adGroups ${start}..${end}`,
+    startDate: start, endDate: end,
+    configuration: {
+      adProduct: "SPONSORED_BRANDS",
+      groupBy: ["adGroup"],
+      columns: SB_ADGROUP_COLUMNS,
+      reportTypeId: "sbAdGroup",
+      timeUnit: "DAILY",
+      format: "GZIP_JSON",
+    },
+  };
+}
+
+function sdAdGroupReport(start: string, end: string): ReportRequest {
+  return {
+    name: `SD adGroups ${start}..${end}`,
+    startDate: start, endDate: end,
+    configuration: {
+      adProduct: "SPONSORED_DISPLAY",
+      groupBy: ["adGroup"],
+      columns: SD_ADGROUP_COLUMNS,
+      reportTypeId: "sdAdGroup",
+      timeUnit: "DAILY",
+      format: "GZIP_JSON",
+    },
+  };
+}
+
+function normalizeAdGroupRow(program: Program, r: Record<string, unknown>): UnifiedAdGroupRow {
+  const orders = program === "SP"
+    ? Number(r.purchases7d ?? r.purchases ?? 0)
+    : Number(r.purchases ?? 0);
+  const sales = program === "SP"
+    ? Number(r.sales7d ?? r.sales ?? 0)
+    : Number(r.sales ?? 0);
+  return {
+    program,
+    date:         String(r.date ?? ""),
+    campaignId:   String(r.campaignId ?? ""),
+    adGroupId:    String(r.adGroupId ?? ""),
+    adGroupName:  String(r.adGroupName ?? ""),
+    impressions:  Number(r.impressions ?? 0),
+    clicks:       Number(r.clicks ?? 0),
+    cost:         Number(r.cost ?? 0),
+    orders,
+    sales,
+  };
+}
+
+export async function fetchAllAdGroupReports(
+  profileId: string, startDate: string, endDate: string, accountId?: string,
+): Promise<{ rows: UnifiedAdGroupRow[]; errors: { program: Program; error: string }[] }> {
+
+  async function run(program: Program, body: ReportRequest): Promise<UnifiedAdGroupRow[]> {
+    const reportId = await createReport(profileId, body, accountId);
+    const raw = await waitForReport<Record<string, unknown>>(profileId, reportId, accountId);
+    return raw.map((r) => normalizeAdGroupRow(program, r));
+  }
+
+  const results = await Promise.allSettled([
+    run("SP", spAdGroupReport(startDate, endDate)),
+    run("SB", sbAdGroupReport(startDate, endDate)),
+    run("SD", sdAdGroupReport(startDate, endDate)),
+  ]);
+
+  const rows: UnifiedAdGroupRow[] = [];
   const errors: { program: Program; error: string }[] = [];
   const programs: Program[] = ["SP", "SB", "SD"];
 

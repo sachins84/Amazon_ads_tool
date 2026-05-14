@@ -73,7 +73,9 @@ export async function getOverviewForAccount(accountId: string, datePreset: strin
     startDate, endDate, currency, marketplace, brandName,
   });
 
-  if (reportsResult.rows.length > 0) cacheSet(cacheKey, result, TTL_MS);
+  // Cache unless ALL three programs errored — a legit "zero spend" account
+  // (no campaigns running) should still cache to avoid 5-min re-pulls every time.
+  if (reportsResult.errors.length < 3) cacheSet(cacheKey, result, TTL_MS);
   return result;
 }
 

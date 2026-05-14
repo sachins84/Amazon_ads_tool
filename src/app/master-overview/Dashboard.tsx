@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import TopNav from "@/components/shared/TopNav";
 import DateRangePicker from "@/components/shared/DateRangePicker";
 import KpiCard from "@/components/shared/KpiCard";
@@ -373,7 +374,9 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
               <tr key={c.id} style={{ borderBottom: "1px solid #1c2333" }}>
                 <Td><Pill text={c.type} /></Td>
                 <Td><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
-                <Td title={c.name} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#e2e8f0" }}>{c.name}</Td>
+                <Td title={c.name} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <Link href={`/master-overview/campaign/${c.id}`} style={{ color: "#a5b4fc", textDecoration: "none" }}>{c.name}</Link>
+                </Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{fmt(c.budget, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.spend, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.sales, "currency", currency)}</Td>
