@@ -11,11 +11,79 @@ const BASE = "";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// New v2 overview response. Keep the older OverviewData as a subset to stay
+// backwards-compatible with mock fallback callers.
+export type Program = "SP" | "SB" | "SD";
+
+export interface OverviewCampaignRow {
+  id: string;
+  name: string;
+  type: Program;
+  status: "ENABLED" | "PAUSED" | "ARCHIVED";
+  budget: number;
+  portfolioId: string | null;
+  spend: number;
+  sales: number;
+  orders: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cvr: number;
+  acos: number;
+  roas: number;
+}
+
+export interface OverviewDailyPoint {
+  date: string;
+  spend: number;
+  sales: number;
+  orders: number;
+  clicks: number;
+  impressions: number;
+  acos: number;
+  roas: number;
+}
+
 export interface OverviewData {
-  kpis: OverviewKpis;
-  campaigns: typeof mockCampaigns;
-  spendByType: { name: string; value: number; color: string }[];
+  brandName?: string | null;
+  marketplace?: string;
+  currency?: string;
+  dateRange?: { startDate: string; endDate: string };
+  kpis: OverviewKpis & {
+    sales?: { value: number; delta: number; positive: boolean };
+  };
+  campaigns: OverviewCampaignRow[] | typeof mockCampaigns;
+  spendByType: { name: string; code?: Program; value: number; color: string }[];
+  dailySeries?: OverviewDailyPoint[];
+  programTotals?: Record<Program, { spend: number; sales: number; orders: number; clicks: number; impressions: number }>;
+  errors?: { campaigns: { program: Program; error: string }[]; reports: { program: Program; error: string }[] };
   _source?: "live" | "mock";
+}
+
+export interface AllBrandsResponse {
+  accounts: {
+    accountId: string;
+    name: string;
+    color: string;
+    marketplace: string;
+    currency: string;
+    profileId: string;
+    spend: number; sales: number; orders: number;
+    roas: number; acos: number; ctr: number; cpc: number;
+    spendByType: { name: string; code?: string; value: number; color: string }[];
+    dailySeries: { date: string; spend: number; sales: number }[];
+    activeCampaigns: number;
+    error?: string;
+  }[];
+  byCurrency: Record<string, {
+    currency: string;
+    spend: number; sales: number; orders: number;
+    roas: number; acos: number;
+    accounts: number;
+  }>;
+  errors: { accountId: string; name: string; error: string }[];
+  dateRange?: string;
 }
 
 export interface TargetingData {
@@ -65,6 +133,14 @@ export async function fetchOverview(params: {
     if (e instanceof TypeError) return { ...getMockOverview(), _source: "mock" };
     throw e;
   }
+}
+
+export async function fetchAllBrands(params: { dateRange?: string } = {}): Promise<AllBrandsResponse> {
+  const qs = new URLSearchParams();
+  if (params.dateRange) qs.set("dateRange", params.dateRange);
+  const res  = await fetch(`${BASE}/api/overview/all?${qs}`);
+  if (!res.ok) throw new Error(`fetchAllBrands HTTP ${res.status}`);
+  return res.json() as Promise<AllBrandsResponse>;
 }
 
 // ─── Targeting ────────────────────────────────────────────────────────────────

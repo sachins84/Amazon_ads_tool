@@ -30,43 +30,8 @@ interface CampaignMetrics {
   sales30d: number;
 }
 
-export function mergeCampaigns(
-  campaigns: SPCampaign[],
-  metrics: CampaignMetrics[]
-): CampaignRow[] {
-  const metricsMap = new Map(
-    metrics.map((m) => [String(m.campaignId), m])
-  );
-
-  return campaigns.map((c): CampaignRow => {
-    const m = metricsMap.get(String(c.campaignId)) ?? {
-      impressions: 0, clicks: 0, cost: 0, purchases30d: 0, sales30d: 0,
-    } as CampaignMetrics;
-
-    const spend   = m.cost;
-    const revenue = m.sales30d;
-    const clicks  = m.clicks;
-    const orders  = m.purchases30d;
-
-    return {
-      id:          String(c.campaignId),
-      name:        c.name,
-      type:        "SP",
-      status:      c.state === "enabled" ? "ENABLED" : "PAUSED",
-      budget:      c.dailyBudget,
-      spend:       Math.round(spend * 100) / 100,
-      impressions: m.impressions,
-      clicks,
-      ctr:         safeDiv(clicks, m.impressions),
-      cpc:         safeDiv(spend, clicks),
-      orders,
-      revenue:     Math.round(revenue * 100) / 100,
-      acos:        safeDiv(spend, revenue, 1),
-      roas:        safeDiv(revenue, spend),
-      cvr:         safeDiv(orders, clicks),
-    };
-  });
-}
+// mergeCampaigns() removed — the new /api/overview builds CampaignRows directly
+// from UnifiedCampaign + UnifiedCampaignRow in src/app/api/overview/route.ts.
 
 // ─── Targeting merge ─────────────────────────────────────────────────────────
 

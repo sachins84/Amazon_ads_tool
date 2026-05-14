@@ -7,12 +7,13 @@ interface Props {
   label: string;
   metric: MetricWithDelta;
   format: FormatType;
+  currency?: string;
   icon?: React.ReactNode;
   small?: boolean;
   loading?: boolean;
 }
 
-export default function KpiCard({ label, metric, format, icon, small, loading }: Props) {
+export default function KpiCard({ label, metric, format, currency = "INR", icon, small, loading }: Props) {
   const deltaPositive = metric.positive
     ? metric.delta >= 0
     : metric.delta <= 0;
@@ -54,7 +55,7 @@ export default function KpiCard({ label, metric, format, icon, small, loading }:
       <div style={{ fontSize: small ? 20 : 24, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.5px" }}>
         {loading ? (
           <div style={{ height: small ? 20 : 24, width: 80, background: "#1c2333", borderRadius: 4, animation: "pulse 1.5s ease-in-out infinite" }} />
-        ) : fmt(metric.value, format)}
+        ) : fmt(metric.value, format, currency)}
       </div>
       <div style={{ fontSize: 11, color: deltaColor, display: "flex", alignItems: "center", gap: 3 }}>
         <span style={{ fontWeight: 600 }}>{arrow} {Math.abs(metric.delta).toFixed(1)}%</span>

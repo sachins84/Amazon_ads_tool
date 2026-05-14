@@ -15,6 +15,8 @@ export interface AmazonRequestOptions {
   body?: unknown;
   /** Max retries on 429 rate-limit responses */
   retries?: number;
+  /** Extra/override headers (e.g. v3/v4 content-type per program) */
+  headers?: Record<string, string>;
 }
 
 export async function amazonRequest<T>(
@@ -27,6 +29,7 @@ export async function amazonRequest<T>(
       method: opts.method,
       body: opts.body,
       retries: opts.retries,
+      headers: opts.headers,
     });
   }
 
@@ -42,6 +45,7 @@ export async function amazonRequest<T>(
   };
 
   if (profileId) headers["Amazon-Advertising-API-Scope"] = profileId;
+  if (opts.headers) Object.assign(headers, opts.headers);
 
   const url = `${BASE_URL}${path}`;
 

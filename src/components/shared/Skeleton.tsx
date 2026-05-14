@@ -22,21 +22,21 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = 5, style 
   );
 }
 
-export function KpiCardSkeleton() {
+export function KpiCardSkeleton({ small = false }: { small?: boolean }) {
   return (
     <div style={{
       background: "#161b27",
       border: "1px solid #2a3245",
       borderRadius: 10,
-      padding: "18px 20px",
+      padding: small ? "14px 16px" : "18px 20px",
       display: "flex",
       flexDirection: "column",
-      gap: 10,
+      gap: 8,
       flex: 1,
     }}>
-      <Skeleton width={80} height={10} />
-      <Skeleton width={120} height={26} />
-      <Skeleton width={90} height={10} />
+      <Skeleton width={70} height={9} />
+      <Skeleton width={100} height={small ? 20 : 26} />
+      <Skeleton width={80} height={9} />
     </div>
   );
 }

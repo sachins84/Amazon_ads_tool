@@ -2,27 +2,57 @@ export function cn(...classes: (string | undefined | false | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-/** Format number with Indian comma grouping (no locale dependency) */
+export type Currency = "INR" | "USD";
+export const currencySymbol = (c: Currency | string | undefined) =>
+  c === "USD" ? "$" : "₹";
+
+/** Indian (lakh/crore) comma grouping */
 function inrFormat(n: number): string {
-  const fixed = Math.round(n).toString();
-  if (fixed.length <= 3) return fixed;
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  const fixed = Math.round(abs).toString();
+  if (fixed.length <= 3) return sign + fixed;
   const last3 = fixed.slice(-3);
   const rest   = fixed.slice(0, -3);
-  return rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3;
+  return sign + rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3;
 }
 
-export function fmt(n: number, type: "currency" | "percent" | "number" | "multiplier" | "compact") {
-  if (type === "currency")   return `₹${inrFormat(n)}`;
+function usFormat(n: number, digits = 0): string {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+export function fmt(
+  n: number,
+  type: "currency" | "percent" | "number" | "multiplier" | "compact",
+  currency: Currency | string = "INR",
+) {
+  const sym = currencySymbol(currency);
+  const isInr = currency !== "USD";
+
+  if (type === "currency") {
+    if (isInr) return `${sym}${inrFormat(n)}`;
+    return `${sym}${usFormat(n, 2)}`;
+  }
   if (type === "percent")    return `${n.toFixed(1)}%`;
   if (type === "multiplier") return `${n.toFixed(2)}x`;
-  if (type === "number")     return inrFormat(n);
+  if (type === "number")     return isInr ? inrFormat(n) : usFormat(n, 0);
+
   if (type === "compact") {
-    if (n >= 10_000_000) return `${(n / 10_000_000).toFixed(1)}Cr`;
-    if (n >= 100_000)    return `${(n / 100_000).toFixed(1)}L`;
-    if (n >= 1_000)      return `${(n / 1_000).toFixed(1)}K`;
-    return n.toString();
+    if (isInr) {
+      if (n >= 10_000_000) return `${(n / 10_000_000).toFixed(1)}Cr`;
+      if (n >= 100_000)    return `${(n / 100_000).toFixed(1)}L`;
+      if (n >= 1_000)      return `${(n / 1_000).toFixed(1)}K`;
+      return inrFormat(n);
+    }
+    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+    if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`;
+    return usFormat(n, 0);
   }
-  return inrFormat(n);
+  return isInr ? inrFormat(n) : usFormat(n, 0);
 }
 
 export function acosColor(acos: number): string {

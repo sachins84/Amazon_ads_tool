@@ -71,7 +71,7 @@ export async function getAccountSpToken(accountId: string): Promise<string> {
 export async function accountRequest<T>(
   accountId: string,
   path: string,
-  opts: { method?: string; body?: unknown; retries?: number } = {}
+  opts: { method?: string; body?: unknown; retries?: number; headers?: Record<string, string> } = {}
 ): Promise<T> {
   const { method = "GET", body, retries = 3 } = opts;
   const account = getAccount(accountId);
@@ -80,14 +80,17 @@ export async function accountRequest<T>(
   for (let attempt = 0; attempt <= retries; attempt++) {
     const accessToken = await getAccountAccessToken(accountId);
 
+    const headers: Record<string, string> = {
+      "Authorization":                   `Bearer ${accessToken}`,
+      "Amazon-Advertising-API-ClientId": account.adsClientId,
+      "Amazon-Advertising-API-Scope":    account.adsProfileId,
+      "Content-Type":                    "application/json",
+    };
+    if (opts.headers) Object.assign(headers, opts.headers);
+
     const res = await fetch(`${account.adsEndpoint}${path}`, {
       method,
-      headers: {
-        "Authorization":                        `Bearer ${accessToken}`,
-        "Amazon-Advertising-API-ClientId":      account.adsClientId,
-        "Amazon-Advertising-API-Scope":         account.adsProfileId,
-        "Content-Type":                         "application/json",
-      },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
 
