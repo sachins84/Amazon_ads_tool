@@ -33,9 +33,12 @@ export interface ReportResponse {
 
 // ─── Column sets ─────────────────────────────────────────────────────────────
 
+// v3 spTargeting report: `keywordId` is the universal ID across keywords AND
+// product targets (despite the name). The text/type fields are `targeting` and
+// `keywordType` — there is NO targetId / targetingText / targetingType in v3.
 export const SP_TARGETING_COLUMNS = [
   "campaignId", "campaignName", "adGroupId", "adGroupName",
-  "keywordId", "targetId", "targetingText", "targetingType", "matchType",
+  "keywordId", "keyword", "targeting", "matchType", "keywordType",
   "impressions", "clicks", "cost",
   "purchases1d", "purchases7d", "purchases14d", "purchases30d",
   "sales1d", "sales7d", "sales14d", "sales30d",

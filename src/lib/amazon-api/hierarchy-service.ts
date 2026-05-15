@@ -211,14 +211,14 @@ export async function getTargetingForAdGroup(
   const pts = ptResult.status === "fulfilled" ? ptResult.value : (errors.productTargets = String(ptResult.reason), [] as SPProductTarget[]);
   const rpt = reportResult.status === "fulfilled" ? reportResult.value : (errors.report = String(reportResult.reason), []);
 
-  // Index report rows by (keywordId|targetId), filtered to this adGroup.
-  const byKw = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
-  const byPt = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
+  // v3 spTargeting report uses keywordId as the universal ID for both
+  // keywords AND product targets — index once, look up in the same map.
+  const byId = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
   for (const raw of rpt as Record<string, unknown>[]) {
     const rAg = String(raw.adGroupId ?? "");
     if (rAg !== adGroupId) continue;
-    const kid = raw.keywordId != null ? String(raw.keywordId) : "";
-    const tid = raw.targetId  != null ? String(raw.targetId)  : "";
+    const id = raw.keywordId != null ? String(raw.keywordId) : "";
+    if (!id) continue;
     const cell = {
       impressions: Number(raw.impressions ?? 0),
       clicks:      Number(raw.clicks ?? 0),
@@ -226,20 +226,13 @@ export async function getTargetingForAdGroup(
       orders:      Number(raw.purchases7d ?? raw.purchases30d ?? 0),
       sales:       Number(raw.sales7d ?? raw.sales30d ?? 0),
     };
-    if (kid) {
-      const e = byKw.get(kid) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
-      e.impressions += cell.impressions; e.clicks += cell.clicks; e.cost += cell.cost; e.orders += cell.orders; e.sales += cell.sales;
-      byKw.set(kid, e);
-    }
-    if (tid) {
-      const e = byPt.get(tid) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
-      e.impressions += cell.impressions; e.clicks += cell.clicks; e.cost += cell.cost; e.orders += cell.orders; e.sales += cell.sales;
-      byPt.set(tid, e);
-    }
+    const e = byId.get(id) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    e.impressions += cell.impressions; e.clicks += cell.clicks; e.cost += cell.cost; e.orders += cell.orders; e.sales += cell.sales;
+    byId.set(id, e);
   }
 
   const keywords: TargetingRow[] = kws.map((k) => {
-    const m = byKw.get(k.keywordId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    const m = byId.get(k.keywordId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
     return {
       id: k.keywordId, kind: "KEYWORD", display: k.keywordText,
       matchType: k.matchType, state: k.state, bid: k.bid ?? 0,
@@ -253,7 +246,7 @@ export async function getTargetingForAdGroup(
   });
 
   const productTargets: TargetingRow[] = pts.map((t) => {
-    const m = byPt.get(t.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    const m = byId.get(t.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
     const expr = t.expression?.[0] ?? t.resolvedExpression?.[0];
     const display = expr
       ? (expr.type === "asinSameAs" ? `ASIN: ${expr.value}` : `${expr.type}${expr.value ? `: ${expr.value}` : ""}`)

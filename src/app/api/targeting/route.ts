@@ -46,7 +46,10 @@ export async function GET(req: NextRequest) {
 
       type ReportRow = {
         keywordId?: string;
-        targetId?: string;
+        keyword?: string;
+        targeting?: string;
+        keywordType?: string;
+        matchType?: string;
         campaignId: string;
         campaignName: string;
         adGroupId: string;
@@ -61,11 +64,9 @@ export async function GET(req: NextRequest) {
       };
       const metrics = reportRows as unknown as ReportRow[];
 
-      const byKw = new Map<string, ReportRow>(
+      // v3 report uses keywordId for BOTH keywords and product targets.
+      const byId = new Map<string, ReportRow>(
         metrics.filter((m) => m.keywordId).map((m) => [String(m.keywordId), m]),
-      );
-      const byTgt = new Map<string, ReportRow>(
-        metrics.filter((m) => m.targetId).map((m) => [String(m.targetId), m]),
       );
 
       const toTarget = (
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
 
       const kwRows: Target[] = keywords.map((k) => toTarget(
         k.keywordId, k.keywordText, "KEYWORD", k.matchType, k.state,
-        k.bid ?? 0, k, byKw.get(k.keywordId),
+        k.bid ?? 0, k, byId.get(k.keywordId),
       ));
 
       const ptRows: Target[] = productTargets.map((t) => {
@@ -113,7 +114,7 @@ export async function GET(req: NextRequest) {
         const type: "ASIN" | "CATEGORY" | "AUTO" =
           t.expressionType === "AUTO" ? "AUTO" :
           expr?.type === "asinSameAs" ? "ASIN" : "CATEGORY";
-        return toTarget(t.targetId, value, type, "AUTO", t.state, t.bid ?? 0, t, byTgt.get(t.targetId));
+        return toTarget(t.targetId, value, type, "AUTO", t.state, t.bid ?? 0, t, byId.get(t.targetId));
       });
 
       return [...kwRows, ...ptRows];
