@@ -69,10 +69,36 @@ export async function getAdGroupsForCampaign(
   const meta      = readAdGroupMeta(accountId, campaignId);
   const refreshState = getRefreshState(accountId, "adgroups");
 
+  // SP ad-group reports don't exist as a separate Amazon report type (only
+  // SB and SD do). For SP ad-groups we roll up the targeting_metrics_daily
+  // rows by adGroupId instead — same numbers, just summed one level up.
+  const targetingRows = readTargetingMetrics(accountId, startDate, endDate, { campaignId });
+
+  // Pre-compute which ad-groups already have direct (SB/SD) ad-group rows so
+  // we don't double-count when SP fallback runs.
+  const adGroupsWithDirectData = new Set<string>();
+  for (const r of dailyRows) adGroupsWithDirectData.add(r.adGroupId);
+
   const byAg = new Map<string, { program: Program; impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
   const byDate = new Map<string, { spend: number; sales: number; orders: number; clicks: number; impressions: number }>();
 
+  // Direct ad-group rows (SB/SD only in practice, since SP report is unavailable)
   for (const r of dailyRows) {
+    const agg = byAg.get(r.adGroupId) ?? { program: r.program, impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    agg.impressions += r.impressions; agg.clicks += r.clicks; agg.cost += r.cost; agg.orders += r.orders; agg.sales += r.sales;
+    byAg.set(r.adGroupId, agg);
+
+    const d = byDate.get(r.date) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    d.spend += r.cost; d.sales += r.sales; d.orders += r.orders; d.clicks += r.clicks; d.impressions += r.impressions;
+    byDate.set(r.date, d);
+  }
+
+  // SP roll-up from targeting (skip ad-groups already covered above by their
+  // direct ad-group report).
+  for (const r of targetingRows) {
+    if (r.program !== "SP") continue;
+    if (adGroupsWithDirectData.has(r.adGroupId)) continue;
+
     const agg = byAg.get(r.adGroupId) ?? { program: r.program, impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
     agg.impressions += r.impressions; agg.clicks += r.clicks; agg.cost += r.cost; agg.orders += r.orders; agg.sales += r.sales;
     byAg.set(r.adGroupId, agg);
