@@ -47,22 +47,42 @@ export default function SuggestionsPage() {
     }
   };
 
-  const updateStatus = async (id: string, newStatus: SuggestionStatus) => {
-    await fetch(`/api/suggestions/${id}`, {
+  const updateStatus = async (id: string, newStatus: SuggestionStatus, apply = false) => {
+    const res = await fetch(`/api/suggestions/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
+      body: JSON.stringify({ status: newStatus, apply }),
     });
+    if (!res.ok && apply) {
+      const j = await res.json().catch(() => ({}));
+      alert(`Apply failed: ${j.message ?? j.error ?? res.status}`);
+    }
     load();
   };
 
   const bulkApprove = async () => {
-    if (!confirm(`Approve all ${suggestions.length} suggestions? Apply-to-Amazon is Phase 3 — this only marks them as APPROVED.`)) return;
+    if (!confirm(`Mark all ${suggestions.length} suggestions as APPROVED?`)) return;
     setBulkBusy(true);
     await Promise.all(suggestions.map((s) =>
       fetch(`/api/suggestions/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "APPROVED" }) })
     ));
     setBulkBusy(false);
+    load();
+  };
+
+  const bulkApply = async () => {
+    if (!confirm(`Push all ${suggestions.length} APPROVED suggestions to Amazon? This makes real changes.`)) return;
+    setBulkBusy(true);
+    let okCount = 0, failCount = 0;
+    for (const s of suggestions) {
+      const res = await fetch(`/api/suggestions/${s.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "APPLIED", apply: true }),
+      });
+      if (res.ok) okCount += 1; else failCount += 1;
+    }
+    setBulkBusy(false);
+    alert(`Applied ${okCount}, failed ${failCount}.`);
     load();
   };
 
@@ -101,6 +121,11 @@ export default function SuggestionsPage() {
                 Approve all
               </button>
             )}
+            {status === "APPROVED" && suggestions.length > 0 && (
+              <button onClick={bulkApply} disabled={bulkBusy} style={btnPrimary(bulkBusy)}>
+                {bulkBusy ? "Applying…" : `Apply all to Amazon (${suggestions.length})`}
+              </button>
+            )}
           </div>
         </div>
 
@@ -122,7 +147,7 @@ function RuleGroup({ ruleId, items, currency, onUpdate }: {
   ruleId: string;
   items: Suggestion[];
   currency: string;
-  onUpdate: (id: string, s: SuggestionStatus) => void;
+  onUpdate: (id: string, s: SuggestionStatus, apply?: boolean) => void;
 }) {
   const totalSpend = items.reduce((s, i) => s + (i.expectedImpact?.savedSpend ?? 0), 0);
   return (
@@ -138,7 +163,7 @@ function RuleGroup({ ruleId, items, currency, onUpdate }: {
   );
 }
 
-function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: string; onUpdate: (id: string, status: SuggestionStatus) => void }) {
+function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: string; onUpdate: (id: string, status: SuggestionStatus, apply?: boolean) => void }) {
   const statusColor = s.status === "PENDING" ? "#a5b4fc"
     : s.status === "APPROVED" ? "#fde68a"
     : s.status === "APPLIED" ? "#86efac"
@@ -169,6 +194,12 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
       {s.status === "PENDING" && (
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button onClick={() => onUpdate(s.id, "APPROVED")} style={{ ...btnSecondary, color: "#86efac" }}>Approve</button>
+          <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "#8892a4" }}>Dismiss</button>
+        </div>
+      )}
+      {s.status === "APPROVED" && (
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <button onClick={() => onUpdate(s.id, "APPLIED", true)} style={{ ...btnSecondary, color: "#a5b4fc", borderColor: "#6366f1" }} title="Push to Amazon">Apply to Amazon</button>
           <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "#8892a4" }}>Dismiss</button>
         </div>
       )}
