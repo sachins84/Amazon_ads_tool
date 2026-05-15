@@ -11,6 +11,7 @@ import TopNav from "@/components/shared/TopNav";
 import DateRangePicker from "@/components/shared/DateRangePicker";
 import { fmt } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
+import { queueSuggestion } from "@/lib/api-client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Program = "SP" | "SB" | "SD";
@@ -99,6 +100,13 @@ export default function Targeting360Page() {
   const [error,   setError]   = useState<string | null>(null);
 
   // Filters
+  // Toast for inline action confirmations
+  const [toast, setToast] = useState<{ msg: string; kind: "ok" | "err" } | null>(null);
+  const showToast = useCallback((msg: string, kind: "ok" | "err" = "ok") => {
+    setToast({ msg, kind });
+    setTimeout(() => setToast(null), 3500);
+  }, []);
+
   const [campFilters, setCampFilters] = useState<CampaignFilters>({ search: "", programs: ["SP","SB","SD"], targetingType: "ALL", status: "ALL" });
   const [agFilters,   setAgFilters]   = useState<AdGroupFilters>({ search: "", status: "ALL" });
   const [tgFilters,   setTgFilters]   = useState<TargetingFilters>({
@@ -318,28 +326,103 @@ export default function Targeting360Page() {
 
         {/* Body */}
         {accountId && tab === "HIERARCHY" && level === "CAMPAIGNS" && (
-          <CampaignsView filters={campFilters} setFilters={setCampFilters} rows={filteredCampaigns} loading={loading} currency={currency} onDrill={drillIntoCampaign} />
+          <CampaignsView filters={campFilters} setFilters={setCampFilters} rows={filteredCampaigns} loading={loading} currency={currency} onDrill={drillIntoCampaign}
+            onQueue={async (c, action) => { await runQueue(accountId, c, action); showToast("Queued in /suggestions"); }} />
         )}
         {accountId && tab === "HIERARCHY" && level === "ADGROUPS" && (
-          <AdGroupsView  filters={agFilters}   setFilters={setAgFilters}   rows={filteredAdGroups}   loading={loading} currency={currency} onDrill={drillIntoAdGroup} />
+          <AdGroupsView  filters={agFilters}   setFilters={setAgFilters}   rows={filteredAdGroups}   loading={loading} currency={currency} onDrill={drillIntoAdGroup}
+            onQueue={async (ag, action) => { await runQueue(accountId, ag, action); showToast("Queued in /suggestions"); }} />
         )}
         {accountId && tab === "HIERARCHY" && level === "TARGETS" && (
-          <TargetsView   filters={tgFilters}   setFilters={setTgFilters}   rows={filteredTargets}    loading={loading} currency={currency} />
+          <TargetsView   filters={tgFilters}   setFilters={setTgFilters}   rows={filteredTargets}    loading={loading} currency={currency}
+            onQueue={async (t, action) => { await runQueue(accountId, t, action); showToast("Queued in /suggestions"); }} />
         )}
         {accountId && tab === "FLAT" && (
-          <FlatView filters={flatFilters} setFilters={(f) => { setFlatPage(0); setFlatFilters(f); }} rows={flatRows} totalCount={flatCount} loading={loading} currency={currency} page={flatPage} setPage={setFlatPage} pageSize={FLAT_PAGE_SIZE} />
+          <FlatView filters={flatFilters} setFilters={(f) => { setFlatPage(0); setFlatFilters(f); }} rows={flatRows} totalCount={flatCount} loading={loading} currency={currency} page={flatPage} setPage={setFlatPage} pageSize={FLAT_PAGE_SIZE}
+            onQueue={async (t, action) => { await runQueue(accountId, t, action); showToast("Queued in /suggestions"); }} />
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div style={{
+            position: "fixed", bottom: 20, right: 20, zIndex: 100,
+            padding: "10px 16px", borderRadius: 8, fontSize: 12,
+            background: toast.kind === "ok" ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)",
+            border: `1px solid ${toast.kind === "ok" ? "#22c55e" : "#ef4444"}`,
+            color: toast.kind === "ok" ? "#86efac" : "#ef4444",
+          }}>{toast.msg}</div>
         )}
       </main>
     </div>
   );
 }
 
+// ─── Queue handler ───────────────────────────────────────────────────────────
+
+type QueueAction =
+  | { kind: "PAUSE" }
+  | { kind: "ENABLE" }
+  | { kind: "SET_BID";    value: number }
+  | { kind: "SET_BUDGET"; value: number };
+
+async function runQueue(
+  accountId: string,
+  row: CampaignRow | AdGroupRow | TargetingRow | FlatTarget,
+  action: QueueAction,
+): Promise<void> {
+  // Figure out targetType + name + bid/budget from the row shape.
+  let targetType: "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET";
+  let targetName: string;
+  let program: "SP" | "SB" | "SD" | undefined;
+  let currentValue: number | undefined;
+
+  if ("budget" in row) {                       // CampaignRow
+    targetType = "CAMPAIGN";
+    targetName = row.name;
+    program    = row.type;
+    currentValue = row.budget;
+  } else if ("defaultBid" in row) {            // AdGroupRow
+    targetType = "AD_GROUP";
+    targetName = row.name;
+    program    = row.type;
+    currentValue = row.defaultBid;
+  } else if ("kind" in row) {                  // TargetingRow (hierarchy)
+    targetType = row.kind;
+    targetName = row.display;
+    program    = "SP";
+    currentValue = row.bid;
+  } else {                                     // FlatTarget
+    targetType = row.type === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET";
+    targetName = row.value;
+    program    = "SP";
+    currentValue = row.bid;
+  }
+
+  const actionType =
+    action.kind === "PAUSE"  ? "PAUSE"  :
+    action.kind === "ENABLE" ? "ENABLE" :
+    action.kind === "SET_BID" ? "SET_BID" : "SET_BUDGET";
+  const actionValue = "value" in action ? action.value : undefined;
+
+  await queueSuggestion({
+    accountId,
+    targetType,
+    targetId: row.id,
+    targetName,
+    program,
+    actionType,
+    actionValue,
+    currentValue,
+  });
+}
+
 // ─── Hierarchy: Campaigns view ───────────────────────────────────────────────
 
-function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill }: {
+function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, onQueue }: {
   filters: CampaignFilters; setFilters: (f: CampaignFilters) => void;
   rows: CampaignRow[]; loading: boolean; currency: string;
   onDrill: (c: CampaignRow) => void;
+  onQueue: (c: CampaignRow, action: QueueAction) => Promise<void> | void;
 }) {
   const toggleProgram = (p: Program) => {
     const next = filters.programs.includes(p) ? filters.programs.filter((x) => x !== p) : [...filters.programs, p];
@@ -374,15 +457,16 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill }
               <Th>Type</Th><Th>Targeting</Th><Th>Status</Th><Th align="left">Campaign</Th>
               <Th align="right">Budget</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+              <Th align="right">Actions</Th>
             </tr>
           </thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id} onClick={() => onDrill(c)} style={tableRowClickable}>
-                <Td><Pill text={c.type} /></Td>
-                <Td>{c.type === "SP" && c.targetingType ? <Pill text={c.targetingType} /> : <span style={{ color: "#555f6e" }}>—</span>}</Td>
-                <Td><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
-                <Td title={c.name} style={cellNameStyle}>{c.name}</Td>
+              <tr key={c.id} style={tableRow}>
+                <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.type} /></Td>
+                <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}>{c.type === "SP" && c.targetingType ? <Pill text={c.targetingType} /> : <span style={{ color: "#555f6e" }}>—</span>}</Td>
+                <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
+                <Td onClick={() => onDrill(c)} title={c.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{c.name}</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{fmt(c.budget, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.spend, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.sales, "currency", currency)}</Td>
@@ -390,6 +474,19 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill }
                 <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{c.ctr.toFixed(2)}%</Td>
+                <Td align="right">
+                  <RowActions
+                    state={c.status} currency={currency}
+                    onToggle={() => onQueue(c, { kind: c.status === "ENABLED" ? "PAUSE" : "ENABLE" })}
+                    onEdit={() => {
+                      const v = window.prompt(`New daily budget for "${c.name}":`, String(c.budget));
+                      if (v == null) return;
+                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
+                      onQueue(c, { kind: "SET_BUDGET", value: n });
+                    }}
+                    editLabel="Edit budget"
+                  />
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -402,10 +499,11 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill }
 
 // ─── Hierarchy: Ad Groups view ───────────────────────────────────────────────
 
-function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill }: {
+function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, onQueue }: {
   filters: AdGroupFilters; setFilters: (f: AdGroupFilters) => void;
   rows: AdGroupRow[]; loading: boolean; currency: string;
   onDrill: (a: AdGroupRow) => void;
+  onQueue: (a: AdGroupRow, action: QueueAction) => Promise<void> | void;
 }) {
   return (
     <>
@@ -426,14 +524,15 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill }:
               <Th>Type</Th><Th>Status</Th><Th align="left">Ad Group</Th>
               <Th align="right">Default Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+              <Th align="right">Actions</Th>
             </tr>
           </thead>
           <tbody>
             {rows.map((ag) => (
-              <tr key={ag.id} onClick={() => onDrill(ag)} style={tableRowClickable}>
-                <Td><Pill text={ag.type} /></Td>
-                <Td><Pill text={ag.status} muted={ag.status !== "ENABLED"} /></Td>
-                <Td title={ag.name} style={cellNameStyle}>{ag.name}</Td>
+              <tr key={ag.id} style={tableRow}>
+                <Td onClick={() => onDrill(ag)} style={{ cursor: "pointer" }}><Pill text={ag.type} /></Td>
+                <Td onClick={() => onDrill(ag)} style={{ cursor: "pointer" }}><Pill text={ag.status} muted={ag.status !== "ENABLED"} /></Td>
+                <Td onClick={() => onDrill(ag)} title={ag.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{ag.name}</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(ag.spend, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(ag.sales, "currency", currency)}</Td>
@@ -441,6 +540,19 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill }:
                 <Td align="right" style={{ color: roasColor(ag.roas) }}>{ag.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(ag.acos) }}>{ag.acos.toFixed(1)}%</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{ag.ctr.toFixed(2)}%</Td>
+                <Td align="right">
+                  <RowActions
+                    state={ag.status} currency={currency}
+                    onToggle={() => onQueue(ag, { kind: ag.status === "ENABLED" ? "PAUSE" : "ENABLE" })}
+                    onEdit={() => {
+                      const v = window.prompt(`New default bid for "${ag.name}":`, String(ag.defaultBid));
+                      if (v == null) return;
+                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
+                      onQueue(ag, { kind: "SET_BID", value: n });
+                    }}
+                    editLabel="Edit bid"
+                  />
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -453,9 +565,10 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill }:
 
 // ─── Hierarchy: Targets view ─────────────────────────────────────────────────
 
-function TargetsView({ filters, setFilters, rows, loading, currency }: {
+function TargetsView({ filters, setFilters, rows, loading, currency, onQueue }: {
   filters: TargetingFilters; setFilters: (f: TargetingFilters) => void;
   rows: TargetingRow[]; loading: boolean; currency: string;
+  onQueue: (t: TargetingRow, action: QueueAction) => Promise<void> | void;
 }) {
   return (
     <>
@@ -468,6 +581,7 @@ function TargetsView({ filters, setFilters, rows, loading, currency }: {
               <Th align="right">Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
               <Th align="right">CTR</Th><Th align="right">CPC</Th><Th align="right">CVR</Th>
+              <Th align="right">Actions</Th>
             </tr>
           </thead>
           <tbody>
@@ -486,6 +600,19 @@ function TargetsView({ filters, setFilters, rows, loading, currency }: {
                 <Td align="right" style={{ color: "#8892a4" }}>{t.ctr.toFixed(2)}%</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{fmt(t.cpc, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{t.cvr.toFixed(2)}%</Td>
+                <Td align="right">
+                  <RowActions
+                    state={t.state} currency={currency}
+                    onToggle={() => onQueue(t, { kind: t.state === "ENABLED" ? "PAUSE" : "ENABLE" })}
+                    onEdit={() => {
+                      const v = window.prompt(`New bid for "${t.display}":`, String(t.bid));
+                      if (v == null) return;
+                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
+                      onQueue(t, { kind: "SET_BID", value: n });
+                    }}
+                    editLabel="Edit bid"
+                  />
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -498,12 +625,13 @@ function TargetsView({ filters, setFilters, rows, loading, currency }: {
 
 // ─── Flat tab: All Keywords + product targets ────────────────────────────────
 
-function FlatView({ filters, setFilters, rows, totalCount, loading, currency, page, setPage, pageSize }: {
+function FlatView({ filters, setFilters, rows, totalCount, loading, currency, page, setPage, pageSize, onQueue }: {
   filters: TargetingFilters; setFilters: (f: TargetingFilters) => void;
   rows: FlatTarget[]; totalCount: number;
   loading: boolean; currency: string;
   page: number; setPage: (p: number) => void;
   pageSize: number;
+  onQueue: (t: FlatTarget, action: QueueAction) => Promise<void> | void;
 }) {
   const pages = Math.max(1, Math.ceil(totalCount / pageSize));
   return (
@@ -518,6 +646,7 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
               <Th align="left">Campaign</Th><Th align="left">Ad Group</Th>
               <Th align="right">Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
+              <Th align="right">Actions</Th>
             </tr>
           </thead>
           <tbody>
@@ -535,6 +664,19 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
                 <Td align="right" style={{ color: "#8892a4" }}>{t.orders}</Td>
                 <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
+                <Td align="right">
+                  <RowActions
+                    state={t.status} currency={currency}
+                    onToggle={() => onQueue(t, { kind: t.status === "ENABLED" ? "PAUSE" : "ENABLE" })}
+                    onEdit={() => {
+                      const v = window.prompt(`New bid for "${t.value}":`, String(t.bid));
+                      if (v == null) return;
+                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
+                      onQueue(t, { kind: "SET_BID", value: n });
+                    }}
+                    editLabel="Edit bid"
+                  />
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -633,9 +775,35 @@ function Tile({ label, value }: { label: string; value: string }) {
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
   return <th style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "#8892a4" }}>{children}</th>;
 }
-function Td({ children, align = "left", style, title }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string }) {
-  return <td style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
+function Td({ children, align = "left", style, title, onClick }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string; onClick?: () => void }) {
+  return <td onClick={onClick} style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
 }
+function RowActions({ state, onToggle, onEdit, editLabel }: {
+  state: Status;
+  currency: string;
+  onToggle: () => void;
+  onEdit: () => void;
+  editLabel: string;
+}) {
+  const pauseEnable = state === "ENABLED" ? "Pause" : "Enable";
+  return (
+    <div style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
+      <button onClick={onToggle} style={miniBtn} title={`Queue ${pauseEnable.toLowerCase()} suggestion`}>
+        {pauseEnable}
+      </button>
+      <button onClick={onEdit} style={miniBtn} title={editLabel}>
+        ✎ {editLabel.split(" ")[1]}
+      </button>
+    </div>
+  );
+}
+
+const miniBtn: React.CSSProperties = {
+  padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+  background: "#1c2333", border: "1px solid #2a3245",
+  color: "#a5b4fc", cursor: "pointer",
+};
+
 function Pill({ text, muted }: { text: string; muted?: boolean }) {
   const palette: Record<string, { bg: string; fg: string }> = {
     SP:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },

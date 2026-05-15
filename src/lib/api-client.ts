@@ -145,6 +145,28 @@ export async function fetchOverview(params: {
   }
 }
 
+/**
+ * Queue an inline action as a PENDING suggestion (review then apply via /suggestions).
+ */
+export async function queueSuggestion(input: {
+  accountId: string;
+  targetType: "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET";
+  targetId: string;
+  targetName?: string;
+  program?: "SP" | "SB" | "SD";
+  actionType: "PAUSE" | "ENABLE" | "SET_BID" | "SET_BUDGET";
+  actionValue?: number;
+  currentValue?: number;
+  reason?: string;
+}): Promise<{ success: boolean; created: number; error?: string }> {
+  const res = await fetch(`/api/suggestions/queue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
 /** Trigger an incremental Amazon refresh for an account (default 14 days). */
 export async function refreshAccountMetrics(params: { accountId?: string; all?: boolean; days?: number } = {}): Promise<{ refreshed?: number; results?: unknown[]; durationMs?: number; campaignRowsUpserted?: number; adGroupRowsUpserted?: number; error?: string }> {
   const qs = new URLSearchParams();
