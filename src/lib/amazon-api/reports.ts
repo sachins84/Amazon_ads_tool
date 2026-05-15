@@ -36,13 +36,14 @@ export interface ReportResponse {
 // v3 spTargeting report: `keywordId` is the universal ID across keywords AND
 // product targets (despite the name). The text/type fields are `targeting` and
 // `keywordType` — there is NO targetId / targetingText / targetingType in v3.
+// `date` is required for timeUnit=DAILY which we use so the metrics-store
+// can hold per-day rows.
 export const SP_TARGETING_COLUMNS = [
+  "date",
   "campaignId", "campaignName", "adGroupId", "adGroupName",
   "keywordId", "keyword", "targeting", "matchType", "keywordType",
   "impressions", "clicks", "cost",
-  "purchases1d", "purchases7d", "purchases14d", "purchases30d",
-  "sales1d", "sales7d", "sales14d", "sales30d",
-  "unitsSoldClicks1d", "unitsSoldClicks7d",
+  "purchases7d", "sales7d",
 ];
 
 // Daily-grouped campaign reports — used for both totals AND time series.
@@ -221,7 +222,7 @@ export async function fetchTargetingReport(
       groupBy: ["targeting"],
       columns: SP_TARGETING_COLUMNS,
       reportTypeId: "spTargeting",
-      timeUnit: "SUMMARY",
+      timeUnit: "DAILY",
       format: "GZIP_JSON",
     },
   }, accountId);
