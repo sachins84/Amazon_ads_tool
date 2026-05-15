@@ -197,14 +197,56 @@ function migrate(db: Database.Database) {
     -- Tracks when each account/level was last refreshed.
     CREATE TABLE IF NOT EXISTS account_refresh_state (
       account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-      level        TEXT NOT NULL,        -- 'campaigns' | 'adgroups'
+      level        TEXT NOT NULL,        -- 'campaigns' | 'adgroups' | 'targeting'
       last_refresh_at TEXT NOT NULL,
-      window_start TEXT NOT NULL,        -- earliest date we fetched in the last refresh
-      window_end   TEXT NOT NULL,        -- latest date we fetched
+      window_start TEXT NOT NULL,
+      window_end   TEXT NOT NULL,
       rows_upserted INTEGER NOT NULL DEFAULT 0,
       duration_ms  INTEGER,
       error        TEXT,
       PRIMARY KEY (account_id, level)
     );
+
+    -- ─── Keyword / product-target daily metrics ──────────────────────────
+    -- v3 spTargeting report rolls both into one stream identified by
+    -- "keywordId" (despite the name). target_id here is that universal ID.
+    CREATE TABLE IF NOT EXISTS targeting_metrics_daily (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      campaign_id  TEXT NOT NULL,
+      adgroup_id   TEXT NOT NULL,
+      target_id    TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      program      TEXT NOT NULL,        -- only 'SP' wired today
+      kind         TEXT,                 -- 'KEYWORD' | 'PRODUCT_TARGET' | 'AUTO'
+      match_type   TEXT,                 -- EXACT/PHRASE/BROAD or null
+      display      TEXT,                 -- keyword text or ASIN expression
+      impressions  INTEGER NOT NULL DEFAULT 0,
+      clicks       INTEGER NOT NULL DEFAULT 0,
+      cost         REAL    NOT NULL DEFAULT 0,
+      orders       INTEGER NOT NULL DEFAULT 0,
+      sales        REAL    NOT NULL DEFAULT 0,
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, target_id, date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tmd_account_date     ON targeting_metrics_daily (account_id, date);
+    CREATE INDEX IF NOT EXISTS idx_tmd_account_adgroup  ON targeting_metrics_daily (account_id, adgroup_id);
+    CREATE INDEX IF NOT EXISTS idx_tmd_account_campaign ON targeting_metrics_daily (account_id, campaign_id);
+
+    -- Targeting metadata (state + current bid).
+    CREATE TABLE IF NOT EXISTS targeting_meta (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      target_id    TEXT NOT NULL,
+      campaign_id  TEXT NOT NULL,
+      adgroup_id   TEXT NOT NULL,
+      program      TEXT NOT NULL,
+      kind         TEXT NOT NULL,        -- 'KEYWORD' | 'PRODUCT_TARGET'
+      display      TEXT,
+      match_type   TEXT,                 -- EXACT/PHRASE/BROAD or null
+      state        TEXT,                 -- ENABLED/PAUSED/ARCHIVED
+      bid          REAL,
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, target_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tm_account_adgroup ON targeting_meta (account_id, adgroup_id);
   `);
 }

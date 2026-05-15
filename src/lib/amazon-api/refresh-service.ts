@@ -7,16 +7,17 @@
  */
 import { getAccount } from "@/lib/db/accounts";
 import {
-  upsertCampaignMetrics, upsertAdGroupMetrics,
-  upsertCampaignMeta,    upsertAdGroupMeta,
+  upsertCampaignMetrics, upsertAdGroupMetrics, upsertTargetingMetrics,
+  upsertCampaignMeta,    upsertAdGroupMeta,    upsertTargetingMeta,
   setRefreshState,
-  type CampaignDailyRow, type AdGroupDailyRow,
-  type CampaignMetaRow,  type AdGroupMetaRow,
+  type CampaignDailyRow, type AdGroupDailyRow, type TargetingDailyRow,
+  type CampaignMetaRow,  type AdGroupMetaRow,  type TargetingMetaRow,
 } from "@/lib/db/metrics-store";
 import { listAllCampaigns }      from "./campaigns";
 import { listAllAdGroups }       from "./adgroups";
+import { listSPKeywords, listSPProductTargets } from "./targeting";
 import {
-  fetchAllProgramReports, fetchAllAdGroupReports,
+  fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
   type Program,
 } from "./reports";
 
@@ -25,13 +26,19 @@ export interface RefreshResult {
   brandName: string;
   windowStart: string;
   windowEnd:   string;
-  campaignRowsUpserted: number;
-  adGroupRowsUpserted:  number;
-  campaignMetaUpserted: number;
-  adGroupMetaUpserted:  number;
+  campaignRowsUpserted:  number;
+  adGroupRowsUpserted:   number;
+  targetingRowsUpserted: number;
+  campaignMetaUpserted:  number;
+  adGroupMetaUpserted:   number;
+  targetingMetaUpserted: number;
   durationMs: number;
-  errors: { program: Program; error: string; phase: "campaigns" | "adgroups" | "list_campaigns" | "list_adgroups" }[];
+  errors: { program: Program; error: string; phase: RefreshPhase }[];
 }
+
+type RefreshPhase =
+  | "campaigns" | "adgroups" | "targeting"
+  | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets";
 
 export async function refreshAccountRecent(accountId: string, days = 14): Promise<RefreshResult> {
   const acct = getAccount(accountId);
@@ -42,8 +49,9 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
   const windowStart = daysAgoUTC(days);
   const errors: RefreshResult["errors"] = [];
 
-  // ─── 1. Fetch all 4 things in parallel ─────────────────────────────────
-  const [campaignsResult, adGroupsResult, campaignReports, adGroupReports] = await Promise.all([
+  // ─── 1. Fetch everything in parallel ───────────────────────────────────
+  const [campaignsResult, adGroupsResult, keywordsResult, productTargetsResult,
+         campaignReports, adGroupReports, targetingReport] = await Promise.all([
     listAllCampaigns(acct.adsProfileId, accountId).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "list_campaigns" });
       return { campaigns: [], errors: [] };
@@ -52,6 +60,14 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
       errors.push({ program: "SP", error: String(e), phase: "list_adgroups" });
       return { adGroups: [], errors: [] };
     }),
+    listSPKeywords(acct.adsProfileId, {}, accountId).catch((e) => {
+      errors.push({ program: "SP", error: String(e), phase: "list_keywords" });
+      return [];
+    }),
+    listSPProductTargets(acct.adsProfileId, {}, accountId).catch((e) => {
+      errors.push({ program: "SP", error: String(e), phase: "list_targets" });
+      return [];
+    }),
     fetchAllProgramReports(acct.adsProfileId, windowStart, windowEnd, accountId).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "campaigns" });
       return { rows: [], errors: [] };
@@ -59,6 +75,10 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
     fetchAllAdGroupReports(acct.adsProfileId, windowStart, windowEnd, accountId).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "adgroups" });
       return { rows: [], errors: [] };
+    }),
+    fetchTargetingReport(acct.adsProfileId, windowStart, windowEnd, accountId).catch((e) => {
+      errors.push({ program: "SP", error: String(e), phase: "targeting" });
+      return [] as Record<string, unknown>[];
     }),
   ]);
 
@@ -97,10 +117,64 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
       impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
     }));
 
-  const campaignMetaUpserted = upsertCampaignMeta(campaignMeta);
-  const campaignRowsUpserted = upsertCampaignMetrics(campaignDaily);
-  const adGroupMetaUpserted  = upsertAdGroupMeta(adGroupMeta);
-  const adGroupRowsUpserted  = upsertAdGroupMetrics(adGroupDaily);
+  // ─── 3. Targeting meta + daily ──────────────────────────────────────────
+  const targetingMeta: TargetingMetaRow[] = [
+    ...keywordsResult.map((k) => ({
+      accountId, targetId: k.keywordId,
+      campaignId: k.campaignId, adGroupId: k.adGroupId,
+      program: "SP" as Program, kind: "KEYWORD" as const,
+      display: k.keywordText,
+      matchType: k.matchType,
+      state: k.state, bid: k.bid ?? null,
+    })),
+    ...productTargetsResult.map((t) => {
+      const expr = t.expression?.[0] ?? t.resolvedExpression?.[0];
+      const display = expr
+        ? (expr.type === "asinSameAs" ? `ASIN: ${expr.value}` : `${expr.type}${expr.value ? `: ${expr.value}` : ""}`)
+        : "Auto target";
+      return {
+        accountId, targetId: t.targetId,
+        campaignId: t.campaignId, adGroupId: t.adGroupId,
+        program: "SP" as Program, kind: "PRODUCT_TARGET" as const,
+        display,
+        matchType: null,
+        state: t.state, bid: t.bid ?? null,
+      };
+    }),
+  ];
+
+  // Index meta by id so we can attach display/matchType to daily rows.
+  const metaById = new Map(targetingMeta.map((m) => [m.targetId, m]));
+
+  const targetingDaily: TargetingDailyRow[] = (targetingReport as Record<string, unknown>[])
+    .filter((r) => r.keywordId && r.date && r.adGroupId)
+    .map((r) => {
+      const id = String(r.keywordId);
+      const m = metaById.get(id);
+      return {
+        accountId,
+        campaignId: String(r.campaignId ?? m?.campaignId ?? ""),
+        adGroupId:  String(r.adGroupId  ?? m?.adGroupId  ?? ""),
+        targetId:   id,
+        date:       String(r.date),
+        program:    "SP" as Program,
+        kind:       (m?.kind ?? (r.keywordType ? deriveKind(String(r.keywordType)) : null)) as TargetingDailyRow["kind"],
+        matchType:  (m?.matchType ?? null),
+        display:    (m?.display ?? String(r.targeting ?? r.keyword ?? "") ?? null),
+        impressions: Number(r.impressions ?? 0),
+        clicks:      Number(r.clicks ?? 0),
+        cost:        Number(r.cost ?? 0),
+        orders:      Number(r.purchases7d ?? r.purchases30d ?? 0),
+        sales:       Number(r.sales7d ?? r.sales30d ?? 0),
+      };
+    });
+
+  const campaignMetaUpserted  = upsertCampaignMeta(campaignMeta);
+  const campaignRowsUpserted  = upsertCampaignMetrics(campaignDaily);
+  const adGroupMetaUpserted   = upsertAdGroupMeta(adGroupMeta);
+  const adGroupRowsUpserted   = upsertAdGroupMetrics(adGroupDaily);
+  const targetingMetaUpserted = upsertTargetingMeta(targetingMeta);
+  const targetingRowsUpserted = upsertTargetingMetrics(targetingDaily);
 
   const durationMs = Date.now() - start;
   const lastRefreshAt = new Date().toISOString();
@@ -119,6 +193,13 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
     durationMs,
     error: errors.filter((e) => e.phase === "adgroups" || e.phase === "list_adgroups").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
   });
+  setRefreshState({
+    accountId, level: "targeting",
+    lastRefreshAt, windowStart, windowEnd,
+    rowsUpserted: targetingRowsUpserted,
+    durationMs,
+    error: errors.filter((e) => e.phase === "targeting" || e.phase === "list_keywords" || e.phase === "list_targets").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
+  });
 
   return {
     accountId,
@@ -126,11 +207,20 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
     windowStart, windowEnd,
     campaignRowsUpserted,
     adGroupRowsUpserted,
+    targetingRowsUpserted,
     campaignMetaUpserted,
     adGroupMetaUpserted,
+    targetingMetaUpserted,
     durationMs,
     errors,
   };
+}
+
+function deriveKind(keywordType: string): TargetingDailyRow["kind"] {
+  const t = keywordType.toUpperCase();
+  if (t === "BROAD" || t === "EXACT" || t === "PHRASE" || t === "KEYWORD") return "KEYWORD";
+  if (t.includes("AUTO")) return "AUTO";
+  return "PRODUCT_TARGET";
 }
 
 // ─── Date helpers (UTC, YYYY-MM-DD) ─────────────────────────────────────────
