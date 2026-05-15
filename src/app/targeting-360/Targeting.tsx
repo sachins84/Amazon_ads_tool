@@ -82,6 +82,14 @@ interface PendingMark {
   actionValue: number | null;
 }
 
+interface LastActionMark {
+  suggestionId: string;
+  status: "APPLIED" | "APPROVED" | "DISMISSED" | "FAILED";
+  actionType: PendingMark["actionType"];
+  actionValue: number | null;
+  at: string;
+}
+
 type EditorAction = "TOGGLE_STATE" | "SET_BUDGET" | "SET_BID";
 interface EditorContext {
   targetType: "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET";
@@ -130,20 +138,23 @@ export default function Targeting360Page() {
 
   // Map of pending suggestions by targetId so each row can show a pending pill.
   const [pendingByTarget, setPendingByTarget] = useState<Record<string, PendingMark>>({});
+  // Map of last APPLIED/APPROVED/DISMISSED/FAILED suggestion per target — shown
+  // in the 'Last Action' column so reviewers can see what's already been acted on.
+  const [lastByTarget, setLastByTarget] = useState<Record<string, LastActionMark>>({});
+
   const reloadPending = useCallback(async () => {
-    if (!accountId) { setPendingByTarget({}); return; }
+    if (!accountId) { setPendingByTarget({}); setLastByTarget({}); return; }
     try {
-      const res = await fetch(`/api/suggestions?accountId=${accountId}&status=PENDING`);
-      const j = await res.json();
-      const map: Record<string, PendingMark> = {};
-      for (const s of j.suggestions ?? []) {
-        map[s.targetId] = {
-          suggestionId: s.id,
-          actionType: s.actionType,
-          actionValue: s.actionValue,
-        };
+      const [p, r] = await Promise.all([
+        fetch(`/api/suggestions?accountId=${accountId}&status=PENDING`).then((x) => x.json()),
+        fetch(`/api/suggestions/recent?accountId=${accountId}`).then((x) => x.json()),
+      ]);
+      const pmap: Record<string, PendingMark> = {};
+      for (const s of p.suggestions ?? []) {
+        pmap[s.targetId] = { suggestionId: s.id, actionType: s.actionType, actionValue: s.actionValue };
       }
-      setPendingByTarget(map);
+      setPendingByTarget(pmap);
+      setLastByTarget((r.actions ?? {}) as Record<string, LastActionMark>);
     } catch { /* ignore */ }
   }, [accountId]);
   useEffect(() => { reloadPending(); }, [reloadPending, level, tab]);
@@ -368,19 +379,19 @@ export default function Targeting360Page() {
         {/* Body */}
         {accountId && tab === "HIERARCHY" && level === "CAMPAIGNS" && (
           <CampaignsView filters={campFilters} setFilters={setCampFilters} rows={filteredCampaigns} loading={loading} currency={currency} onDrill={drillIntoCampaign}
-            pending={pendingByTarget} openEditor={setEditor} />
+            pending={pendingByTarget} last={lastByTarget} openEditor={setEditor} />
         )}
         {accountId && tab === "HIERARCHY" && level === "ADGROUPS" && (
           <AdGroupsView  filters={agFilters}   setFilters={setAgFilters}   rows={filteredAdGroups}   loading={loading} currency={currency} onDrill={drillIntoAdGroup}
-            pending={pendingByTarget} openEditor={setEditor} />
+            pending={pendingByTarget} last={lastByTarget} openEditor={setEditor} />
         )}
         {accountId && tab === "HIERARCHY" && level === "TARGETS" && (
           <TargetsView   filters={tgFilters}   setFilters={setTgFilters}   rows={filteredTargets}    loading={loading} currency={currency}
-            pending={pendingByTarget} openEditor={setEditor} />
+            pending={pendingByTarget} last={lastByTarget} openEditor={setEditor} />
         )}
         {accountId && tab === "FLAT" && (
           <FlatView filters={flatFilters} setFilters={(f) => { setFlatPage(0); setFlatFilters(f); }} rows={flatRows} totalCount={flatCount} loading={loading} currency={currency} page={flatPage} setPage={setFlatPage} pageSize={FLAT_PAGE_SIZE}
-            pending={pendingByTarget} openEditor={setEditor} />
+            pending={pendingByTarget} last={lastByTarget} openEditor={setEditor} />
         )}
 
         {/* Inline editor modal */}
@@ -550,11 +561,12 @@ const modalPrimaryBtn: React.CSSProperties = {
 
 // ─── Hierarchy: Campaigns view ───────────────────────────────────────────────
 
-function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, pending, openEditor }: {
+function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, pending, last, openEditor }: {
   filters: CampaignFilters; setFilters: (f: CampaignFilters) => void;
   rows: CampaignRow[]; loading: boolean; currency: string;
   onDrill: (c: CampaignRow) => void;
   pending: Record<string, PendingMark>;
+  last: Record<string, LastActionMark>;
   openEditor: (ctx: EditorContext) => void;
 }) {
   const toggleProgram = (p: Program) => {
@@ -590,6 +602,7 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
               <Th>Type</Th><Th>Targeting</Th><Th>Status</Th><Th align="left">Campaign</Th>
               <Th align="right">Budget</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+              <Th align="left">Last Action</Th>
               <Th align="right">Actions</Th>
             </tr>
           </thead>
@@ -607,6 +620,7 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
                 <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{c.ctr.toFixed(2)}%</Td>
+                <Td><LastActionPill mark={last[c.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
                     state={c.status}
@@ -634,11 +648,12 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
 
 // ─── Hierarchy: Ad Groups view ───────────────────────────────────────────────
 
-function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, pending, openEditor }: {
+function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, pending, last, openEditor }: {
   filters: AdGroupFilters; setFilters: (f: AdGroupFilters) => void;
   rows: AdGroupRow[]; loading: boolean; currency: string;
   onDrill: (a: AdGroupRow) => void;
   pending: Record<string, PendingMark>;
+  last: Record<string, LastActionMark>;
   openEditor: (ctx: EditorContext) => void;
 }) {
   return (
@@ -660,6 +675,7 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, p
               <Th>Type</Th><Th>Status</Th><Th align="left">Ad Group</Th>
               <Th align="right">Default Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+              <Th align="left">Last Action</Th>
               <Th align="right">Actions</Th>
             </tr>
           </thead>
@@ -676,6 +692,7 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, p
                 <Td align="right" style={{ color: roasColor(ag.roas) }}>{ag.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(ag.acos) }}>{ag.acos.toFixed(1)}%</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{ag.ctr.toFixed(2)}%</Td>
+                <Td><LastActionPill mark={last[ag.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
                     state={ag.status}
@@ -703,10 +720,11 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, p
 
 // ─── Hierarchy: Targets view ─────────────────────────────────────────────────
 
-function TargetsView({ filters, setFilters, rows, loading, currency, pending, openEditor }: {
+function TargetsView({ filters, setFilters, rows, loading, currency, pending, last, openEditor }: {
   filters: TargetingFilters; setFilters: (f: TargetingFilters) => void;
   rows: TargetingRow[]; loading: boolean; currency: string;
   pending: Record<string, PendingMark>;
+  last: Record<string, LastActionMark>;
   openEditor: (ctx: EditorContext) => void;
 }) {
   return (
@@ -720,6 +738,7 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, op
               <Th align="right">Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
               <Th align="right">CTR</Th><Th align="right">CPC</Th><Th align="right">CVR</Th>
+              <Th align="left">Last Action</Th>
               <Th align="right">Actions</Th>
             </tr>
           </thead>
@@ -739,6 +758,7 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, op
                 <Td align="right" style={{ color: "#8892a4" }}>{t.ctr.toFixed(2)}%</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{fmt(t.cpc, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "#8892a4" }}>{t.cvr.toFixed(2)}%</Td>
+                <Td><LastActionPill mark={last[t.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
                     state={t.state}
@@ -766,13 +786,14 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, op
 
 // ─── Flat tab: All Keywords + product targets ────────────────────────────────
 
-function FlatView({ filters, setFilters, rows, totalCount, loading, currency, page, setPage, pageSize, pending, openEditor }: {
+function FlatView({ filters, setFilters, rows, totalCount, loading, currency, page, setPage, pageSize, pending, last, openEditor }: {
   filters: TargetingFilters; setFilters: (f: TargetingFilters) => void;
   rows: FlatTarget[]; totalCount: number;
   loading: boolean; currency: string;
   page: number; setPage: (p: number) => void;
   pageSize: number;
   pending: Record<string, PendingMark>;
+  last: Record<string, LastActionMark>;
   openEditor: (ctx: EditorContext) => void;
 }) {
   const pages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -788,6 +809,7 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
               <Th align="left">Campaign</Th><Th align="left">Ad Group</Th>
               <Th align="right">Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
+              <Th align="left">Last Action</Th>
               <Th align="right">Actions</Th>
             </tr>
           </thead>
@@ -806,6 +828,7 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
                 <Td align="right" style={{ color: "#8892a4" }}>{t.orders}</Td>
                 <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
+                <Td><LastActionPill mark={last[t.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
                     state={t.status}
@@ -944,6 +967,41 @@ function RowActions({ state, pending, currency, onToggle, onEdit, editLabel }: {
       </button>
     </div>
   );
+}
+
+function LastActionPill({ mark, currency }: { mark?: LastActionMark; currency: string }) {
+  if (!mark) return <span style={{ color: "#555f6e", fontSize: 11 }}>—</span>;
+  const { actionType, actionValue, status, at } = mark;
+  // Color by status
+  const palette: Record<LastActionMark["status"], { bg: string; fg: string; border: string; icon: string }> = {
+    APPLIED:   { bg: "rgba(34,197,94,0.12)",  fg: "#86efac", border: "#22c55e", icon: "✓" },
+    APPROVED:  { bg: "rgba(99,102,241,0.12)", fg: "#a5b4fc", border: "#6366f1", icon: "📋" },
+    DISMISSED: { bg: "rgba(85,95,110,0.18)",  fg: "#8892a4", border: "#3a4560", icon: "✕" },
+    FAILED:    { bg: "rgba(239,68,68,0.12)",  fg: "#ef4444", border: "#ef4444", icon: "⚠" },
+  };
+  const c = palette[status];
+  let action = actionType.replace("_", " ").toLowerCase();
+  if (actionValue != null && (actionType === "SET_BID" || actionType === "SET_BUDGET")) {
+    action = `${action.replace("set ", "→ ")} ${fmt(actionValue, "currency", currency)}`;
+  }
+  return (
+    <a href="/suggestions" title={`${status} at ${at}`} style={{
+      padding: "2px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+      background: c.bg, color: c.fg, border: `1px solid ${c.border}`,
+      textDecoration: "none", display: "inline-block",
+    }}>{c.icon} {action} · {timeAgo(at)}</a>
+  );
+}
+
+function timeAgo(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const mins = Math.round((Date.now() - d.getTime()) / 60_000);
+    if (mins < 1)     return "now";
+    if (mins < 60)    return `${mins}m`;
+    if (mins < 24*60) return `${Math.round(mins/60)}h`;
+    return `${Math.round(mins / (24*60))}d`;
+  } catch { return iso.slice(0, 10); }
 }
 
 function PendingPill({ mark, currency }: { mark: PendingMark; currency: string }) {

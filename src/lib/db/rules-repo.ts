@@ -231,3 +231,51 @@ export function recordSuggestionRun(input: { ruleId: string; accountId: string; 
     VALUES (?,?,?,?,?)
   `).run(uuidv4(), input.ruleId, input.accountId, input.suggestionsCreated, input.error ?? null);
 }
+
+/**
+ * For each target_id under an account, return the MOST RECENT non-PENDING
+ * suggestion. Used by the Targeting 360 'Last Action' column so reviewers
+ * can see what's already been acted on.
+ */
+export interface LastAction {
+  suggestionId: string;
+  targetId: string;
+  status: SuggestionStatus;       // APPLIED | APPROVED | DISMISSED | FAILED
+  actionType: Suggestion["actionType"];
+  actionValue: number | null;
+  at: string;                     // updated_at (when the decision was made)
+}
+
+interface LastActionRow {
+  id: string; target_id: string; status: string;
+  action_type: string; action_value: number | null; updated_at: string;
+}
+
+export function getLastActionsByTarget(accountId: string): Record<string, LastAction> {
+  // SQLite: pick the row with max updated_at per target_id where status != PENDING
+  const rows = getDb().prepare(`
+    SELECT s.id, s.target_id, s.status, s.action_type, s.action_value, s.updated_at
+      FROM suggestions s
+      INNER JOIN (
+        SELECT target_id, MAX(updated_at) AS max_at
+          FROM suggestions
+         WHERE account_id = ? AND status != 'PENDING'
+      GROUP BY target_id
+      ) latest
+      ON s.target_id = latest.target_id AND s.updated_at = latest.max_at
+     WHERE s.account_id = ? AND s.status != 'PENDING'
+  `).all(accountId, accountId) as LastActionRow[];
+
+  const out: Record<string, LastAction> = {};
+  for (const r of rows) {
+    out[r.target_id] = {
+      suggestionId: r.id,
+      targetId: r.target_id,
+      status: r.status as SuggestionStatus,
+      actionType: r.action_type as Suggestion["actionType"],
+      actionValue: r.action_value,
+      at: r.updated_at,
+    };
+  }
+  return out;
+}
