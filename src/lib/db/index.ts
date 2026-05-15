@@ -59,5 +59,75 @@ function migrate(db: Database.Database) {
       expires_at          INTEGER NOT NULL,     -- unix ms
       PRIMARY KEY (account_id, token_type)
     );
+
+    -- ─── Objectives ──────────────────────────────────────────────────────
+    -- A goal you're pursuing on one (or all) accounts. Drives rule ordering.
+    CREATE TABLE IF NOT EXISTS objectives (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      account_id      TEXT REFERENCES accounts(id) ON DELETE CASCADE, -- null = all accounts
+      scope_filter    TEXT,                -- JSON: { campaignIds?, programs?, portfolioIds? }
+      target_metric   TEXT NOT NULL,       -- 'ROAS' | 'ACOS' | 'SPEND' | 'SALES' | 'ORDERS' | 'CPC' | 'CTR' | 'CVR'
+      comparator      TEXT NOT NULL,       -- 'GTE' | 'LTE' | 'EQ'
+      target_value    REAL NOT NULL,
+      enabled         INTEGER NOT NULL DEFAULT 1,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- ─── Rules ──────────────────────────────────────────────────────────
+    -- IF (conditions) THEN (actions) — applied to campaigns/adGroups/keywords/targets.
+    CREATE TABLE IF NOT EXISTS rules (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      account_id      TEXT REFERENCES accounts(id) ON DELETE CASCADE, -- null = all accounts
+      objective_id    TEXT REFERENCES objectives(id) ON DELETE SET NULL,
+      applies_to      TEXT NOT NULL,       -- 'CAMPAIGN' | 'AD_GROUP' | 'KEYWORD' | 'PRODUCT_TARGET'
+      programs        TEXT,                -- JSON ['SP','SB','SD'] or null = all
+      conditions      TEXT NOT NULL,       -- JSON: { op: 'AND'|'OR', clauses: [{metric, op, value, window}, ...] }
+      actions         TEXT NOT NULL,       -- JSON: [{type, value, etc}]
+      mode            TEXT NOT NULL DEFAULT 'SUGGEST',  -- 'SUGGEST' | 'AUTO_APPLY'
+      enabled         INTEGER NOT NULL DEFAULT 1,
+      last_run_at     TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- ─── Suggestions ─────────────────────────────────────────────────────
+    -- The output of a rule evaluation, waiting for user action.
+    CREATE TABLE IF NOT EXISTS suggestions (
+      id              TEXT PRIMARY KEY,
+      rule_id         TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+      account_id      TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      target_type     TEXT NOT NULL,       -- 'CAMPAIGN' | 'AD_GROUP' | 'KEYWORD' | 'PRODUCT_TARGET'
+      target_id       TEXT NOT NULL,
+      target_name     TEXT,
+      program         TEXT,                -- 'SP' | 'SB' | 'SD'
+      action_type     TEXT NOT NULL,       -- 'PAUSE' | 'ENABLE' | 'SET_BID' | 'BID_PCT' | 'SET_BUDGET' | 'BUDGET_PCT' | 'ADD_NEGATIVE'
+      action_value    REAL,                -- numeric value where applicable
+      current_value   REAL,                -- current bid/budget for context
+      reason          TEXT NOT NULL,       -- human-readable explanation
+      expected_impact_json TEXT,           -- JSON {savedSpend?, addedSales?, ...}
+      metric_snapshot_json TEXT,           -- JSON snapshot of metrics that triggered
+      status          TEXT NOT NULL DEFAULT 'PENDING',  -- 'PENDING' | 'APPROVED' | 'DISMISSED' | 'APPLIED' | 'FAILED'
+      applied_at      TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- ─── Suggestion runs (audit log) ─────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS suggestion_runs (
+      id              TEXT PRIMARY KEY,
+      rule_id         TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+      account_id      TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      suggestions_created INTEGER NOT NULL,
+      error           TEXT,
+      run_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_suggestions_status      ON suggestions (status);
+    CREATE INDEX IF NOT EXISTS idx_suggestions_account     ON suggestions (account_id, status);
+    CREATE INDEX IF NOT EXISTS idx_rules_account           ON rules (account_id, enabled);
+    CREATE INDEX IF NOT EXISTS idx_objectives_account      ON objectives (account_id, enabled);
   `);
 }

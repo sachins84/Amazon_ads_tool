@@ -307,6 +307,9 @@ export interface UnifiedAdGroupRow {
   sales: number;
 }
 
+// NOTE: Amazon v3 does NOT have a per-program 'sp/sb/sdAdGroup' report. To get
+// ad-group level metrics we use the same campaign report types with
+// groupBy=["adGroup"] and include adGroupId/adGroupName columns.
 function spAdGroupReport(start: string, end: string): ReportRequest {
   return {
     name: `SP adGroups ${start}..${end}`,
@@ -315,7 +318,7 @@ function spAdGroupReport(start: string, end: string): ReportRequest {
       adProduct: "SPONSORED_PRODUCTS",
       groupBy: ["adGroup"],
       columns: SP_ADGROUP_COLUMNS,
-      reportTypeId: "spAdGroup",
+      reportTypeId: "spCampaigns",
       timeUnit: "DAILY",
       format: "GZIP_JSON",
     },
@@ -330,7 +333,7 @@ function sbAdGroupReport(start: string, end: string): ReportRequest {
       adProduct: "SPONSORED_BRANDS",
       groupBy: ["adGroup"],
       columns: SB_ADGROUP_COLUMNS,
-      reportTypeId: "sbAdGroup",
+      reportTypeId: "sbCampaigns",
       timeUnit: "DAILY",
       format: "GZIP_JSON",
     },
@@ -345,7 +348,7 @@ function sdAdGroupReport(start: string, end: string): ReportRequest {
       adProduct: "SPONSORED_DISPLAY",
       groupBy: ["adGroup"],
       columns: SD_ADGROUP_COLUMNS,
-      reportTypeId: "sdAdGroup",
+      reportTypeId: "sdCampaigns",
       timeUnit: "DAILY",
       format: "GZIP_JSON",
     },
