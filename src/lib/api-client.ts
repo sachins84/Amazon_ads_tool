@@ -158,7 +158,8 @@ export async function queueSuggestion(input: {
   actionValue?: number;
   currentValue?: number;
   reason?: string;
-}): Promise<{ success: boolean; created: number; error?: string }> {
+  apply?: boolean;
+}): Promise<{ success: boolean; queued?: boolean; applied?: boolean; suggestionId?: string; message?: string; error?: string }> {
   const res = await fetch(`/api/suggestions/queue`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

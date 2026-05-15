@@ -76,6 +76,24 @@ interface TargetingFilters {
 type Level = "CAMPAIGNS" | "ADGROUPS" | "TARGETS";
 type Tab   = "HIERARCHY" | "FLAT";
 
+interface PendingMark {
+  suggestionId: string;
+  actionType: "PAUSE" | "ENABLE" | "SET_BID" | "BID_PCT" | "SET_BUDGET" | "BUDGET_PCT" | "ADD_NEGATIVE";
+  actionValue: number | null;
+}
+
+type EditorAction = "TOGGLE_STATE" | "SET_BUDGET" | "SET_BID";
+interface EditorContext {
+  targetType: "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET";
+  targetId: string;
+  targetName: string;
+  program?: "SP" | "SB" | "SD";
+  currentState: Status;
+  currentValue: number;     // budget for CAMPAIGN, bid for AD_GROUP / KEYWORD / PRODUCT_TARGET
+  valueLabel: string;       // "Budget" | "Default Bid" | "Bid"
+  action: EditorAction;
+}
+
 export default function Targeting360Page() {
   const { activeAccount } = useAccount();
   const accountId = activeAccount?.id ?? "";
@@ -104,8 +122,31 @@ export default function Targeting360Page() {
   const [toast, setToast] = useState<{ msg: string; kind: "ok" | "err" } | null>(null);
   const showToast = useCallback((msg: string, kind: "ok" | "err" = "ok") => {
     setToast({ msg, kind });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4500);
   }, []);
+
+  // Edit modal state — opens when user clicks Edit/Pause/Enable on a row.
+  const [editor, setEditor] = useState<EditorContext | null>(null);
+
+  // Map of pending suggestions by targetId so each row can show a pending pill.
+  const [pendingByTarget, setPendingByTarget] = useState<Record<string, PendingMark>>({});
+  const reloadPending = useCallback(async () => {
+    if (!accountId) { setPendingByTarget({}); return; }
+    try {
+      const res = await fetch(`/api/suggestions?accountId=${accountId}&status=PENDING`);
+      const j = await res.json();
+      const map: Record<string, PendingMark> = {};
+      for (const s of j.suggestions ?? []) {
+        map[s.targetId] = {
+          suggestionId: s.id,
+          actionType: s.actionType,
+          actionValue: s.actionValue,
+        };
+      }
+      setPendingByTarget(map);
+    } catch { /* ignore */ }
+  }, [accountId]);
+  useEffect(() => { reloadPending(); }, [reloadPending, level, tab]);
 
   const [campFilters, setCampFilters] = useState<CampaignFilters>({ search: "", programs: ["SP","SB","SD"], targetingType: "ALL", status: "ALL" });
   const [agFilters,   setAgFilters]   = useState<AdGroupFilters>({ search: "", status: "ALL" });
@@ -327,29 +368,45 @@ export default function Targeting360Page() {
         {/* Body */}
         {accountId && tab === "HIERARCHY" && level === "CAMPAIGNS" && (
           <CampaignsView filters={campFilters} setFilters={setCampFilters} rows={filteredCampaigns} loading={loading} currency={currency} onDrill={drillIntoCampaign}
-            onQueue={async (c, action) => { await runQueue(accountId, c, action); showToast("Queued in /suggestions"); }} />
+            pending={pendingByTarget} openEditor={setEditor} />
         )}
         {accountId && tab === "HIERARCHY" && level === "ADGROUPS" && (
           <AdGroupsView  filters={agFilters}   setFilters={setAgFilters}   rows={filteredAdGroups}   loading={loading} currency={currency} onDrill={drillIntoAdGroup}
-            onQueue={async (ag, action) => { await runQueue(accountId, ag, action); showToast("Queued in /suggestions"); }} />
+            pending={pendingByTarget} openEditor={setEditor} />
         )}
         {accountId && tab === "HIERARCHY" && level === "TARGETS" && (
           <TargetsView   filters={tgFilters}   setFilters={setTgFilters}   rows={filteredTargets}    loading={loading} currency={currency}
-            onQueue={async (t, action) => { await runQueue(accountId, t, action); showToast("Queued in /suggestions"); }} />
+            pending={pendingByTarget} openEditor={setEditor} />
         )}
         {accountId && tab === "FLAT" && (
           <FlatView filters={flatFilters} setFilters={(f) => { setFlatPage(0); setFlatFilters(f); }} rows={flatRows} totalCount={flatCount} loading={loading} currency={currency} page={flatPage} setPage={setFlatPage} pageSize={FLAT_PAGE_SIZE}
-            onQueue={async (t, action) => { await runQueue(accountId, t, action); showToast("Queued in /suggestions"); }} />
+            pending={pendingByTarget} openEditor={setEditor} />
+        )}
+
+        {/* Inline editor modal */}
+        {editor && (
+          <EditorModal
+            ctx={editor}
+            currency={currency}
+            onClose={() => setEditor(null)}
+            onResult={async (msg, kind) => {
+              setEditor(null);
+              showToast(msg, kind);
+              await reloadPending();
+            }}
+            accountId={accountId}
+          />
         )}
 
         {/* Toast */}
         {toast && (
           <div style={{
             position: "fixed", bottom: 20, right: 20, zIndex: 100,
-            padding: "10px 16px", borderRadius: 8, fontSize: 12,
+            padding: "12px 18px", borderRadius: 8, fontSize: 12,
             background: toast.kind === "ok" ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)",
             border: `1px solid ${toast.kind === "ok" ? "#22c55e" : "#ef4444"}`,
             color: toast.kind === "ok" ? "#86efac" : "#ef4444",
+            maxWidth: 380, lineHeight: 1.4,
           }}>{toast.msg}</div>
         )}
       </main>
@@ -357,72 +414,148 @@ export default function Targeting360Page() {
   );
 }
 
-// ─── Queue handler ───────────────────────────────────────────────────────────
+// ─── Editor modal ────────────────────────────────────────────────────────────
 
-type QueueAction =
-  | { kind: "PAUSE" }
-  | { kind: "ENABLE" }
-  | { kind: "SET_BID";    value: number }
-  | { kind: "SET_BUDGET"; value: number };
+function EditorModal({ ctx, currency, accountId, onClose, onResult }: {
+  ctx: EditorContext;
+  currency: string;
+  accountId: string;
+  onClose: () => void;
+  onResult: (msg: string, kind: "ok" | "err") => void;
+}) {
+  const isToggle = ctx.action === "TOGGLE_STATE";
+  const newState: Status = ctx.currentState === "ENABLED" ? "PAUSED" : "ENABLED";
 
-async function runQueue(
-  accountId: string,
-  row: CampaignRow | AdGroupRow | TargetingRow | FlatTarget,
-  action: QueueAction,
-): Promise<void> {
-  // Figure out targetType + name + bid/budget from the row shape.
-  let targetType: "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET";
-  let targetName: string;
-  let program: "SP" | "SB" | "SD" | undefined;
-  let currentValue: number | undefined;
+  const [value, setValue] = useState<string>(isToggle ? "" : String(ctx.currentValue));
+  const [busy, setBusy] = useState<"" | "QUEUE" | "APPLY">("");
 
-  if ("budget" in row) {                       // CampaignRow
-    targetType = "CAMPAIGN";
-    targetName = row.name;
-    program    = row.type;
-    currentValue = row.budget;
-  } else if ("defaultBid" in row) {            // AdGroupRow
-    targetType = "AD_GROUP";
-    targetName = row.name;
-    program    = row.type;
-    currentValue = row.defaultBid;
-  } else if ("kind" in row) {                  // TargetingRow (hierarchy)
-    targetType = row.kind;
-    targetName = row.display;
-    program    = "SP";
-    currentValue = row.bid;
-  } else {                                     // FlatTarget
-    targetType = row.type === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET";
-    targetName = row.value;
-    program    = "SP";
-    currentValue = row.bid;
-  }
+  const submit = async (apply: boolean) => {
+    setBusy(apply ? "APPLY" : "QUEUE");
+    try {
+      let actionType: "PAUSE" | "ENABLE" | "SET_BID" | "SET_BUDGET";
+      let actionValue: number | undefined;
 
-  const actionType =
-    action.kind === "PAUSE"  ? "PAUSE"  :
-    action.kind === "ENABLE" ? "ENABLE" :
-    action.kind === "SET_BID" ? "SET_BID" : "SET_BUDGET";
-  const actionValue = "value" in action ? action.value : undefined;
+      if (isToggle) {
+        actionType = newState === "ENABLED" ? "ENABLE" : "PAUSE";
+      } else {
+        const n = parseFloat(value);
+        if (isNaN(n) || n <= 0) {
+          setBusy("");
+          alert("Enter a positive number");
+          return;
+        }
+        actionType  = ctx.action === "SET_BUDGET" ? "SET_BUDGET" : "SET_BID";
+        actionValue = n;
+      }
 
-  await queueSuggestion({
-    accountId,
-    targetType,
-    targetId: row.id,
-    targetName,
-    program,
-    actionType,
-    actionValue,
-    currentValue,
-  });
+      const res = await queueSuggestion({
+        accountId,
+        targetType: ctx.targetType,
+        targetId: ctx.targetId,
+        targetName: ctx.targetName,
+        program: ctx.program,
+        actionType,
+        actionValue,
+        currentValue: ctx.currentValue,
+        apply,
+      });
+
+      if (apply) {
+        if (res.applied) {
+          onResult(`✓ Pushed to Amazon: ${ctx.targetName.slice(0, 60)}`, "ok");
+        } else {
+          onResult(`⚠ Amazon rejected: ${res.message ?? "see /suggestions"}`, "err");
+        }
+      } else {
+        onResult(`Queued for review. Open Suggestions to approve and push to Amazon.`, "ok");
+      }
+    } catch (e) {
+      onResult(`Failed: ${String(e)}`, "err");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const title =
+    ctx.action === "TOGGLE_STATE" ? `${newState === "ENABLED" ? "Enable" : "Pause"} ${prettyType(ctx.targetType)}`
+    : `Edit ${ctx.valueLabel.toLowerCase()}`;
+
+  return (
+    <div style={modalBackdrop} onClick={onClose}>
+      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>{title}</div>
+        <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 14 }}>{prettyType(ctx.targetType)}: {ctx.targetName}</div>
+
+        {!isToggle && (
+          <>
+            <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 4 }}>Current {ctx.valueLabel.toLowerCase()}: <strong style={{ color: "#e2e8f0" }}>{fmt(ctx.currentValue, "currency", currency)}</strong></div>
+            <input
+              type="number" step="0.01" min="0.02"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoFocus
+              style={{ ...inputStyle, width: "100%", fontSize: 14, padding: "8px 12px", marginBottom: 12 }}
+            />
+          </>
+        )}
+        {isToggle && (
+          <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 14, padding: "8px 12px", background: "rgba(99,102,241,0.10)", borderRadius: 6 }}>
+            Will change state from <strong>{ctx.currentState}</strong> → <strong>{newState}</strong>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+          <button onClick={onClose} disabled={!!busy} style={modalCancelBtn}>Cancel</button>
+          <button onClick={() => submit(false)} disabled={!!busy} style={modalSecondaryBtn} title="Add to /suggestions for review">
+            {busy === "QUEUE" ? "Queueing…" : "Queue for review"}
+          </button>
+          <button onClick={() => submit(true)}  disabled={!!busy} style={modalPrimaryBtn} title="Push directly to Amazon now">
+            {busy === "APPLY" ? "Applying…" : "Apply to Amazon now"}
+          </button>
+        </div>
+        <div style={{ fontSize: 10, color: "#555f6e", marginTop: 10, textAlign: "right" }}>
+          Queue = add as PENDING in /suggestions · Apply = push to Amazon immediately
+        </div>
+      </div>
+    </div>
+  );
 }
+
+function prettyType(t: "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET"): string {
+  return t === "CAMPAIGN" ? "campaign" : t === "AD_GROUP" ? "ad group" : t === "KEYWORD" ? "keyword" : "product target";
+}
+
+const modalBackdrop: React.CSSProperties = {
+  position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 200,
+  display: "flex", alignItems: "center", justifyContent: "center",
+};
+const modalCard: React.CSSProperties = {
+  background: "#161b27", border: "1px solid #2a3245", borderRadius: 10,
+  padding: 20, width: 440, maxWidth: "90vw",
+};
+const modalCancelBtn: React.CSSProperties = {
+  padding: "6px 12px", borderRadius: 6, background: "transparent",
+  border: "1px solid #2a3245", color: "#8892a4", fontSize: 12, cursor: "pointer",
+};
+const modalSecondaryBtn: React.CSSProperties = {
+  padding: "6px 14px", borderRadius: 6, background: "#1c2333",
+  border: "1px solid #2a3245", color: "#a5b4fc", fontSize: 12, fontWeight: 600, cursor: "pointer",
+};
+const modalPrimaryBtn: React.CSSProperties = {
+  padding: "6px 14px", borderRadius: 6,
+  background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+  border: "1px solid transparent",
+  color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer",
+};
 
 // ─── Hierarchy: Campaigns view ───────────────────────────────────────────────
 
-function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, onQueue }: {
+function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, pending, openEditor }: {
   filters: CampaignFilters; setFilters: (f: CampaignFilters) => void;
   rows: CampaignRow[]; loading: boolean; currency: string;
   onDrill: (c: CampaignRow) => void;
-  onQueue: (c: CampaignRow, action: QueueAction) => Promise<void> | void;
+  pending: Record<string, PendingMark>;
+  openEditor: (ctx: EditorContext) => void;
 }) {
   const toggleProgram = (p: Program) => {
     const next = filters.programs.includes(p) ? filters.programs.filter((x) => x !== p) : [...filters.programs, p];
@@ -476,14 +609,16 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
                 <Td align="right" style={{ color: "#8892a4" }}>{c.ctr.toFixed(2)}%</Td>
                 <Td align="right">
                   <RowActions
-                    state={c.status} currency={currency}
-                    onToggle={() => onQueue(c, { kind: c.status === "ENABLED" ? "PAUSE" : "ENABLE" })}
-                    onEdit={() => {
-                      const v = window.prompt(`New daily budget for "${c.name}":`, String(c.budget));
-                      if (v == null) return;
-                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
-                      onQueue(c, { kind: "SET_BUDGET", value: n });
-                    }}
+                    state={c.status}
+                    pending={pending[c.id]} currency={currency}
+                    onToggle={() => openEditor({
+                      targetType: "CAMPAIGN", targetId: c.id, targetName: c.name, program: c.type,
+                      currentState: c.status, currentValue: c.budget, valueLabel: "Budget", action: "TOGGLE_STATE",
+                    })}
+                    onEdit={() => openEditor({
+                      targetType: "CAMPAIGN", targetId: c.id, targetName: c.name, program: c.type,
+                      currentState: c.status, currentValue: c.budget, valueLabel: "Budget", action: "SET_BUDGET",
+                    })}
                     editLabel="Edit budget"
                   />
                 </Td>
@@ -499,11 +634,12 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
 
 // ─── Hierarchy: Ad Groups view ───────────────────────────────────────────────
 
-function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, onQueue }: {
+function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, pending, openEditor }: {
   filters: AdGroupFilters; setFilters: (f: AdGroupFilters) => void;
   rows: AdGroupRow[]; loading: boolean; currency: string;
   onDrill: (a: AdGroupRow) => void;
-  onQueue: (a: AdGroupRow, action: QueueAction) => Promise<void> | void;
+  pending: Record<string, PendingMark>;
+  openEditor: (ctx: EditorContext) => void;
 }) {
   return (
     <>
@@ -542,14 +678,16 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, o
                 <Td align="right" style={{ color: "#8892a4" }}>{ag.ctr.toFixed(2)}%</Td>
                 <Td align="right">
                   <RowActions
-                    state={ag.status} currency={currency}
-                    onToggle={() => onQueue(ag, { kind: ag.status === "ENABLED" ? "PAUSE" : "ENABLE" })}
-                    onEdit={() => {
-                      const v = window.prompt(`New default bid for "${ag.name}":`, String(ag.defaultBid));
-                      if (v == null) return;
-                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
-                      onQueue(ag, { kind: "SET_BID", value: n });
-                    }}
+                    state={ag.status}
+                    pending={pending[ag.id]} currency={currency}
+                    onToggle={() => openEditor({
+                      targetType: "AD_GROUP", targetId: ag.id, targetName: ag.name, program: ag.type,
+                      currentState: ag.status, currentValue: ag.defaultBid, valueLabel: "Default Bid", action: "TOGGLE_STATE",
+                    })}
+                    onEdit={() => openEditor({
+                      targetType: "AD_GROUP", targetId: ag.id, targetName: ag.name, program: ag.type,
+                      currentState: ag.status, currentValue: ag.defaultBid, valueLabel: "Default Bid", action: "SET_BID",
+                    })}
                     editLabel="Edit bid"
                   />
                 </Td>
@@ -565,10 +703,11 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, o
 
 // ─── Hierarchy: Targets view ─────────────────────────────────────────────────
 
-function TargetsView({ filters, setFilters, rows, loading, currency, onQueue }: {
+function TargetsView({ filters, setFilters, rows, loading, currency, pending, openEditor }: {
   filters: TargetingFilters; setFilters: (f: TargetingFilters) => void;
   rows: TargetingRow[]; loading: boolean; currency: string;
-  onQueue: (t: TargetingRow, action: QueueAction) => Promise<void> | void;
+  pending: Record<string, PendingMark>;
+  openEditor: (ctx: EditorContext) => void;
 }) {
   return (
     <>
@@ -602,14 +741,16 @@ function TargetsView({ filters, setFilters, rows, loading, currency, onQueue }: 
                 <Td align="right" style={{ color: "#8892a4" }}>{t.cvr.toFixed(2)}%</Td>
                 <Td align="right">
                   <RowActions
-                    state={t.state} currency={currency}
-                    onToggle={() => onQueue(t, { kind: t.state === "ENABLED" ? "PAUSE" : "ENABLE" })}
-                    onEdit={() => {
-                      const v = window.prompt(`New bid for "${t.display}":`, String(t.bid));
-                      if (v == null) return;
-                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
-                      onQueue(t, { kind: "SET_BID", value: n });
-                    }}
+                    state={t.state}
+                    pending={pending[t.id]} currency={currency}
+                    onToggle={() => openEditor({
+                      targetType: t.kind, targetId: t.id, targetName: t.display, program: "SP",
+                      currentState: t.state, currentValue: t.bid, valueLabel: "Bid", action: "TOGGLE_STATE",
+                    })}
+                    onEdit={() => openEditor({
+                      targetType: t.kind, targetId: t.id, targetName: t.display, program: "SP",
+                      currentState: t.state, currentValue: t.bid, valueLabel: "Bid", action: "SET_BID",
+                    })}
                     editLabel="Edit bid"
                   />
                 </Td>
@@ -625,13 +766,14 @@ function TargetsView({ filters, setFilters, rows, loading, currency, onQueue }: 
 
 // ─── Flat tab: All Keywords + product targets ────────────────────────────────
 
-function FlatView({ filters, setFilters, rows, totalCount, loading, currency, page, setPage, pageSize, onQueue }: {
+function FlatView({ filters, setFilters, rows, totalCount, loading, currency, page, setPage, pageSize, pending, openEditor }: {
   filters: TargetingFilters; setFilters: (f: TargetingFilters) => void;
   rows: FlatTarget[]; totalCount: number;
   loading: boolean; currency: string;
   page: number; setPage: (p: number) => void;
   pageSize: number;
-  onQueue: (t: FlatTarget, action: QueueAction) => Promise<void> | void;
+  pending: Record<string, PendingMark>;
+  openEditor: (ctx: EditorContext) => void;
 }) {
   const pages = Math.max(1, Math.ceil(totalCount / pageSize));
   return (
@@ -666,14 +808,18 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
                 <Td align="right">
                   <RowActions
-                    state={t.status} currency={currency}
-                    onToggle={() => onQueue(t, { kind: t.status === "ENABLED" ? "PAUSE" : "ENABLE" })}
-                    onEdit={() => {
-                      const v = window.prompt(`New bid for "${t.value}":`, String(t.bid));
-                      if (v == null) return;
-                      const n = parseFloat(v); if (isNaN(n) || n <= 0) return;
-                      onQueue(t, { kind: "SET_BID", value: n });
-                    }}
+                    state={t.status}
+                    pending={pending[t.id]} currency={currency}
+                    onToggle={() => openEditor({
+                      targetType: t.type === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET",
+                      targetId: t.id, targetName: t.value, program: "SP",
+                      currentState: t.status, currentValue: t.bid, valueLabel: "Bid", action: "TOGGLE_STATE",
+                    })}
+                    onEdit={() => openEditor({
+                      targetType: t.type === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET",
+                      targetId: t.id, targetName: t.value, program: "SP",
+                      currentState: t.status, currentValue: t.bid, valueLabel: "Bid", action: "SET_BID",
+                    })}
                     editLabel="Edit bid"
                   />
                 </Td>
@@ -778,8 +924,9 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
 function Td({ children, align = "left", style, title, onClick }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string; onClick?: () => void }) {
   return <td onClick={onClick} style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
 }
-function RowActions({ state, onToggle, onEdit, editLabel }: {
+function RowActions({ state, pending, currency, onToggle, onEdit, editLabel }: {
   state: Status;
+  pending?: PendingMark;
   currency: string;
   onToggle: () => void;
   onEdit: () => void;
@@ -787,14 +934,29 @@ function RowActions({ state, onToggle, onEdit, editLabel }: {
 }) {
   const pauseEnable = state === "ENABLED" ? "Pause" : "Enable";
   return (
-    <div style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
-      <button onClick={onToggle} style={miniBtn} title={`Queue ${pauseEnable.toLowerCase()} suggestion`}>
+    <div style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+      {pending && <PendingPill mark={pending} currency={currency} />}
+      <button onClick={onToggle} style={miniBtn} title={`Open ${pauseEnable.toLowerCase()} dialog`}>
         {pauseEnable}
       </button>
       <button onClick={onEdit} style={miniBtn} title={editLabel}>
         ✎ {editLabel.split(" ")[1]}
       </button>
     </div>
+  );
+}
+
+function PendingPill({ mark, currency }: { mark: PendingMark; currency: string }) {
+  let label = mark.actionType.replace("_", " ").toLowerCase();
+  if (mark.actionValue != null && (mark.actionType === "SET_BID" || mark.actionType === "SET_BUDGET")) {
+    label = `${label.replace("set ", "→ ")} ${fmt(mark.actionValue, "currency", currency)}`;
+  }
+  return (
+    <a href="/suggestions" title="Pending in /suggestions — click to review" style={{
+      padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
+      background: "rgba(245,158,11,0.18)", color: "#fde68a",
+      border: "1px solid #f59e0b", textDecoration: "none",
+    }}>⏳ {label}</a>
   );
 }
 

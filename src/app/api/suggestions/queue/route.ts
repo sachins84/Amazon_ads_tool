@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
-import { listRules, createRule, createSuggestions } from "@/lib/db/rules-repo";
+import { listRules, createRule, createSuggestions, listSuggestions, updateSuggestionStatus } from "@/lib/db/rules-repo";
+import { applySuggestion } from "@/lib/rules/applier";
 import type { Action, AppliesTo, Program, Rule } from "@/lib/rules/types";
 
 /**
@@ -20,6 +21,7 @@ import type { Action, AppliesTo, Program, Rule } from "@/lib/rules/types";
  *     actionValue?: number,
  *     currentValue?: number,
  *     reason?: string,
+ *     apply?: boolean,           // if true, also push to Amazon immediately
  *   }
  */
 export async function POST(req: NextRequest) {
@@ -33,6 +35,7 @@ export async function POST(req: NextRequest) {
     actionValue?: number;
     currentValue?: number;
     reason?: string;
+    apply?: boolean;
   };
 
   if (!body.accountId || !body.targetType || !body.targetId || !body.actionType) {
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
   const reason = body.reason
     ?? `Manual ${humanAction(body.actionType, body.actionValue)} on ${body.targetType.toLowerCase()} ${body.targetName ?? body.targetId}`;
 
-  const count = createSuggestions([{
+  createSuggestions([{
     ruleId:        rule.id,
     accountId:     body.accountId,
     targetType:    body.targetType,
@@ -59,7 +62,30 @@ export async function POST(req: NextRequest) {
     metricSnapshot: null,
   }]);
 
-  return Response.json({ success: true, created: count, ruleId: rule.id }, { status: 201 });
+  // Find the suggestion we just created so we can apply it.
+  const list = listSuggestions({ accountId: body.accountId, status: "PENDING", limit: 5 });
+  const created = list.find((s) =>
+    s.ruleId === rule.id &&
+    s.targetId === body.targetId &&
+    s.actionType === body.actionType,
+  );
+  if (!created) {
+    return Response.json({ error: "queued but couldn't locate row" }, { status: 500 });
+  }
+
+  if (!body.apply) {
+    return Response.json({ success: true, queued: true, suggestionId: created.id }, { status: 201 });
+  }
+
+  // Apply now: push to Amazon and update status accordingly.
+  const result = await applySuggestion(created);
+  updateSuggestionStatus(created.id, result.ok ? "APPLIED" : "FAILED");
+  return Response.json({
+    success: result.ok,
+    queued: true, applied: result.ok,
+    suggestionId: created.id,
+    message: result.message,
+  }, { status: result.ok ? 200 : 207 });
 }
 
 function humanAction(type: Action["type"], value?: number): string {
