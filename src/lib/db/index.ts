@@ -129,5 +129,82 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_suggestions_account     ON suggestions (account_id, status);
     CREATE INDEX IF NOT EXISTS idx_rules_account           ON rules (account_id, enabled);
     CREATE INDEX IF NOT EXISTS idx_objectives_account      ON objectives (account_id, enabled);
+
+    -- ─── Persistent metrics store (so we don't re-pull stable history) ──
+    -- One row per (account, campaign, date, program). Older data sits here
+    -- forever; the daily 8 AM refresh re-pulls only the trailing 14 days
+    -- to capture Amazon's attribution backfill window.
+    CREATE TABLE IF NOT EXISTS campaign_metrics_daily (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      campaign_id  TEXT NOT NULL,
+      date         TEXT NOT NULL,        -- YYYY-MM-DD
+      program      TEXT NOT NULL,        -- 'SP' | 'SB' | 'SD'
+      impressions  INTEGER NOT NULL DEFAULT 0,
+      clicks       INTEGER NOT NULL DEFAULT 0,
+      cost         REAL    NOT NULL DEFAULT 0,
+      orders       INTEGER NOT NULL DEFAULT 0,
+      sales        REAL    NOT NULL DEFAULT 0,
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, campaign_id, date, program)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cmd_account_date ON campaign_metrics_daily (account_id, date);
+
+    CREATE TABLE IF NOT EXISTS adgroup_metrics_daily (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      campaign_id  TEXT NOT NULL,
+      adgroup_id   TEXT NOT NULL,
+      adgroup_name TEXT,
+      date         TEXT NOT NULL,
+      program      TEXT NOT NULL,
+      impressions  INTEGER NOT NULL DEFAULT 0,
+      clicks       INTEGER NOT NULL DEFAULT 0,
+      cost         REAL    NOT NULL DEFAULT 0,
+      orders       INTEGER NOT NULL DEFAULT 0,
+      sales        REAL    NOT NULL DEFAULT 0,
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, adgroup_id, date, program)
+    );
+    CREATE INDEX IF NOT EXISTS idx_amd_account_date     ON adgroup_metrics_daily (account_id, date);
+    CREATE INDEX IF NOT EXISTS idx_amd_account_campaign ON adgroup_metrics_daily (account_id, campaign_id, date);
+
+    -- Campaign metadata snapshot (name/state/budget) — refreshed alongside metrics.
+    CREATE TABLE IF NOT EXISTS campaign_meta (
+      account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      campaign_id    TEXT NOT NULL,
+      program        TEXT NOT NULL,
+      name           TEXT,
+      state          TEXT,
+      daily_budget   REAL,
+      portfolio_id   TEXT,
+      targeting_type TEXT,
+      brand_entity_id TEXT,
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, campaign_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS adgroup_meta (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      adgroup_id   TEXT NOT NULL,
+      campaign_id  TEXT NOT NULL,
+      program      TEXT NOT NULL,
+      name         TEXT,
+      state        TEXT,
+      default_bid  REAL,
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, adgroup_id)
+    );
+
+    -- Tracks when each account/level was last refreshed.
+    CREATE TABLE IF NOT EXISTS account_refresh_state (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      level        TEXT NOT NULL,        -- 'campaigns' | 'adgroups'
+      last_refresh_at TEXT NOT NULL,
+      window_start TEXT NOT NULL,        -- earliest date we fetched in the last refresh
+      window_end   TEXT NOT NULL,        -- latest date we fetched
+      rows_upserted INTEGER NOT NULL DEFAULT 0,
+      duration_ms  INTEGER,
+      error        TEXT,
+      PRIMARY KEY (account_id, level)
+    );
   `);
 }

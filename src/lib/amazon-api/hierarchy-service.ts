@@ -2,12 +2,12 @@
  * Hierarchy drill-down services: ad groups for a campaign, targets for an ad group.
  * Both are cached in-process (1h TTL) using the resolved date range in the key.
  */
-import { listAllAdGroups } from "./adgroups";
-import { fetchAllAdGroupReports, fetchTargetingReport, type Program } from "./reports";
+import { fetchTargetingReport, type Program } from "./reports";
 import { listSPKeywords, listSPProductTargets, type SPKeyword, type SPProductTarget } from "./targeting";
 import { dateRangeFromPreset } from "./transform";
 import { cacheGet, cacheSet } from "@/lib/cache";
 import { getAccount } from "@/lib/db/accounts";
+import { readAdGroupMetrics, readAdGroupMeta, getRefreshState } from "@/lib/db/metrics-store";
 
 const TTL_MS = 60 * 60 * 1000;
 
@@ -43,6 +43,11 @@ export interface AdGroupOverview {
     adGroups: { program: Program; error: string }[];
     reports:  { program: Program; error: string }[];
   };
+  freshness: {
+    lastRefreshAt: string | null;
+    error:         string | null;
+    stale:         boolean;
+  };
 }
 
 export async function getAdGroupsForCampaign(
@@ -53,49 +58,31 @@ export async function getAdGroupsForCampaign(
   const acct = getAccount(accountId);
   if (!acct) throw new Error(`Account ${accountId} not found`);
 
-  const profileId   = acct.adsProfileId;
   const marketplace = acct.adsMarketplace;
   const brandName   = acct.name;
   const currency    = acct.adsMarketplace === "IN" ? "INR" : "USD";
 
   const { startDate, endDate } = dateRangeFromPreset(datePreset);
-  const cacheKey = `adgroups:${accountId}:${campaignId}:${startDate}:${endDate}`;
-  const cached = cacheGet<AdGroupOverview>(cacheKey);
-  if (cached) return cached;
 
-  const [adGroupsResult, reportsResult] = await Promise.all([
-    listAllAdGroups(profileId, [campaignId], accountId),
-    fetchAllAdGroupReports(profileId, startDate, endDate, accountId),
-  ]);
+  // Read from store
+  const dailyRows = readAdGroupMetrics(accountId, startDate, endDate, campaignId);
+  const meta      = readAdGroupMeta(accountId, campaignId);
+  const refreshState = getRefreshState(accountId, "adgroups");
 
-  // Index report rows by adGroupId (filtered to this campaign).
   const byAg = new Map<string, { program: Program; impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
   const byDate = new Map<string, { spend: number; sales: number; orders: number; clicks: number; impressions: number }>();
 
-  for (const r of reportsResult.rows) {
-    if (r.campaignId !== campaignId) continue;
+  for (const r of dailyRows) {
     const agg = byAg.get(r.adGroupId) ?? { program: r.program, impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
-    agg.impressions += r.impressions;
-    agg.clicks      += r.clicks;
-    agg.cost        += r.cost;
-    agg.orders      += r.orders;
-    agg.sales       += r.sales;
+    agg.impressions += r.impressions; agg.clicks += r.clicks; agg.cost += r.cost; agg.orders += r.orders; agg.sales += r.sales;
     byAg.set(r.adGroupId, agg);
 
-    if (r.date) {
-      const d = byDate.get(r.date) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
-      d.spend       += r.cost;
-      d.sales       += r.sales;
-      d.orders      += r.orders;
-      d.clicks      += r.clicks;
-      d.impressions += r.impressions;
-      byDate.set(r.date, d);
-    }
+    const d = byDate.get(r.date) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    d.spend += r.cost; d.sales += r.sales; d.orders += r.orders; d.clicks += r.clicks; d.impressions += r.impressions;
+    byDate.set(r.date, d);
   }
 
-  // Merge with ad-group metadata (filtered to this campaign)
-  const agMeta = adGroupsResult.adGroups.filter((ag) => ag.campaignId === campaignId);
-  const rows: AdGroupRow[] = agMeta.map((ag) => {
+  const rows: AdGroupRow[] = meta.map((ag) => {
     const m = byAg.get(ag.adGroupId);
     const spend = m?.cost ?? 0;
     const sales = m?.sales ?? 0;
@@ -103,8 +90,8 @@ export async function getAdGroupsForCampaign(
     const impr   = m?.impressions ?? 0;
     const orders = m?.orders ?? 0;
     return {
-      id: ag.adGroupId, name: ag.name, type: ag.program, status: ag.state,
-      defaultBid: ag.defaultBid, campaignId: ag.campaignId,
+      id: ag.adGroupId, name: ag.name ?? `Ad Group ${ag.adGroupId}`, type: ag.program, status: ag.state ?? "ARCHIVED",
+      defaultBid: ag.defaultBid ?? 0, campaignId: ag.campaignId,
       spend: round2(spend), sales: round2(sales), orders,
       impressions: impr, clicks,
       ctr: pct(clicks, impr), cpc: div(spend, clicks),
@@ -113,7 +100,7 @@ export async function getAdGroupsForCampaign(
     };
   });
 
-  // Pick up any report-only rows (archived ad groups still appearing in reports).
+  // Pick up any daily rows whose ad-group meta is missing.
   const seen = new Set(rows.map((r) => r.id));
   for (const [adGroupId, m] of byAg) {
     if (seen.has(adGroupId)) continue;
@@ -140,7 +127,9 @@ export async function getAdGroupsForCampaign(
   const dailySeries = Array.from(byDate.entries()).sort(([a],[b]) => a.localeCompare(b))
     .map(([date, m]) => ({ date, spend: round2(m.spend), sales: round2(m.sales), orders: m.orders, clicks: m.clicks, impressions: m.impressions }));
 
-  const result: AdGroupOverview = {
+  const stale = dailyRows.length === 0;
+
+  return {
     brandName, marketplace, currency, campaignId,
     dateRange: { startDate, endDate },
     adGroups: rows,
@@ -150,11 +139,13 @@ export async function getAdGroupsForCampaign(
       clicks: t.clicks, impressions: t.impressions,
       acos: pct(t.spend, t.sales, 1), roas: div(t.sales, t.spend),
     },
-    errors: { adGroups: adGroupsResult.errors, reports: reportsResult.errors },
+    errors: { adGroups: [], reports: [] },
+    freshness: {
+      lastRefreshAt: refreshState?.lastRefreshAt ?? null,
+      error: refreshState?.error ?? null,
+      stale,
+    },
   };
-
-  if (reportsResult.errors.length < 3) cacheSet(cacheKey, result, TTL_MS);
-  return result;
 }
 
 // ─── Targeting (keywords + product targets) for one ad group ────────────────

@@ -5,7 +5,7 @@ import TopNav from "@/components/shared/TopNav";
 import DateRangePicker from "@/components/shared/DateRangePicker";
 import KpiCard from "@/components/shared/KpiCard";
 import { KpiCardSkeleton, ChartSkeleton } from "@/components/shared/Skeleton";
-import { fetchOverview, fetchAllBrands, type OverviewData, type AllBrandsResponse, type OverviewCampaignRow } from "@/lib/api-client";
+import { fetchOverview, fetchAllBrands, refreshAccountMetrics, type OverviewData, type AllBrandsResponse, type OverviewCampaignRow } from "@/lib/api-client";
 import { fmt, currencySymbol } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
 
@@ -15,15 +15,15 @@ export default function MasterOverviewPage() {
   const [allBrands, setAllBrands] = useState<AllBrandsResponse | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
-  const [warming, setWarming]     = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
 
   const { activeAccount, accounts } = useAccount();
   const accountId = activeAccount?.id ?? "";
   const isAllBrands = !accountId;
 
   const load = useCallback(async () => {
-    setLoading(true); setError(null); setWarming(false);
-    const t = setTimeout(() => setWarming(true), 4_000);
+    setLoading(true); setError(null);
     try {
       if (isAllBrands) {
         const data = await fetchAllBrands({ dateRange });
@@ -35,11 +35,33 @@ export default function MasterOverviewPage() {
     } catch (e) {
       setError(String(e));
     } finally {
-      clearTimeout(t);
-      setWarming(false);
       setLoading(false);
     }
   }, [accountId, dateRange, isAllBrands]);
+
+  const refresh = useCallback(async (days = 14) => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshNote(`Pulling last ${days} days from Amazon… can take 5–15 min the first time.`);
+    try {
+      if (isAllBrands) {
+        const r = await refreshAccountMetrics({ all: true, days });
+        setRefreshNote(`Refreshed ${r.refreshed ?? 0} accounts. Reloading.`);
+      } else {
+        const r = await refreshAccountMetrics({ accountId, days });
+        if (r.error) throw new Error(r.error);
+        setRefreshNote(
+          `Refreshed ${r.campaignRowsUpserted ?? 0} campaign rows + ${r.adGroupRowsUpserted ?? 0} ad-group rows in ${Math.round((r.durationMs ?? 0)/1000)}s.`
+        );
+      }
+      await load();
+    } catch (e) {
+      setRefreshNote(`Refresh failed: ${String(e)}`);
+    } finally {
+      setRefreshing(false);
+      setTimeout(() => setRefreshNote(null), 8000);
+    }
+  }, [accountId, isAllBrands, load, refreshing]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -78,24 +100,38 @@ export default function MasterOverviewPage() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <DateRangePicker value={dateRange} onChange={setDateRange} compareValue="prev-period" onCompareChange={() => {}} showCompare={false} />
-            <button onClick={load} disabled={loading} style={{
-              padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-              border: "1px solid #2a3245", color: loading ? "#555f6e" : "#8892a4",
-              cursor: loading ? "default" : "pointer", fontSize: 12,
-              display: "flex", alignItems: "center", gap: 5,
-            }}>
-              <span style={{ display: "inline-block", animation: loading ? "spin 1s linear infinite" : "none" }}>↻</span>
-              {loading ? "Loading…" : "Refresh"}
+            <button onClick={load} disabled={loading} style={btnGhost(loading)}>
+              <span style={{ animation: loading ? "spin 1s linear infinite" : "none", display: "inline-block" }}>↻</span> {loading ? "Loading…" : "Reload"}
+            </button>
+            <button onClick={() => refresh(14)} disabled={refreshing} style={btnPrimary(refreshing)} title="Pull last 14 days from Amazon (re-captures attribution backfill)">
+              {refreshing ? "Refreshing…" : "↻ Refresh from Amazon"}
             </button>
           </div>
         </div>
 
-        {loading && warming && (
+        {refreshNote && (
           <div style={{
             background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)",
             borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#a5b4fc",
           }}>
-            ⏳ Pulling fresh reports from Amazon. First load can take 30s–3 min while their async report queue runs. Subsequent loads are cached for 1 hour.
+            {refreshing ? "⏳ " : "✓ "}{refreshNote}
+          </div>
+        )}
+
+        {!isAllBrands && !loading && overview?.freshness?.stale && !refreshing && (
+          <div style={{
+            background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)",
+            borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#fde68a",
+            display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+          }}>
+            <span>⚠ No data stored for this range. Click <strong>↻ Refresh from Amazon</strong> to backfill, or <button onClick={() => refresh(60)} style={{ ...btnGhost(false), color: "#fde68a", padding: "2px 8px" }}>pull 60 days (first-time)</button>.</span>
+          </div>
+        )}
+
+        {!isAllBrands && !loading && overview?.freshness?.lastRefreshAt && !overview.freshness.stale && (
+          <div style={{ fontSize: 11, color: "#555f6e", marginBottom: 12 }}>
+            Last refreshed {humanTime(overview.freshness.lastRefreshAt)} · window {overview.freshness.windowStart} → {overview.freshness.windowEnd} · {overview.freshness.rowCount.toLocaleString()} rows stored
+            {overview.freshness.error ? <span style={{ color: "#f59e0b" }}> · last refresh had errors</span> : null}
           </div>
         )}
 
@@ -398,6 +434,35 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
 function Td({ children, align = "left", style, title }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string }) {
   return <td style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
 }
+function btnGhost(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "6px 12px", borderRadius: 6, background: "#1c2333",
+    border: "1px solid #2a3245", color: disabled ? "#555f6e" : "#8892a4",
+    cursor: disabled ? "default" : "pointer", fontSize: 12,
+    display: "inline-flex", alignItems: "center", gap: 5,
+  };
+}
+function btnPrimary(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "6px 12px", borderRadius: 6,
+    background: disabled ? "#1c2333" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+    border: "1px solid",
+    borderColor: disabled ? "#2a3245" : "transparent",
+    color: disabled ? "#555f6e" : "#fff",
+    cursor: disabled ? "default" : "pointer", fontSize: 12, fontWeight: 600,
+  };
+}
+function humanTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const mins = Math.round((Date.now() - d.getTime()) / 60_000);
+    if (mins < 1)   return "just now";
+    if (mins < 60)  return `${mins} min ago`;
+    if (mins < 24*60) return `${Math.round(mins/60)} h ago`;
+    return d.toLocaleString();
+  } catch { return iso; }
+}
+
 function Pill({ text, muted }: { text: string; muted?: boolean }) {
   const palette: Record<string, { bg: string; fg: string }> = {
     SP:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },

@@ -26,6 +26,7 @@ interface AdGroupResponse {
   dailySeries: { date: string; spend: number; sales: number }[];
   totals: { spend: number; sales: number; orders: number; clicks: number; impressions: number; acos: number; roas: number };
   errors: { adGroups: { program: string; error: string }[]; reports: { program: string; error: string }[] };
+  freshness?: { lastRefreshAt: string | null; error: string | null; stale: boolean };
 }
 
 export default function CampaignDetailPage({ params }: { params: Promise<{ campaignId: string }> }) {

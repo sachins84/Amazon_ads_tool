@@ -58,6 +58,16 @@ export interface OverviewData {
   dailySeries?: OverviewDailyPoint[];
   programTotals?: Record<Program, { spend: number; sales: number; orders: number; clicks: number; impressions: number }>;
   errors?: { campaigns: { program: Program; error: string }[]; reports: { program: Program; error: string }[] };
+  freshness?: {
+    lastRefreshAt: string | null;
+    windowStart:   string | null;
+    windowEnd:     string | null;
+    error:         string | null;
+    rowCount:      number;
+    coverageMin:   string | null;
+    coverageMax:   string | null;
+    stale:         boolean;
+  };
   _source?: "live" | "mock";
 }
 
@@ -133,6 +143,17 @@ export async function fetchOverview(params: {
     if (e instanceof TypeError) return { ...getMockOverview(), _source: "mock" };
     throw e;
   }
+}
+
+/** Trigger an incremental Amazon refresh for an account (default 14 days). */
+export async function refreshAccountMetrics(params: { accountId?: string; all?: boolean; days?: number } = {}): Promise<{ refreshed?: number; results?: unknown[]; durationMs?: number; campaignRowsUpserted?: number; adGroupRowsUpserted?: number; error?: string }> {
+  const qs = new URLSearchParams();
+  if (params.accountId) qs.set("accountId", params.accountId);
+  if (params.all)       qs.set("all", "true");
+  if (params.days)      qs.set("days", String(params.days));
+  const res  = await fetch(`/api/admin/refresh?${qs}`, { method: "POST" });
+  const json = await res.json();
+  return json;
 }
 
 export async function fetchAllBrands(params: { dateRange?: string } = {}): Promise<AllBrandsResponse> {

@@ -133,9 +133,35 @@ POST /api/targeting/bulk
 
 ---
 
+## Daily refresh (incremental)
+
+Reads now come from SQLite, not directly from Amazon. The 8 AM cron below
+pulls the **trailing 14 days** every morning — that covers Amazon's
+attribution backfill window, so older data never re-pulls.
+
+**One-time first-time backfill** (longer history):
+```bash
+# Replace ACCOUNT_ID with the row id from /api/accounts
+curl -X POST 'http://localhost:3000/api/admin/refresh?accountId=ACCOUNT_ID&days=60'
+# or all accounts at once:
+curl -X POST 'http://localhost:3000/api/admin/refresh?all=true&days=60'
+```
+
+**Daily cron — 8 AM IST = 02:30 UTC** (`crontab -e`):
+```cron
+30 2 * * * curl -s -X POST 'http://localhost:3000/api/admin/refresh?all=true&days=14' > /tmp/amazon-ads-refresh.log 2>&1
+```
+
+The dashboard's **↻ Refresh from Amazon** button hits the same endpoint
+on demand. A 14-day refresh for a typical Mosaic account takes ~5–15 min
+(US ~30s warm, India 5–15 min cold per Amazon's queue).
+
+State of last refresh is visible at `GET /api/admin/refresh` and on the
+Master Overview header. UI shows a warning banner when the requested
+range has no stored data, with a one-click 60-day backfill.
+
 ## Notes
 
 - **Reports take 10–30s** to generate on Amazon's side. The API polls every 10s until complete.
-- **Cache TTL** is 5 min by default. Change `CACHE_TTL=60` for more frequent refreshes (watch rate limits).
 - **Rate limits**: Amazon allows ~50 req/s per profile. The client auto-retries with exponential backoff on 429s.
-- **SB/SD campaigns**: The current backend fetches SP only. SB/SD follow the same pattern — extend `campaigns.ts` and `reports.ts`.
+- **SB/SD campaigns**: SP + SB + SD all fetched. Ad-group reports use `groupBy:["adGroup"]` against `spCampaigns`/`sbCampaigns`/`sdCampaigns` reportTypeIds (there's no `spAdGroup` reportTypeId in v3).
