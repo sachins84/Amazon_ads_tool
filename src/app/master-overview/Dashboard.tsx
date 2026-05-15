@@ -42,24 +42,26 @@ export default function MasterOverviewPage() {
   const refresh = useCallback(async (days = 14) => {
     if (refreshing) return;
     setRefreshing(true);
-    setRefreshNote(`Pulling last ${days} days from Amazon… can take 5–15 min the first time.`);
+    setRefreshNote(`Pulling last ${days} days from Amazon… runs in the background, expect 5–15 min for India accounts. The page will pick up data as it lands.`);
     try {
       if (isAllBrands) {
-        const r = await refreshAccountMetrics({ all: true, days });
-        setRefreshNote(`Refreshed ${r.refreshed ?? 0} accounts. Reloading.`);
+        await refreshAccountMetrics({ all: true, days });
       } else {
-        const r = await refreshAccountMetrics({ accountId, days });
-        if (r.error) throw new Error(r.error);
-        setRefreshNote(
-          `Refreshed ${r.campaignRowsUpserted ?? 0} campaign rows + ${r.adGroupRowsUpserted ?? 0} ad-group rows in ${Math.round((r.durationMs ?? 0)/1000)}s.`
-        );
+        await refreshAccountMetrics({ accountId, days });
       }
-      await load();
+      // Endpoint returns 202 immediately — refresh continues server-side.
+      // Reload the current view; data will start showing as each pull completes.
+      // Schedule a few re-loads at 60s / 5m / 12m to catch the data without
+      // making the user click again.
+      for (const delaySec of [60, 300, 720]) {
+        setTimeout(() => { void load(); }, delaySec * 1000);
+      }
+      setRefreshNote(`✓ Refresh started in the background. Reload (or wait — the page auto-checks at 1, 5, and 12 min).`);
     } catch (e) {
-      setRefreshNote(`Refresh failed: ${String(e)}`);
+      setRefreshNote(`Refresh failed to start: ${String(e)}`);
     } finally {
       setRefreshing(false);
-      setTimeout(() => setRefreshNote(null), 8000);
+      setTimeout(() => setRefreshNote(null), 12000);
     }
   }, [accountId, isAllBrands, load, refreshing]);
 
