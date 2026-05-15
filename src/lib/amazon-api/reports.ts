@@ -135,11 +135,32 @@ export async function waitForReport<T>(
   throw new Error(`Report ${reportId} timed out after ${Math.round(maxWaitMs / 1000)}s`);
 }
 
-async function downloadReport<T>(url: string): Promise<T[]> {
-  const res = await fetch(url);
+async function downloadReport<T>(url: string, attempt = 0): Promise<T[]> {
+  // Node's undici fetch has a 5-min body timeout that bites on big India
+  // report downloads. Retry once on network/timeout errors before giving up.
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    if (attempt < 2 && /fetch failed|aborted|timeout|ECONNRESET|UND_ERR/i.test(String(e))) {
+      await sleep(2000);
+      return downloadReport<T>(url, attempt + 1);
+    }
+    throw e;
+  }
   if (!res.ok) throw new Error(`Report download failed: ${res.status}`);
 
-  const buffer = await res.arrayBuffer();
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await res.arrayBuffer();
+  } catch (e) {
+    if (attempt < 2 && /fetch failed|aborted|timeout|ECONNRESET|UND_ERR/i.test(String(e))) {
+      await sleep(2000);
+      return downloadReport<T>(url, attempt + 1);
+    }
+    throw e;
+  }
+
   const { gunzipSync } = await import("zlib");
   let text: string;
   try {
@@ -149,11 +170,9 @@ async function downloadReport<T>(url: string): Promise<T[]> {
     text = Buffer.from(buffer).toString("utf-8");
   }
 
-  // Amazon returns the dataset as a single JSON array (not JSONL).
   const trimmed = text.trim();
   if (trimmed.startsWith("[")) return JSON.parse(trimmed) as T[];
   if (trimmed.startsWith("{")) return [JSON.parse(trimmed) as T];
-  // Fallback: JSONL
   return trimmed.split("\n").filter(Boolean).map((line) => JSON.parse(line) as T);
 }
 
