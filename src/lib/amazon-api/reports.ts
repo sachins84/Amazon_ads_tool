@@ -63,11 +63,6 @@ export const SD_CAMPAIGN_COLUMNS = [
   "impressions", "clicks", "cost", "purchases", "sales",
 ];
 
-export const SP_ADGROUP_COLUMNS = [
-  "date", "campaignId", "adGroupId", "adGroupName",
-  "impressions", "clicks", "cost",
-  "purchases7d", "sales7d",
-];
 export const SB_ADGROUP_COLUMNS = [
   "date", "campaignId", "adGroupId", "adGroupName",
   "impressions", "clicks", "cost", "purchases", "sales",
@@ -330,24 +325,9 @@ export interface UnifiedAdGroupRow {
   sales: number;
 }
 
-// SP ad-group level metrics: spAdvertisedProduct with groupBy=adGroup is the
-// supported path (spCampaigns only accepts groupBy=campaign).
-function spAdGroupReport(start: string, end: string): ReportRequest {
-  return {
-    name: `SP adGroups ${start}..${end}`,
-    startDate: start, endDate: end,
-    configuration: {
-      adProduct: "SPONSORED_PRODUCTS",
-      groupBy: ["adGroup"],
-      columns: SP_ADGROUP_COLUMNS,
-      reportTypeId: "spAdvertisedProduct",
-      timeUnit: "DAILY",
-      format: "GZIP_JSON",
-    },
-  };
-}
-
-// SB has an explicit ad-group report type.
+// Amazon's v3 API has no SP ad-group report (spAdvertisedProduct now requires
+// groupBy=advertiser, not adGroup). SP ad-group spend is rolled up at read
+// time from targeting_metrics_daily — see hierarchy-service.ts.
 function sbAdGroupReport(start: string, end: string): ReportRequest {
   return {
     name: `SB adGroups ${start}..${end}`,
@@ -411,14 +391,13 @@ export async function fetchAllAdGroupReports(
   }
 
   const results = await Promise.allSettled([
-    run("SP", spAdGroupReport(startDate, endDate)),
     run("SB", sbAdGroupReport(startDate, endDate)),
     run("SD", sdAdGroupReport(startDate, endDate)),
   ]);
 
   const rows: UnifiedAdGroupRow[] = [];
   const errors: { program: Program; error: string }[] = [];
-  const programs: Program[] = ["SP", "SB", "SD"];
+  const programs: Program[] = ["SB", "SD"];
 
   results.forEach((res, i) => {
     if (res.status === "fulfilled") rows.push(...res.value);
