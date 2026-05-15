@@ -1,15 +1,15 @@
 /**
  * Hierarchy drill-down services: ad groups for a campaign, targets for an ad group.
- * Both are cached in-process (1h TTL) using the resolved date range in the key.
+ * Both read from the SQLite metrics store (populated by the daily refresh).
  */
-import { fetchTargetingReport, type Program } from "./reports";
-import { listSPKeywords, listSPProductTargets, type SPKeyword, type SPProductTarget } from "./targeting";
+import type { Program } from "./reports";
 import { dateRangeFromPreset } from "./transform";
-import { cacheGet, cacheSet } from "@/lib/cache";
 import { getAccount } from "@/lib/db/accounts";
-import { readAdGroupMetrics, readAdGroupMeta, getRefreshState } from "@/lib/db/metrics-store";
-
-const TTL_MS = 60 * 60 * 1000;
+import {
+  readAdGroupMetrics, readAdGroupMeta,
+  readTargetingMetrics, readTargetingMeta,
+  getRefreshState,
+} from "@/lib/db/metrics-store";
 
 export interface AdGroupRow {
   id: string;
@@ -190,78 +190,57 @@ export async function getTargetingForAdGroup(
   const acct = getAccount(accountId);
   if (!acct) throw new Error(`Account ${accountId} not found`);
 
-  const profileId   = acct.adsProfileId;
   const marketplace = acct.adsMarketplace;
   const brandName   = acct.name;
   const currency    = acct.adsMarketplace === "IN" ? "INR" : "USD";
 
   const { startDate, endDate } = dateRangeFromPreset(datePreset);
-  const cacheKey = `targeting:${accountId}:${adGroupId}:${startDate}:${endDate}`;
-  const cached = cacheGet<AdGroupTargetingOverview>(cacheKey);
-  if (cached) return cached;
 
-  const [kwResult, ptResult, reportResult] = await Promise.allSettled([
-    listSPKeywords(profileId, { adGroupIdFilter: [adGroupId] }, accountId),
-    listSPProductTargets(profileId, { adGroupIdFilter: [adGroupId] }, accountId),
-    fetchTargetingReport(profileId, startDate, endDate, accountId),
-  ]);
+  // Read from store (populated by the daily refresh).
+  const dailyRows = readTargetingMetrics(accountId, startDate, endDate, { adGroupId });
+  const meta      = readTargetingMeta(accountId, { adGroupId });
 
-  const errors: AdGroupTargetingOverview["errors"] = {};
-  const kws = kwResult.status === "fulfilled" ? kwResult.value : (errors.keywords = String(kwResult.reason), [] as SPKeyword[]);
-  const pts = ptResult.status === "fulfilled" ? ptResult.value : (errors.productTargets = String(ptResult.reason), [] as SPProductTarget[]);
-  const rpt = reportResult.status === "fulfilled" ? reportResult.value : (errors.report = String(reportResult.reason), []);
-
-  // v3 spTargeting report uses keywordId as the universal ID for both
-  // keywords AND product targets — index once, look up in the same map.
+  // Aggregate metrics per target_id
   const byId = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
-  for (const raw of rpt as Record<string, unknown>[]) {
-    const rAg = String(raw.adGroupId ?? "");
-    if (rAg !== adGroupId) continue;
-    const id = raw.keywordId != null ? String(raw.keywordId) : "";
-    if (!id) continue;
-    const cell = {
-      impressions: Number(raw.impressions ?? 0),
-      clicks:      Number(raw.clicks ?? 0),
-      cost:        Number(raw.cost ?? 0),
-      orders:      Number(raw.purchases7d ?? raw.purchases30d ?? 0),
-      sales:       Number(raw.sales7d ?? raw.sales30d ?? 0),
-    };
-    const e = byId.get(id) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
-    e.impressions += cell.impressions; e.clicks += cell.clicks; e.cost += cell.cost; e.orders += cell.orders; e.sales += cell.sales;
-    byId.set(id, e);
+  for (const r of dailyRows) {
+    const e = byId.get(r.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    e.impressions += r.impressions; e.clicks += r.clicks; e.cost += r.cost; e.orders += r.orders; e.sales += r.sales;
+    byId.set(r.targetId, e);
   }
 
-  const keywords: TargetingRow[] = kws.map((k) => {
-    const m = byId.get(k.keywordId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
-    return {
-      id: k.keywordId, kind: "KEYWORD", display: k.keywordText,
-      matchType: k.matchType, state: k.state, bid: k.bid ?? 0,
-      campaignId: k.campaignId, adGroupId: k.adGroupId,
-      spend: round2(m.cost), sales: round2(m.sales), orders: m.orders,
-      impressions: m.impressions, clicks: m.clicks,
-      ctr: pct(m.clicks, m.impressions), cpc: div(m.cost, m.clicks),
-      cvr: pct(m.orders, m.clicks), acos: pct(m.cost, m.sales, 1),
-      roas: div(m.sales, m.cost),
-    };
-  });
+  const errors: AdGroupTargetingOverview["errors"] = {};
 
-  const productTargets: TargetingRow[] = pts.map((t) => {
-    const m = byId.get(t.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
-    const expr = t.expression?.[0] ?? t.resolvedExpression?.[0];
-    const display = expr
-      ? (expr.type === "asinSameAs" ? `ASIN: ${expr.value}` : `${expr.type}${expr.value ? `: ${expr.value}` : ""}`)
-      : "Auto target";
-    return {
-      id: t.targetId, kind: "PRODUCT_TARGET", display,
-      state: t.state, bid: t.bid ?? 0,
-      campaignId: t.campaignId, adGroupId: t.adGroupId,
-      spend: round2(m.cost), sales: round2(m.sales), orders: m.orders,
-      impressions: m.impressions, clicks: m.clicks,
-      ctr: pct(m.clicks, m.impressions), cpc: div(m.cost, m.clicks),
-      cvr: pct(m.orders, m.clicks), acos: pct(m.cost, m.sales, 1),
-      roas: div(m.sales, m.cost),
-    };
-  });
+  const keywords: TargetingRow[] = meta
+    .filter((m) => m.kind === "KEYWORD")
+    .map((m) => {
+      const a = byId.get(m.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+      return {
+        id: m.targetId, kind: "KEYWORD", display: m.display ?? `id ${m.targetId}`,
+        matchType: m.matchType ?? undefined, state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
+        campaignId: m.campaignId, adGroupId: m.adGroupId,
+        spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
+        impressions: a.impressions, clicks: a.clicks,
+        ctr: pct(a.clicks, a.impressions), cpc: div(a.cost, a.clicks),
+        cvr: pct(a.orders, a.clicks), acos: pct(a.cost, a.sales, 1),
+        roas: div(a.sales, a.cost),
+      };
+    });
+
+  const productTargets: TargetingRow[] = meta
+    .filter((m) => m.kind === "PRODUCT_TARGET")
+    .map((m) => {
+      const a = byId.get(m.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+      return {
+        id: m.targetId, kind: "PRODUCT_TARGET", display: m.display ?? "Auto target",
+        state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
+        campaignId: m.campaignId, adGroupId: m.adGroupId,
+        spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
+        impressions: a.impressions, clicks: a.clicks,
+        ctr: pct(a.clicks, a.impressions), cpc: div(a.cost, a.clicks),
+        cvr: pct(a.orders, a.clicks), acos: pct(a.cost, a.sales, 1),
+        roas: div(a.sales, a.cost),
+      };
+    });
 
   const allRows = [...keywords, ...productTargets];
   const t = allRows.reduce(
@@ -286,8 +265,6 @@ export async function getTargetingForAdGroup(
     errors,
   };
 
-  // Cache only if the report didn't fail outright.
-  if (!errors.report) cacheSet(cacheKey, result, TTL_MS);
   return result;
 }
 
