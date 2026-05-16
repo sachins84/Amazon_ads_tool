@@ -202,6 +202,23 @@ function AccountsPageInner() {
 
       <main style={{ padding: "28px", maxWidth: 900, margin: "0 auto" }}>
 
+        {/* Back link */}
+        <button
+          onClick={() => {
+            // If we have any history, go back; otherwise default to master overview.
+            if (window.history.length > 1) router.back();
+            else router.push("/master-overview");
+          }}
+          style={{
+            background: "transparent", border: "none", padding: 0,
+            color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
+            marginBottom: 16,
+          }}
+          title="Back"
+        >
+          ← Back
+        </button>
+
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
           <div>
