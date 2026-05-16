@@ -175,20 +175,39 @@ export async function getOverviewForAccount(
     || coverage.max == null
     || endDate > coverage.max;
 
+  // ── Previous period of equal length (for KPI deltas) ───────────────────
+  const { startDate: prevStart, endDate: prevEnd } = prevPeriodFromCurrent(startDate, endDate);
+  const prevRows = readCampaignMetrics(accountId, prevStart, prevEnd);
+  const prevTotals = prevRows.reduce(
+    (acc, r) => ({
+      spend:       acc.spend + r.cost,
+      sales:       acc.sales + r.sales,
+      orders:      acc.orders + r.orders,
+      clicks:      acc.clicks + r.clicks,
+      impressions: acc.impressions + r.impressions,
+    }),
+    { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 },
+  );
+  const prevAcos = pct(prevTotals.spend, prevTotals.sales, 1);
+  const prevRoas = div(prevTotals.sales, prevTotals.spend);
+  const prevCtr  = pct(prevTotals.clicks, prevTotals.impressions);
+  const prevCpc  = div(prevTotals.spend, prevTotals.clicks);
+  const prevCvr  = pct(prevTotals.orders, prevTotals.clicks);
+
   return {
     brandName, marketplace, currency,
     dateRange: { startDate, endDate },
     kpis: {
-      spend:       { value: round2(totals.spend),       delta: 0, positive: false },
-      sales:       { value: round2(totals.sales),       delta: 0, positive: true  },
-      orders:      { value: totals.orders,              delta: 0, positive: true  },
-      impressions: { value: totals.impressions,         delta: 0, positive: true  },
-      clicks:      { value: totals.clicks,              delta: 0, positive: true  },
-      acos:        { value: pct(totals.spend, totals.sales, 1), delta: 0, positive: false },
-      roas:        { value: div(totals.sales, totals.spend),    delta: 0, positive: true  },
-      ctr:         { value: pct(totals.clicks, totals.impressions), delta: 0, positive: true },
-      cpc:         { value: div(totals.spend, totals.clicks), delta: 0, positive: false },
-      cvr:         { value: pct(totals.orders, totals.clicks), delta: 0, positive: true },
+      spend:       { value: round2(totals.spend),                       delta: delta(totals.spend,       prevTotals.spend),       positive: false },
+      sales:       { value: round2(totals.sales),                       delta: delta(totals.sales,       prevTotals.sales),       positive: true  },
+      orders:      { value: totals.orders,                              delta: delta(totals.orders,      prevTotals.orders),      positive: true  },
+      impressions: { value: totals.impressions,                         delta: delta(totals.impressions, prevTotals.impressions), positive: true  },
+      clicks:      { value: totals.clicks,                              delta: delta(totals.clicks,      prevTotals.clicks),      positive: true  },
+      acos:        { value: pct(totals.spend, totals.sales, 1),         delta: delta(pct(totals.spend, totals.sales, 1),         prevAcos), positive: false },
+      roas:        { value: div(totals.sales, totals.spend),            delta: delta(div(totals.sales, totals.spend),            prevRoas), positive: true  },
+      ctr:         { value: pct(totals.clicks, totals.impressions),     delta: delta(pct(totals.clicks, totals.impressions),     prevCtr),  positive: true  },
+      cpc:         { value: div(totals.spend, totals.clicks),           delta: delta(div(totals.spend, totals.clicks),           prevCpc),  positive: false },
+      cvr:         { value: pct(totals.orders, totals.clicks),          delta: delta(pct(totals.orders, totals.clicks),          prevCvr),  positive: true  },
     },
     campaigns,
     spendByType,
@@ -208,6 +227,26 @@ export async function getOverviewForAccount(
 }
 
 function zero() { return { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 }; }
+
+/** Returns the period of equal length immediately before [start, end] inclusive. */
+function prevPeriodFromCurrent(start: string, end: string): { startDate: string; endDate: string } {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const s = new Date(start);
+  const e = new Date(end);
+  const dayMs = 86_400_000;
+  const len = Math.max(1, Math.round((e.getTime() - s.getTime()) / dayMs) + 1);
+  const prevEnd = new Date(s.getTime() - dayMs);
+  const prevStart = new Date(prevEnd.getTime() - (len - 1) * dayMs);
+  return { startDate: fmt(prevStart), endDate: fmt(prevEnd) };
+}
+
+/** Percent change current vs previous. Returns 0 if previous is 0 (no baseline). */
+function delta(current: number, previous: number): number {
+  if (!previous || previous === 0) return 0;
+  const pct = ((current - previous) / Math.abs(previous)) * 100;
+  return Math.round(pct * 10) / 10;
+}
+
 function round2(n: number) { return Math.round(n * 100) / 100; }
 function div(a: number, b: number) { return b > 0 ? Math.round((a / b) * 100) / 100 : 0; }
 function pct(a: number, b: number, digits = 2) {
