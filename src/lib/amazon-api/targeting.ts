@@ -112,6 +112,103 @@ export async function updateSPProductTargets(
   });
 }
 
+// ─── Create-time helpers (product ads + keywords + targets) ─────────────────
+
+const AD_CONTENT = "application/vnd.spProductAd.v3+json";
+
+export interface SPCreateProductAd {
+  campaignId: string;
+  adGroupId: string;
+  asin?: string;
+  sku?: string;
+  state: "ENABLED" | "PAUSED";
+}
+
+export async function createSPProductAds(
+  profileId: string,
+  productAds: SPCreateProductAd[],
+  accountId?: string,
+): Promise<unknown> {
+  return amazonRequest("/sp/productAds", {
+    profileId, accountId, method: "POST",
+    body: { productAds },
+    headers: { "Content-Type": AD_CONTENT, "Accept": AD_CONTENT },
+  });
+}
+
+export interface SPCreateKeyword {
+  campaignId: string;
+  adGroupId: string;
+  keywordText: string;
+  matchType: "EXACT" | "PHRASE" | "BROAD";
+  bid?: number;
+  state: "ENABLED" | "PAUSED";
+}
+
+export async function createSPKeywords(
+  profileId: string,
+  keywords: SPCreateKeyword[],
+  accountId?: string,
+): Promise<unknown> {
+  return amazonRequest("/sp/keywords", {
+    profileId, accountId, method: "POST",
+    body: { keywords },
+    headers: { "Content-Type": KW_CONTENT, "Accept": KW_CONTENT },
+  });
+}
+
+export interface SPCreateProductTarget {
+  campaignId: string;
+  adGroupId: string;
+  expression: { type: string; value?: string }[];   // [{type:"asinSameAs", value:"B0..."}] OR category expression
+  bid?: number;
+  state: "ENABLED" | "PAUSED";
+}
+
+export async function createSPProductTargets(
+  profileId: string,
+  targets: SPCreateProductTarget[],
+  accountId?: string,
+): Promise<unknown> {
+  return amazonRequest("/sp/targets", {
+    profileId, accountId, method: "POST",
+    body: { targetingClauses: targets.map((t) => ({
+      campaignId: t.campaignId, adGroupId: t.adGroupId,
+      expression: t.expression,
+      expressionType: "MANUAL",
+      bid: t.bid, state: t.state,
+    })) },
+    headers: { "Content-Type": TGT_CONTENT, "Accept": TGT_CONTENT },
+  });
+}
+
+/** Auto-targeting expressions: queryHighRelMatches | queryBroadRelMatches |
+ *  asinSubstituteRelated | asinAccessoryRelated. Each gets its own bid. */
+export interface SPCreateAutoTarget {
+  campaignId: string;
+  adGroupId: string;
+  type: "queryHighRelMatches" | "queryBroadRelMatches" | "asinSubstituteRelated" | "asinAccessoryRelated";
+  bid?: number;
+  state: "ENABLED" | "PAUSED";
+}
+
+export async function createSPAutoTargets(
+  profileId: string,
+  targets: SPCreateAutoTarget[],
+  accountId?: string,
+): Promise<unknown> {
+  return amazonRequest("/sp/targets", {
+    profileId, accountId, method: "POST",
+    body: { targetingClauses: targets.map((t) => ({
+      campaignId: t.campaignId, adGroupId: t.adGroupId,
+      expression: [{ type: t.type }],
+      expressionType: "AUTO",
+      bid: t.bid, state: t.state,
+    })) },
+    headers: { "Content-Type": TGT_CONTENT, "Accept": TGT_CONTENT },
+  });
+}
+
 // ─── Negative keywords ───────────────────────────────────────────────────────
 
 const NEG_KW_CONTENT = "application/vnd.spNegativeKeyword.v3+json";

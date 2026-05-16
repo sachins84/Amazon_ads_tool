@@ -160,6 +160,25 @@ export async function listAllAdGroups(
 
 // ─── Updates ─────────────────────────────────────────────────────────────────
 
+export interface SPCreateAdGroup {
+  name: string;
+  campaignId: string;
+  defaultBid: number;
+  state: "ENABLED" | "PAUSED";
+}
+
+export async function createSPAdGroups(
+  profileId: string,
+  adGroups: SPCreateAdGroup[],
+  accountId?: string,
+): Promise<{ adGroups: { success?: { index: number; adGroupId: string }[]; error?: { errors: { message: string }[]; index: number }[] } }> {
+  return amazonRequest("/sp/adGroups", {
+    profileId, accountId, method: "POST",
+    body: { adGroups },
+    headers: { "Content-Type": SP_AG_CONTENT, "Accept": SP_AG_CONTENT },
+  });
+}
+
 export async function updateSPAdGroups(
   profileId: string,
   updates: { adGroupId: string; state?: "ENABLED" | "PAUSED"; defaultBid?: number; name?: string }[],

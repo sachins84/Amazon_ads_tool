@@ -12,6 +12,7 @@ import DateRangePicker from "@/components/shared/DateRangePicker";
 import { fmt } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
 import { queueSuggestion } from "@/lib/api-client";
+import CreateCampaignWizard from "@/components/targeting-360/CreateCampaignWizard";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Program = "SP" | "SB" | "SD";
@@ -139,6 +140,9 @@ export default function Targeting360Page() {
 
   // Edit modal state — opens when user clicks Edit/Pause/Enable on a row.
   const [editor, setEditor] = useState<EditorContext | null>(null);
+
+  // Create-campaign wizard state.
+  const [showWizard, setShowWizard] = useState(false);
 
   // Map of pending suggestions by targetId so each row can show a pending pill.
   const [pendingByTarget, setPendingByTarget] = useState<Record<string, PendingMark>>({});
@@ -350,6 +354,14 @@ export default function Targeting360Page() {
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            {tab === "HIERARCHY" && level === "CAMPAIGNS" && accountId && (
+              <button onClick={() => setShowWizard(true)} style={{
+                padding: "6px 14px", borderRadius: 6,
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                border: "1px solid transparent", color: "#fff",
+                fontSize: 12, fontWeight: 600, cursor: "pointer",
+              }}>+ New Campaign</button>
+            )}
             <DateRangePicker value={dateRange} onChange={setDateRange} compareValue="prev-period" onCompareChange={() => {}} showCompare={false} />
           </div>
         </div>
@@ -401,6 +413,23 @@ export default function Targeting360Page() {
         {accountId && tab === "FLAT" && (
           <FlatView filters={flatFilters} setFilters={(f) => { setFlatPage(0); setFlatFilters(f); }} rows={flatRows} totalCount={flatCount} loading={loading} currency={currency} page={flatPage} setPage={setFlatPage} pageSize={FLAT_PAGE_SIZE}
             pending={pendingByTarget} last={lastByTarget} openEditor={setEditor} />
+        )}
+
+        {/* Create-campaign wizard */}
+        {showWizard && accountId && (
+          <CreateCampaignWizard
+            accountId={accountId}
+            currency={currency}
+            onClose={() => setShowWizard(false)}
+            onCreated={() => {
+              showToast("✓ Campaign created on Amazon — refreshing list…", "ok");
+              setShowWizard(false);
+              // Trigger a single-account refresh so the new campaign appears
+              void fetch(`/api/admin/refresh?accountId=${accountId}&days=14`, { method: "POST" });
+              // Reload campaigns table in 30s once refresh has had a chance to land.
+              setTimeout(() => loadCampaigns(), 30_000);
+            }}
+          />
         )}
 
         {/* Inline editor modal */}

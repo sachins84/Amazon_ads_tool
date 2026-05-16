@@ -86,6 +86,32 @@ export async function listSPCampaigns(profileId: string, accountId?: string): Pr
   return all;
 }
 
+export interface SPCreateCampaign {
+  name: string;
+  budget: { budget: number; budgetType: "DAILY"; budgetCap?: { policy: "MONTHLY"; amount?: number } };
+  startDate: string;
+  endDate?: string;
+  state: "ENABLED" | "PAUSED";
+  targetingType: "MANUAL" | "AUTO";
+  portfolioId?: string;
+  dynamicBidding?: {
+    strategy: "LEGACY_FOR_SALES" | "AUTO_FOR_SALES" | "MANUAL" | "RULE_BASED";
+    placementBidding?: { placement: "PLACEMENT_TOP" | "PLACEMENT_PRODUCT_PAGE" | "PLACEMENT_REST_OF_SEARCH"; percentage: number }[];
+  };
+}
+
+export async function createSPCampaigns(
+  profileId: string,
+  campaigns: SPCreateCampaign[],
+  accountId?: string,
+): Promise<{ campaigns: { success?: { index: number; campaignId: string }[]; error?: { errors: { message: string }[]; index: number }[] } }> {
+  return amazonRequest("/sp/campaigns", {
+    profileId, accountId, method: "POST",
+    body: { campaigns },
+    headers: { "Content-Type": SP_CONTENT, "Accept": SP_CONTENT },
+  });
+}
+
 export async function updateSPCampaigns(
   profileId: string,
   updates: { campaignId: string; state?: "ENABLED" | "PAUSED"; budget?: { budget: number; budgetType: "DAILY" }; name?: string }[],
