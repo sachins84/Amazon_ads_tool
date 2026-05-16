@@ -27,7 +27,9 @@ export async function POST(req: NextRequest) {
   const accountId = searchParams.get("accountId");
   const all       = searchParams.get("all") === "true";
   const sync      = searchParams.get("sync") === "true";
-  const days      = Math.max(1, Math.min(180, parseInt(searchParams.get("days") ?? "14", 10) || 14));
+  // Default 21 days: gives 14 days of attribution backfill PLUS 7 days of
+  // history so Last 7D's vs-prev deltas always have a baseline.
+  const days      = Math.max(1, Math.min(180, parseInt(searchParams.get("days") ?? "21", 10) || 21));
 
   if (!accountId && !all) {
     return Response.json({ error: "accountId or all=true required" }, { status: 400 });

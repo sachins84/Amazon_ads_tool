@@ -51,7 +51,7 @@ export interface OverviewData {
   currency?: string;
   dateRange?: { startDate: string; endDate: string };
   kpis: OverviewKpis & {
-    sales?: { value: number; delta: number; positive: boolean };
+    sales?: { value: number; prev?: number; delta: number; positive: boolean };
   };
   campaigns: OverviewCampaignRow[] | typeof mockCampaigns;
   spendByType: { name: string; code?: Program; value: number; color: string }[];

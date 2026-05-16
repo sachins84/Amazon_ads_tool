@@ -39,7 +39,7 @@ export default function MasterOverviewPage() {
     }
   }, [accountId, dateRange, isAllBrands]);
 
-  const refresh = useCallback(async (days = 14) => {
+  const refresh = useCallback(async (days = 21) => {
     if (refreshing) return;
     setRefreshing(true);
     setRefreshNote(`Pulling last ${days} days from Amazon… runs in the background, expect 5–15 min for India accounts. The page will pick up data as it lands.`);

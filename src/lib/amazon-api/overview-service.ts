@@ -17,16 +17,16 @@ export interface OverviewResult {
   currency:    string;
   dateRange:   { startDate: string; endDate: string };
   kpis: {
-    spend:       { value: number; delta: number; positive: boolean };
-    sales:       { value: number; delta: number; positive: boolean };
-    orders:      { value: number; delta: number; positive: boolean };
-    impressions: { value: number; delta: number; positive: boolean };
-    clicks:      { value: number; delta: number; positive: boolean };
-    acos:        { value: number; delta: number; positive: boolean };
-    roas:        { value: number; delta: number; positive: boolean };
-    ctr:         { value: number; delta: number; positive: boolean };
-    cpc:         { value: number; delta: number; positive: boolean };
-    cvr:         { value: number; delta: number; positive: boolean };
+    spend:       { value: number; prev?: number; delta: number; positive: boolean };
+    sales:       { value: number; prev?: number; delta: number; positive: boolean };
+    orders:      { value: number; prev?: number; delta: number; positive: boolean };
+    impressions: { value: number; prev?: number; delta: number; positive: boolean };
+    clicks:      { value: number; prev?: number; delta: number; positive: boolean };
+    acos:        { value: number; prev?: number; delta: number; positive: boolean };
+    roas:        { value: number; prev?: number; delta: number; positive: boolean };
+    ctr:         { value: number; prev?: number; delta: number; positive: boolean };
+    cpc:         { value: number; prev?: number; delta: number; positive: boolean };
+    cvr:         { value: number; prev?: number; delta: number; positive: boolean };
   };
   campaigns: {
     id: string; name: string; type: Program;
@@ -198,16 +198,16 @@ export async function getOverviewForAccount(
     brandName, marketplace, currency,
     dateRange: { startDate, endDate },
     kpis: {
-      spend:       { value: round2(totals.spend),                       delta: delta(totals.spend,       prevTotals.spend),       positive: false },
-      sales:       { value: round2(totals.sales),                       delta: delta(totals.sales,       prevTotals.sales),       positive: true  },
-      orders:      { value: totals.orders,                              delta: delta(totals.orders,      prevTotals.orders),      positive: true  },
-      impressions: { value: totals.impressions,                         delta: delta(totals.impressions, prevTotals.impressions), positive: true  },
-      clicks:      { value: totals.clicks,                              delta: delta(totals.clicks,      prevTotals.clicks),      positive: true  },
-      acos:        { value: pct(totals.spend, totals.sales, 1),         delta: delta(pct(totals.spend, totals.sales, 1),         prevAcos), positive: false },
-      roas:        { value: div(totals.sales, totals.spend),            delta: delta(div(totals.sales, totals.spend),            prevRoas), positive: true  },
-      ctr:         { value: pct(totals.clicks, totals.impressions),     delta: delta(pct(totals.clicks, totals.impressions),     prevCtr),  positive: true  },
-      cpc:         { value: div(totals.spend, totals.clicks),           delta: delta(div(totals.spend, totals.clicks),           prevCpc),  positive: false },
-      cvr:         { value: pct(totals.orders, totals.clicks),          delta: delta(pct(totals.orders, totals.clicks),          prevCvr),  positive: true  },
+      spend:       { value: round2(totals.spend),                       prev: round2(prevTotals.spend),       delta: delta(totals.spend,       prevTotals.spend),       positive: false },
+      sales:       { value: round2(totals.sales),                       prev: round2(prevTotals.sales),       delta: delta(totals.sales,       prevTotals.sales),       positive: true  },
+      orders:      { value: totals.orders,                              prev: prevTotals.orders,              delta: delta(totals.orders,      prevTotals.orders),      positive: true  },
+      impressions: { value: totals.impressions,                         prev: prevTotals.impressions,         delta: delta(totals.impressions, prevTotals.impressions), positive: true  },
+      clicks:      { value: totals.clicks,                              prev: prevTotals.clicks,              delta: delta(totals.clicks,      prevTotals.clicks),      positive: true  },
+      acos:        { value: pct(totals.spend, totals.sales, 1),         prev: prevAcos,                       delta: delta(pct(totals.spend, totals.sales, 1),         prevAcos), positive: false },
+      roas:        { value: div(totals.sales, totals.spend),            prev: prevRoas,                       delta: delta(div(totals.sales, totals.spend),            prevRoas), positive: true  },
+      ctr:         { value: pct(totals.clicks, totals.impressions),     prev: prevCtr,                        delta: delta(pct(totals.clicks, totals.impressions),     prevCtr),  positive: true  },
+      cpc:         { value: div(totals.spend, totals.clicks),           prev: prevCpc,                        delta: delta(div(totals.spend, totals.clicks),           prevCpc),  positive: false },
+      cvr:         { value: pct(totals.orders, totals.clicks),          prev: prevCvr,                        delta: delta(pct(totals.orders, totals.clicks),          prevCvr),  positive: true  },
     },
     campaigns,
     spendByType,

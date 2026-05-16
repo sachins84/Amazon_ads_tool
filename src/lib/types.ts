@@ -7,6 +7,8 @@ export interface MetricWithDelta {
   value: number;
   delta: number;
   positive: boolean; // true = green, false = red
+  /** Previous-period value (for comparison context). Undefined or 0 means no baseline. */
+  prev?: number;
 }
 
 export interface OverviewKpis {

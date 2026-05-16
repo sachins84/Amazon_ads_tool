@@ -14,15 +14,18 @@ interface Props {
 }
 
 export default function KpiCard({ label, metric, format, currency = "INR", icon, small, loading }: Props) {
+  const hasBaseline = metric.prev !== undefined && metric.prev !== 0;
   const deltaPositive = metric.positive
     ? metric.delta >= 0
     : metric.delta <= 0;
-  const deltaColor = metric.delta === 0
+  const deltaColor = !hasBaseline
+    ? "var(--text-muted)"
+    : metric.delta === 0
     ? "var(--text-secondary)"
     : deltaPositive
     ? "#22c55e"
     : "#ef4444";
-  const arrow = metric.delta > 0 ? "↑" : metric.delta < 0 ? "↓" : "—";
+  const arrow = !hasBaseline ? "—" : metric.delta > 0 ? "↑" : metric.delta < 0 ? "↓" : "—";
 
   return (
     <div
@@ -57,9 +60,15 @@ export default function KpiCard({ label, metric, format, currency = "INR", icon,
           <div style={{ height: small ? 20 : 24, width: 80, background: "var(--bg-input)", borderRadius: 4, animation: "pulse 1.5s ease-in-out infinite" }} />
         ) : fmt(metric.value, format, currency)}
       </div>
-      <div style={{ fontSize: 11, color: deltaColor, display: "flex", alignItems: "center", gap: 3 }}>
-        <span style={{ fontWeight: 600 }}>{arrow} {Math.abs(metric.delta).toFixed(1)}%</span>
-        <span style={{ color: "var(--text-muted)" }}>vs prev period</span>
+      <div style={{ fontSize: 11, color: deltaColor, display: "flex", alignItems: "center", gap: 3 }} title={hasBaseline ? `Previous: ${fmt(metric.prev!, format, currency)}` : "No data for previous period"}>
+        {hasBaseline ? (
+          <>
+            <span style={{ fontWeight: 600 }}>{arrow} {Math.abs(metric.delta).toFixed(1)}%</span>
+            <span style={{ color: "var(--text-muted)" }}>vs prev period</span>
+          </>
+        ) : (
+          <span style={{ color: "var(--text-muted)" }}>— no prior data</span>
+        )}
       </div>
     </div>
   );

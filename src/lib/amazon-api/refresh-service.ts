@@ -40,7 +40,7 @@ type RefreshPhase =
   | "campaigns" | "adgroups" | "targeting"
   | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets";
 
-export async function refreshAccountRecent(accountId: string, days = 14): Promise<RefreshResult> {
+export async function refreshAccountRecent(accountId: string, days = 21): Promise<RefreshResult> {
   const acct = getAccount(accountId);
   if (!acct) throw new Error(`Account ${accountId} not found`);
 

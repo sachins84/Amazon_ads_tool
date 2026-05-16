@@ -15,7 +15,7 @@ export function startRefreshCron() {
     return;
   }
   const schedule = process.env.REFRESH_CRON || '30 2 * * *';
-  const days = Math.max(1, Math.min(180, parseInt(process.env.REFRESH_DAYS || '14', 10) || 14));
+  const days = Math.max(1, Math.min(180, parseInt(process.env.REFRESH_DAYS || '21', 10) || 21));
   if (!cron.validate(schedule)) {
     console.error(`[cron] invalid REFRESH_CRON "${schedule}", refusing to start`);
     return;
