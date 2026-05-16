@@ -105,7 +105,7 @@ export default function CreateCampaignWizard({ accountId, currency, onClose, onC
     <div style={backdrop} onClick={onClose}>
       <div style={card} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0" }}>Create Sponsored Products Campaign</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>Create Sponsored Products Campaign</div>
           <button onClick={onClose} style={closeBtn}>✕</button>
         </div>
 
@@ -155,8 +155,8 @@ function StepNav({ step, targetingType }: { step: Step; targetingType: Targeting
         return (
           <div key={l} style={{
             flex: 1, padding: "6px 10px", borderRadius: 4, textAlign: "center",
-            background: active ? "rgba(99,102,241,0.15)" : done ? "rgba(34,197,94,0.10)" : "#1c2333",
-            color:      active ? "#a5b4fc" : done ? "#86efac" : "#8892a4",
+            background: active ? "rgba(99,102,241,0.15)" : done ? "rgba(34,197,94,0.10)" : "var(--bg-input)",
+            color:      active ? "#a5b4fc" : done ? "#86efac" : "var(--text-secondary)",
             borderBottom: active ? "2px solid #6366f1" : "2px solid transparent",
             fontWeight: active ? 600 : 400,
           }}>{stepNum}. {l}</div>
@@ -294,8 +294,8 @@ function KeywordsList({ s, setS, currency }: { s: WizardState; setS: (n: WizardS
   const removeKw = (i: number) =>
     setS({ ...s, keywords: s.keywords.filter((_, idx) => idx !== i) });
   return (
-    <div style={{ background: "#0d1117", border: "1px solid #2a3245", borderRadius: 8, padding: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>Keywords ({s.keywords.length})</div>
+    <div style={{ background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Keywords ({s.keywords.length})</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder="Paste keywords, one per line" rows={3} style={{ ...input, flex: 1, fontFamily: "ui-monospace, monospace" }} />
         <button onClick={addBulk} disabled={!bulk.trim()} style={btnPrimary(!bulk.trim())}>Add</button>
@@ -314,7 +314,7 @@ function KeywordsList({ s, setS, currency }: { s: WizardState; setS: (n: WizardS
           ))}
         </div>
       )}
-      <div style={{ fontSize: 10, color: "#555f6e", marginTop: 4 }}>Default match: EXACT · default bid: {fmt(s.adGroup.defaultBid, "currency", currency)}</div>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Default match: EXACT · default bid: {fmt(s.adGroup.defaultBid, "currency", currency)}</div>
     </div>
   );
 }
@@ -330,8 +330,8 @@ function AsinTargetsList({ s, setS, currency }: { s: WizardState; setS: (n: Wiza
     setBulk("");
   };
   return (
-    <div style={{ background: "#0d1117", border: "1px solid #2a3245", borderRadius: 8, padding: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>Product targets — ASINs ({s.asinTargets.length})</div>
+    <div style={{ background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>Product targets — ASINs ({s.asinTargets.length})</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder="Paste ASINs to target (one per line)" rows={3} style={{ ...input, flex: 1, fontFamily: "ui-monospace, monospace" }} />
         <button onClick={addBulk} disabled={!bulk.trim()} style={btnPrimary(!bulk.trim())}>Add</button>
@@ -347,7 +347,7 @@ function AsinTargetsList({ s, setS, currency }: { s: WizardState; setS: (n: Wiza
           ))}
         </div>
       )}
-      <div style={{ fontSize: 10, color: "#555f6e", marginTop: 4 }}>Default bid: {fmt(s.adGroup.defaultBid, "currency", currency)}</div>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>Default bid: {fmt(s.adGroup.defaultBid, "currency", currency)}</div>
     </div>
   );
 }
@@ -356,8 +356,8 @@ function AutoBid({ label, hint, value, onChange, currency }: { label: string; hi
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 12, alignItems: "center" }}>
       <div>
-        <div style={{ fontSize: 12, color: "#e2e8f0", fontWeight: 600 }}>{label}</div>
-        <div style={{ fontSize: 11, color: "#8892a4" }}>{hint}</div>
+        <div style={{ fontSize: 12, color: "var(--text-primary)", fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{hint}</div>
       </div>
       <input type="number" step="0.01" min="0" value={value} onChange={(e) => onChange(parseFloat(e.target.value) || 0)} style={input} title={currency} />
     </div>
@@ -366,7 +366,7 @@ function AutoBid({ label, hint, value, onChange, currency }: { label: string; hi
 
 function Step5({ s, currency }: { s: WizardState; currency: string }) {
   return (
-    <div style={{ display: "grid", gap: 8, fontSize: 12, color: "#e2e8f0" }}>
+    <div style={{ display: "grid", gap: 8, fontSize: 12, color: "var(--text-primary)" }}>
       <div style={{ background: "rgba(99,102,241,0.10)", border: "1px solid #6366f1", borderRadius: 8, padding: 12, color: "#a5b4fc" }}>
         Review the configuration below. Clicking <strong>Create on Amazon</strong> below will ask for one final confirmation before pushing the changes live.
       </div>
@@ -404,10 +404,10 @@ function Step5({ s, currency }: { s: WizardState; currency: string }) {
 
 function ReviewBlock({ title, rows }: { title: string; rows: [string, string | number][] }) {
   return (
-    <div style={{ background: "#0d1117", border: "1px solid #2a3245", borderRadius: 8, padding: "10px 12px" }}>
-      <div style={{ fontSize: 11, color: "#8892a4", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{title}</div>
+    <div style={{ background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{title}</div>
       <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: "4px 16px", fontSize: 12 }}>
-        {rows.map(([k, v]) => <Fragment key={k}><span style={{ color: "#8892a4" }}>{k}</span><span style={{ color: "#e2e8f0" }}>{v}</span></Fragment>)}
+        {rows.map(([k, v]) => <Fragment key={k}><span style={{ color: "var(--text-secondary)" }}>{k}</span><span style={{ color: "var(--text-primary)" }}>{v}</span></Fragment>)}
       </div>
     </div>
   );
@@ -427,11 +427,11 @@ function ResultView({ result, onClose }: { result: { success: boolean; steps: Re
         {result.success ? "✓ Campaign created successfully" : "⚠ Some steps failed — see below. Already-created entities exist on Amazon."}
       </div>
       {Object.entries(result.steps).map(([k, v]) => (
-        <div key={k} style={{ background: "#0d1117", border: "1px solid #2a3245", borderRadius: 6, padding: 10, fontSize: 12 }}>
+        <div key={k} style={{ background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6, padding: 10, fontSize: 12 }}>
           <div style={{ color: v?.ok ? "#86efac" : "#ef4444" }}>{v?.ok ? "✓" : "✕"} {k}</div>
-          {v?.campaignId && <div style={{ color: "#8892a4", marginTop: 2 }}>campaignId: <code>{v.campaignId}</code></div>}
-          {v?.adGroupId  && <div style={{ color: "#8892a4", marginTop: 2 }}>adGroupId: <code>{v.adGroupId}</code></div>}
-          {v?.count !== undefined && <div style={{ color: "#8892a4", marginTop: 2 }}>{v.count} item(s)</div>}
+          {v?.campaignId && <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>campaignId: <code>{v.campaignId}</code></div>}
+          {v?.adGroupId  && <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>adGroupId: <code>{v.adGroupId}</code></div>}
+          {v?.count !== undefined && <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>{v.count} item(s)</div>}
           {v?.message    && <div style={{ color: "#ef4444", marginTop: 2 }}>{v.message}</div>}
         </div>
       ))}
@@ -505,18 +505,18 @@ const backdrop: React.CSSProperties = {
   overflowY: "auto",
 };
 const card: React.CSSProperties = {
-  background: "#161b27", border: "1px solid #2a3245", borderRadius: 10,
+  background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10,
   padding: 20, width: 720, maxWidth: "95vw", marginBottom: 40,
 };
 const closeBtn: React.CSSProperties = {
-  background: "transparent", border: "none", color: "#8892a4",
+  background: "transparent", border: "none", color: "var(--text-secondary)",
   fontSize: 18, cursor: "pointer",
 };
 const input: React.CSSProperties = {
-  background: "#0d1117", border: "1px solid #2a3245", borderRadius: 6,
-  color: "#e2e8f0", padding: "6px 10px", fontSize: 12, outline: "none", width: "100%",
+  background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6,
+  color: "var(--text-primary)", padding: "6px 10px", fontSize: 12, outline: "none", width: "100%",
 };
-const miniLabel: React.CSSProperties = { fontSize: 10, color: "#8892a4", marginBottom: 4 };
+const miniLabel: React.CSSProperties = { fontSize: 10, color: "var(--text-secondary)", marginBottom: 4 };
 const hintBox: React.CSSProperties = {
   fontSize: 11, color: "#a5b4fc",
   padding: "8px 10px", background: "rgba(99,102,241,0.08)",
@@ -524,18 +524,18 @@ const hintBox: React.CSSProperties = {
 };
 const btnCancel: React.CSSProperties = {
   padding: "6px 12px", borderRadius: 6, background: "transparent",
-  border: "1px solid #2a3245", color: "#8892a4", fontSize: 12, cursor: "pointer",
+  border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
 };
 const btnSecondary: React.CSSProperties = {
-  padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-  border: "1px solid #2a3245", color: "#a5b4fc", fontSize: 12, cursor: "pointer",
+  padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+  border: "1px solid var(--border)", color: "#a5b4fc", fontSize: 12, cursor: "pointer",
 };
 function btnPrimary(disabled: boolean): React.CSSProperties {
   return {
     padding: "6px 14px", borderRadius: 6,
-    background: disabled ? "#1c2333" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+    background: disabled ? "var(--bg-input)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
     border: "1px solid transparent",
-    color: disabled ? "#555f6e" : "#fff",
+    color: disabled ? "var(--text-muted)" : "#fff",
     fontSize: 12, fontWeight: 600,
     cursor: disabled ? "default" : "pointer",
   };
@@ -544,7 +544,7 @@ function btnPrimary(disabled: boolean): React.CSSProperties {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>{label}</div>
       {children}
     </div>
   );

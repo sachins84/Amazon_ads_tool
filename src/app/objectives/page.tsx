@@ -22,13 +22,13 @@ export default function ObjectivesPage() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1200, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0" }}>Objectives</h1>
-            <p style={{ fontSize: 12, color: "#8892a4", marginTop: 2 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Objectives</h1>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
               {accountId ? `For ${activeAccount?.name}` : "All accounts"} · {objectives.length} objective{objectives.length === 1 ? "" : "s"}
             </p>
           </div>
@@ -47,16 +47,16 @@ export default function ObjectivesPage() {
         )}
 
         {objectives.length === 0 ? (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 32, borderRadius: 10, textAlign: "center", color: "#8892a4" }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 32, borderRadius: 10, textAlign: "center", color: "var(--text-secondary)" }}>
             No objectives yet. Define one like &ldquo;ROAS ≥ 2.0 on BeBodywise&rdquo; or &ldquo;ACOS ≤ 25%&rdquo; to drive rule prioritization.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {objectives.map((o) => (
-              <div key={o.id} style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 16 }}>
+              <div key={o.id} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{o.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{o.name}</div>
                     <div style={{ fontSize: 12, color: "#a5b4fc", marginTop: 4, fontFamily: "ui-monospace, monospace" }}>
                       {o.targetMetric} {humanCmp(o.comparator)} {o.targetValue}
                     </div>
@@ -87,7 +87,7 @@ function NewObjective({ accountId, onSave, onCancel }: {
   const [value, setValue] = useState("2");
 
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 8, alignItems: "end" }}>
         <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Scale BeBodywise to ROAS ≥ 2" style={inputStyle} /></Field>
         <Field label="Metric">
@@ -116,7 +116,7 @@ function NewObjective({ accountId, onSave, onCancel }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ fontSize: 10, color: "#8892a4", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
       {children}
     </div>
   );
@@ -124,12 +124,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function humanCmp(c: "GTE" | "LTE" | "EQ"): string { return c === "GTE" ? "≥" : c === "LTE" ? "≤" : "="; }
 
 const inputStyle: React.CSSProperties = {
-  background: "#0d1117", border: "1px solid #2a3245", borderRadius: 6, color: "#e2e8f0",
+  background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)",
   padding: "6px 10px", fontSize: 12, outline: "none", width: "100%",
 };
 const btnSecondary: React.CSSProperties = {
-  padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-  border: "1px solid #2a3245", color: "#8892a4", fontSize: 12, cursor: "pointer",
+  padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+  border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
 };
 const btnPrimary: React.CSSProperties = {
   padding: "6px 14px", borderRadius: 6,

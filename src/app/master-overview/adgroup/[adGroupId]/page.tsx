@@ -79,34 +79,34 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
   const linkBackToCampaign = data?.campaignId || campaignIdHint;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1600, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 4 }}>
-              <Link href="/master-overview" style={{ color: "#8892a4", textDecoration: "none" }}>Master Overview</Link>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
+              <Link href="/master-overview" style={{ color: "var(--text-secondary)", textDecoration: "none" }}>Master Overview</Link>
               <span style={{ margin: "0 6px" }}>›</span>
               {linkBackToCampaign ? (
                 <>
-                  <Link href={`/master-overview/campaign/${linkBackToCampaign}`} style={{ color: "#8892a4", textDecoration: "none" }}>Campaign</Link>
+                  <Link href={`/master-overview/campaign/${linkBackToCampaign}`} style={{ color: "var(--text-secondary)", textDecoration: "none" }}>Campaign</Link>
                   <span style={{ margin: "0 6px" }}>›</span>
                 </>
               ) : null}
-              <span style={{ color: "#e2e8f0" }}>Ad Group</span>
+              <span style={{ color: "var(--text-primary)" }}>Ad Group</span>
             </div>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.3px" }}>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.3px" }}>
               {data?.brandName ?? activeAccount?.name ?? "Ad Group"} · Targeting
             </h1>
-            <p style={{ fontSize: 12, color: "#8892a4", marginTop: 2 }}>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
               Ad Group {adGroupId} · {data?.keywords.length ?? 0} keywords · {data?.productTargets.length ?? 0} product targets · {dateRange}
             </p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <DateRangePicker value={dateRange} onChange={setDateRange} compareValue="prev-period" onCompareChange={() => {}} showCompare={false} />
             <button onClick={load} disabled={loading} style={{
-              padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-              border: "1px solid #2a3245", color: loading ? "#555f6e" : "#8892a4",
+              padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+              border: "1px solid var(--border)", color: loading ? "var(--text-muted)" : "var(--text-secondary)",
               cursor: loading ? "default" : "pointer", fontSize: 12,
             }}>
               {loading ? "Loading…" : "↻ Refresh"}
@@ -115,7 +115,7 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
         </div>
 
         {!accountId && (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 16, borderRadius: 8, fontSize: 13, color: "#8892a4" }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 16, borderRadius: 8, fontSize: 13, color: "var(--text-secondary)" }}>
             Select a brand from the top-right dropdown.
           </div>
         )}
@@ -149,9 +149,9 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
           {(["KEYWORDS","PRODUCT_TARGETS"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} style={{
               padding: "6px 14px", borderRadius: 6, fontSize: 12,
-              background: tab === t ? "#1c2333" : "transparent",
-              color: tab === t ? "#e2e8f0" : "#8892a4",
-              border: tab === t ? "1px solid #2a3245" : "1px solid transparent",
+              background: tab === t ? "var(--bg-input)" : "transparent",
+              color: tab === t ? "var(--text-primary)" : "var(--text-secondary)",
+              border: tab === t ? "1px solid var(--border)" : "1px solid transparent",
               fontWeight: tab === t ? 600 : 400,
               cursor: "pointer",
             }}>
@@ -161,11 +161,11 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
         </div>
 
         {!loading && (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid #2a3245", color: "#8892a4" }}>
+                  <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                     {tab === "KEYWORDS" && <Th>Match</Th>}
                     <Th>Status</Th>
                     <Th align="left">{tab === "KEYWORDS" ? "Keyword" : "Target"}</Th>
@@ -176,24 +176,24 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.id} style={{ borderBottom: "1px solid #1c2333" }}>
+                    <tr key={r.id} style={{ borderBottom: "1px solid var(--bg-input)" }}>
                       {tab === "KEYWORDS" && <Td><Pill text={r.matchType ?? ""} /></Td>}
                       <Td><Pill text={r.state} muted={r.state !== "ENABLED"} /></Td>
-                      <Td style={{ color: "#e2e8f0", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.display}>{r.display}</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{fmt(r.bid, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(r.spend, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(r.sales, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{r.orders}</Td>
+                      <Td style={{ color: "var(--text-primary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.display}>{r.display}</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(r.bid, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.spend, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.sales, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.orders}</Td>
                       <Td align="right" style={{ color: r.roas >= 2 ? "#22c55e" : r.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{r.roas.toFixed(2)}x</Td>
-                      <Td align="right" style={{ color: r.acos > 0 && r.acos <= 25 ? "#22c55e" : r.acos > 25 ? "#ef4444" : "#555f6e" }}>{r.acos.toFixed(1)}%</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{r.ctr.toFixed(2)}%</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{fmt(r.cpc, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: r.acos > 0 && r.acos <= 25 ? "#22c55e" : r.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{r.acos.toFixed(1)}%</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.ctr.toFixed(2)}%</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(r.cpc, "currency", currency)}</Td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {rows.length === 0 && (
-                <div style={{ padding: 16, color: "#555f6e", fontSize: 12, textAlign: "center" }}>
+                <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>
                   No {tab === "KEYWORDS" ? "keywords" : "product targets"} in this ad group for this range.
                 </div>
               )}
@@ -202,7 +202,7 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
         )}
 
         {data?.errors && (data.errors.keywords || data.errors.productTargets || data.errors.report) && (
-          <div style={{ marginTop: 16, padding: 12, background: "#161b27", border: "1px solid #2a3245", borderRadius: 8, fontSize: 11, color: "#8892a4" }}>
+          <div style={{ marginTop: 16, padding: 12, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)" }}>
             <strong style={{ color: "#f59e0b" }}>Partial data:</strong>{" "}
             {data.errors.keywords ? "keywords list failed; " : ""}
             {data.errors.productTargets ? "product-targets list failed; " : ""}
@@ -216,9 +216,9 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: "14px 16px" }}>
-      <div style={{ fontSize: 10, color: "#8892a4", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", marginTop: 4 }}>{value}</div>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginTop: 4 }}>{value}</div>
     </div>
   );
 }
@@ -235,8 +235,8 @@ function Pill({ text, muted }: { text: string; muted?: boolean }) {
     BROAD:    { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
     ENABLED:  { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
     PAUSED:   { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "#8892a4" },
+    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
   };
-  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "#8892a4" };
-  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "#555f6e" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
+  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "var(--text-secondary)" };
+  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "var(--text-muted)" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
 }

@@ -92,13 +92,13 @@ export default function MasterOverviewPage() {
   }, [overview]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1600, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.4px" }}>{headline}</h1>
-            <p style={{ fontSize: 12, color: "#8892a4", marginTop: 2 }}>{subtitle}</p>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.4px" }}>{headline}</h1>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{subtitle}</p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <DateRangePicker value={dateRange} onChange={setDateRange} compareValue="prev-period" onCompareChange={() => {}} showCompare={false} />
@@ -131,7 +131,7 @@ export default function MasterOverviewPage() {
         )}
 
         {!isAllBrands && !loading && overview?.freshness?.lastRefreshAt && !overview.freshness.stale && (
-          <div style={{ fontSize: 11, color: "#555f6e", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
             Last refreshed {humanTime(overview.freshness.lastRefreshAt)} · window {overview.freshness.windowStart} → {overview.freshness.windowEnd} · {overview.freshness.rowCount.toLocaleString()} rows stored
             {overview.freshness.error ? <span style={{ color: "#f59e0b" }}> · last refresh had errors</span> : null}
           </div>
@@ -218,7 +218,7 @@ function SingleBrandView({
       )}
 
       {data?.errors && (data.errors.campaigns.length + data.errors.reports.length) > 0 && (
-        <div style={{ marginTop: 16, padding: 12, background: "#161b27", border: "1px solid #2a3245", borderRadius: 8, fontSize: 11, color: "#8892a4" }}>
+        <div style={{ marginTop: 16, padding: 12, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)" }}>
           <strong style={{ color: "#f59e0b" }}>Partial data:</strong>{" "}
           {data.errors.reports.map((e) => `${e.program} report failed`).join(", ")}
           {data.errors.campaigns.length > 0 && data.errors.reports.length > 0 ? "; " : ""}
@@ -247,8 +247,8 @@ function AllBrandsView({ data, loading }: { data: AllBrandsResponse | null; load
       {Object.values(data.byCurrency).length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${Object.keys(data.byCurrency).length}, 1fr)`, gap: 12, marginBottom: 16 }}>
           {Object.values(data.byCurrency).map((g) => (
-            <div key={g.currency} style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: "16px 20px" }}>
-              <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <div key={g.currency} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "16px 20px" }}>
+              <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 {g.currency} total · {g.accounts} account{g.accounts === 1 ? "" : "s"}
               </div>
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
@@ -263,7 +263,7 @@ function AllBrandsView({ data, loading }: { data: AllBrandsResponse | null; load
         </div>
       )}
 
-      <h2 style={{ fontSize: 13, color: "#8892a4", marginBottom: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Brands</h2>
+      <h2 style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Brands</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
         {data.accounts.map((a) => <BrandCard key={a.accountId} a={a} />)}
       </div>
@@ -275,12 +275,12 @@ function BrandCard({ a }: { a: AllBrandsResponse["accounts"][number] }) {
   // currencySymbol kept around for future inline tooltips; not used directly here.
   void currencySymbol;
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div style={{ width: 10, height: 10, borderRadius: "50%", background: a.color || "#6366f1" }} />
-        <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{a.name}</div>
+        <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>{a.name}</div>
       </div>
-      <div style={{ fontSize: 11, color: "#8892a4" }}>{a.marketplace} · {a.currency} · profile {a.profileId}</div>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{a.marketplace} · {a.currency} · profile {a.profileId}</div>
       {a.error ? (
         <div style={{ fontSize: 11, color: "#ef4444", padding: "8px 0" }}>⚠ {a.error.slice(0, 90)}…</div>
       ) : (
@@ -291,7 +291,7 @@ function BrandCard({ a }: { a: AllBrandsResponse["accounts"][number] }) {
             <Mini label="ROAS"   value={`${a.roas.toFixed(2)}x`} />
             <Mini label="Orders" value={fmt(a.orders, "number", a.currency)} />
           </div>
-          <div style={{ fontSize: 11, color: "#8892a4", display: "flex", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between" }}>
             <span>{a.activeCampaigns} active campaigns</span>
             <span>ACOS {a.acos.toFixed(1)}%</span>
           </div>
@@ -304,16 +304,16 @@ function BrandCard({ a }: { a: AllBrandsResponse["accounts"][number] }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 10, color: "#8892a4", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-      <div style={{ fontSize: 18, color: "#e2e8f0", fontWeight: 700 }}>{value}</div>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 18, color: "var(--text-primary)", fontWeight: 700 }}>{value}</div>
     </div>
   );
 }
 function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 10, color: "#8892a4" }}>{label}</div>
-      <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{value}</div>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>{label}</div>
+      <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 600 }}>{value}</div>
     </div>
   );
 }
@@ -323,7 +323,7 @@ function Mini({ label, value }: { label: string; value: string }) {
 function DailyChart({ data, currency }: { data: { date: string; spend: number; sales: number }[]; currency: string }) {
   if (!data.length) {
     return (
-      <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20, height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "#555f6e", fontSize: 12 }}>
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 12 }}>
         No daily data in this range
       </div>
     );
@@ -336,11 +336,11 @@ function DailyChart({ data, currency }: { data: { date: string; spend: number; s
     ).join(" ");
 
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
       <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <div>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>Daily Spend vs Sales</h3>
-          <p style={{ fontSize: 11, color: "#8892a4", marginTop: 2 }}>{data.length} days</p>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Daily Spend vs Sales</h3>
+          <p style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{data.length} days</p>
         </div>
         <div style={{ display: "flex", gap: 16, fontSize: 11 }}>
           <span style={{ color: "#8b5cf6" }}>● Spend</span>
@@ -351,7 +351,7 @@ function DailyChart({ data, currency }: { data: { date: string; spend: number; s
         <polyline points={pts("sales")} fill="none" stroke="#22c55e" strokeWidth="0.7" />
         <polyline points={pts("spend")} fill="none" stroke="#8b5cf6" strokeWidth="0.7" strokeDasharray="1 0.6" />
       </svg>
-      <div style={{ fontSize: 11, color: "#8892a4", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
         <span>{data[0]?.date}</span>
         <span>Max {fmt(maxVal, "compact", currency)}</span>
         <span>{data[data.length - 1]?.date}</span>
@@ -365,11 +365,11 @@ function DailyChart({ data, currency }: { data: { date: string; spend: number; s
 function SpendByProgram({ items, currency }: { items: { name: string; code?: string; value: number; color: string }[]; currency: string }) {
   const total = items.reduce((s, i) => s + i.value, 0);
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20 }}>
-      <h3 style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>Spend by Program</h3>
-      <div style={{ fontSize: 18, color: "#e2e8f0", fontWeight: 700, marginBottom: 12 }}>{fmt(total, "currency", currency)}</div>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Spend by Program</h3>
+      <div style={{ fontSize: 18, color: "var(--text-primary)", fontWeight: 700, marginBottom: 12 }}>{fmt(total, "currency", currency)}</div>
       {total === 0 ? (
-        <div style={{ color: "#555f6e", fontSize: 12 }}>No spend in this range</div>
+        <div style={{ color: "var(--text-muted)", fontSize: 12 }}>No spend in this range</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {items.map((it) => {
@@ -377,10 +377,10 @@ function SpendByProgram({ items, currency }: { items: { name: string; code?: str
             return (
               <div key={it.name}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
-                  <span style={{ color: "#e2e8f0" }}>{it.name} <span style={{ color: "#8892a4" }}>({it.code})</span></span>
-                  <span style={{ color: "#8892a4" }}>{fmt(it.value, "currency", currency)} · {pct.toFixed(0)}%</span>
+                  <span style={{ color: "var(--text-primary)" }}>{it.name} <span style={{ color: "var(--text-secondary)" }}>({it.code})</span></span>
+                  <span style={{ color: "var(--text-secondary)" }}>{fmt(it.value, "currency", currency)} · {pct.toFixed(0)}%</span>
                 </div>
-                <div style={{ height: 6, background: "#1c2333", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: 6, background: "var(--bg-input)", borderRadius: 3, overflow: "hidden" }}>
                   <div style={{ width: `${pct}%`, height: "100%", background: it.color }} />
                 </div>
               </div>
@@ -396,12 +396,12 @@ function SpendByProgram({ items, currency }: { items: { name: string; code?: str
 
 function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; currency: string }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20 }}>
-      <h3 style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>Top 10 Campaigns by Spend</h3>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
+      <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Top 10 Campaigns by Spend</h3>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
-            <tr style={{ borderBottom: "1px solid #2a3245", color: "#8892a4" }}>
+            <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
               <Th>Type</Th><Th>Status</Th><Th align="left">Campaign</Th>
               <Th align="right">Budget</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
@@ -409,18 +409,18 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
           </thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id} style={{ borderBottom: "1px solid #1c2333" }}>
+              <tr key={c.id} style={{ borderBottom: "1px solid var(--bg-input)" }}>
                 <Td><Pill text={c.type} /></Td>
                 <Td><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
                 <Td title={c.name} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   <Link href={`/master-overview/campaign/${c.id}`} style={{ color: "#a5b4fc", textDecoration: "none" }}>{c.name}</Link>
                 </Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{fmt(c.budget, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{c.orders}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}</Td>
                 <Td align="right" style={{ color: c.roas >= 2 ? "#22c55e" : c.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{c.roas.toFixed(2)}x</Td>
-                <Td align="right" style={{ color: c.acos > 0 && c.acos <= 25 ? "#22c55e" : c.acos > 25 ? "#ef4444" : "#555f6e" }}>{c.acos.toFixed(1)}%</Td>
+                <Td align="right" style={{ color: c.acos > 0 && c.acos <= 25 ? "#22c55e" : c.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{c.acos.toFixed(1)}%</Td>
               </tr>
             ))}
           </tbody>
@@ -438,8 +438,8 @@ function Td({ children, align = "left", style, title }: { children: React.ReactN
 }
 function btnGhost(disabled: boolean): React.CSSProperties {
   return {
-    padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-    border: "1px solid #2a3245", color: disabled ? "#555f6e" : "#8892a4",
+    padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+    border: "1px solid var(--border)", color: disabled ? "var(--text-muted)" : "var(--text-secondary)",
     cursor: disabled ? "default" : "pointer", fontSize: 12,
     display: "inline-flex", alignItems: "center", gap: 5,
   };
@@ -447,10 +447,10 @@ function btnGhost(disabled: boolean): React.CSSProperties {
 function btnPrimary(disabled: boolean): React.CSSProperties {
   return {
     padding: "6px 12px", borderRadius: 6,
-    background: disabled ? "#1c2333" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+    background: disabled ? "var(--bg-input)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
     border: "1px solid",
-    borderColor: disabled ? "#2a3245" : "transparent",
-    color: disabled ? "#555f6e" : "#fff",
+    borderColor: disabled ? "var(--border)" : "transparent",
+    color: disabled ? "var(--text-muted)" : "#fff",
     cursor: disabled ? "default" : "pointer", fontSize: 12, fontWeight: 600,
   };
 }
@@ -472,8 +472,8 @@ function Pill({ text, muted }: { text: string; muted?: boolean }) {
     SD:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
     ENABLED:  { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
     PAUSED:   { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "#8892a4" },
+    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
   };
-  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "#8892a4" };
-  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "#555f6e" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
+  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "var(--text-secondary)" };
+  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "var(--text-muted)" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
 }

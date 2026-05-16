@@ -65,27 +65,27 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
   }, [data]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1600, margin: "0 auto" }}>
         {/* Header with breadcrumb */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 4 }}>
-              <Link href="/master-overview" style={{ color: "#8892a4", textDecoration: "none" }}>Master Overview</Link>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
+              <Link href="/master-overview" style={{ color: "var(--text-secondary)", textDecoration: "none" }}>Master Overview</Link>
               <span style={{ margin: "0 6px" }}>›</span>
-              <span style={{ color: "#e2e8f0" }}>Campaign</span>
+              <span style={{ color: "var(--text-primary)" }}>Campaign</span>
             </div>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.3px" }}>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.3px" }}>
               {data?.brandName ?? activeAccount?.name ?? "Campaign"} · Ad Groups
             </h1>
-            <p style={{ fontSize: 12, color: "#8892a4", marginTop: 2 }}>Campaign ID {campaignId} · {data?.adGroups.length ?? 0} ad groups · {dateRange}</p>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>Campaign ID {campaignId} · {data?.adGroups.length ?? 0} ad groups · {dateRange}</p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <DateRangePicker value={dateRange} onChange={setDateRange} compareValue="prev-period" onCompareChange={() => {}} showCompare={false} />
             <button onClick={load} disabled={loading} style={{
-              padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-              border: "1px solid #2a3245", color: loading ? "#555f6e" : "#8892a4",
+              padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+              border: "1px solid var(--border)", color: loading ? "var(--text-muted)" : "var(--text-secondary)",
               cursor: loading ? "default" : "pointer", fontSize: 12,
             }}>
               {loading ? "Loading…" : "↻ Refresh"}
@@ -94,7 +94,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
         </div>
 
         {!accountId && (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 16, borderRadius: 8, fontSize: 13, color: "#8892a4" }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 16, borderRadius: 8, fontSize: 13, color: "var(--text-secondary)" }}>
             Select a brand from the top-right dropdown.
           </div>
         )}
@@ -129,12 +129,12 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
 
         {/* Ad groups table */}
         {!loading && (
-          <div style={{ marginTop: 16, background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>Ad Groups (sorted by spend)</h3>
+          <div style={{ marginTop: 16, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>Ad Groups (sorted by spend)</h3>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid #2a3245", color: "#8892a4" }}>
+                  <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                     <Th>Type</Th><Th>Status</Th><Th align="left">Ad Group</Th><Th align="right">Default Bid</Th>
                     <Th align="right">Spend</Th><Th align="right">Sales</Th><Th align="right">Orders</Th>
                     <Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th><Th align="right">CPC</Th>
@@ -142,34 +142,34 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
                 </thead>
                 <tbody>
                   {sortedRows.map((ag) => (
-                    <tr key={ag.id} style={{ borderBottom: "1px solid #1c2333" }}>
+                    <tr key={ag.id} style={{ borderBottom: "1px solid var(--bg-input)" }}>
                       <Td><Pill text={ag.type} /></Td>
                       <Td><Pill text={ag.status} muted={ag.status !== "ENABLED"} /></Td>
-                      <Td style={{ color: "#e2e8f0", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <Td style={{ color: "var(--text-primary)", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         <Link href={`/master-overview/adgroup/${ag.id}?campaignId=${campaignId}`} title={ag.name} style={{ color: "#a5b4fc", textDecoration: "none" }}>
                           {ag.name}
                         </Link>
                       </Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(ag.spend, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(ag.sales, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{ag.orders}</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.spend, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.sales, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.orders}</Td>
                       <Td align="right" style={{ color: ag.roas >= 2 ? "#22c55e" : ag.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{ag.roas.toFixed(2)}x</Td>
-                      <Td align="right" style={{ color: ag.acos > 0 && ag.acos <= 25 ? "#22c55e" : ag.acos > 25 ? "#ef4444" : "#555f6e" }}>{ag.acos.toFixed(1)}%</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{ag.ctr.toFixed(2)}%</Td>
-                      <Td align="right" style={{ color: "#8892a4" }}>{fmt(ag.cpc, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: ag.acos > 0 && ag.acos <= 25 ? "#22c55e" : ag.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{ag.acos.toFixed(1)}%</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.cpc, "currency", currency)}</Td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {sortedRows.length === 0 && <div style={{ padding: 16, color: "#555f6e", fontSize: 12, textAlign: "center" }}>No ad groups in this campaign for this range.</div>}
+              {sortedRows.length === 0 && <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>No ad groups in this campaign for this range.</div>}
             </div>
           </div>
         )}
 
         {/* Errors footer */}
         {data?.errors && (data.errors.adGroups.length + data.errors.reports.length) > 0 && (
-          <div style={{ marginTop: 16, padding: 12, background: "#161b27", border: "1px solid #2a3245", borderRadius: 8, fontSize: 11, color: "#8892a4" }}>
+          <div style={{ marginTop: 16, padding: 12, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)" }}>
             <strong style={{ color: "#f59e0b" }}>Partial data:</strong>{" "}
             {data.errors.reports.map((e) => `${e.program} report failed`).join(", ")}
             {data.errors.adGroups.length > 0 && data.errors.reports.length > 0 ? "; " : ""}
@@ -184,23 +184,23 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: "14px 16px" }}>
-      <div style={{ fontSize: 10, color: "#8892a4", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", marginTop: 4 }}>{value}</div>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px" }}>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginTop: 4 }}>{value}</div>
     </div>
   );
 }
 
 function DailyMini({ data, currency }: { data: { date: string; spend: number; sales: number }[]; currency: string }) {
-  if (!data.length) return <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20, height: 220, display: "flex", alignItems: "center", justifyContent: "center", color: "#555f6e", fontSize: 12 }}>No daily data</div>;
+  if (!data.length) return <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, height: 220, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 12 }}>No daily data</div>;
   const maxVal = Math.max(...data.flatMap((d) => [d.spend, d.sales])) || 1;
   const w = 100, h = 200, pad = 30;
   const pts = (key: "spend" | "sales") =>
     data.map((d, i) => `${pad + (i / (data.length - 1 || 1)) * (w - pad - 4)},${h - pad - (d[key] / maxVal) * (h - pad - 10)}`).join(" ");
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>Daily Spend vs Sales</h3>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Daily Spend vs Sales</h3>
         <div style={{ display: "flex", gap: 16, fontSize: 11 }}>
           <span style={{ color: "#8b5cf6" }}>● Spend</span>
           <span style={{ color: "#22c55e" }}>● Sales</span>
@@ -210,7 +210,7 @@ function DailyMini({ data, currency }: { data: { date: string; spend: number; sa
         <polyline points={pts("sales")} fill="none" stroke="#22c55e" strokeWidth="0.7" />
         <polyline points={pts("spend")} fill="none" stroke="#8b5cf6" strokeWidth="0.7" strokeDasharray="1 0.6" />
       </svg>
-      <div style={{ fontSize: 11, color: "#8892a4", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
         <span>{data[0]?.date}</span>
         <span>Max {fmt(maxVal, "compact", currency)}</span>
         <span>{data[data.length - 1]?.date}</span>
@@ -232,8 +232,8 @@ function Pill({ text, muted }: { text: string; muted?: boolean }) {
     SD:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
     ENABLED:  { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
     PAUSED:   { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "#8892a4" },
+    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
   };
-  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "#8892a4" };
-  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "#555f6e" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
+  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "var(--text-secondary)" };
+  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "var(--text-muted)" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
 }

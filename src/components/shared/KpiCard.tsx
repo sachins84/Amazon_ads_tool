@@ -18,7 +18,7 @@ export default function KpiCard({ label, metric, format, currency = "INR", icon,
     ? metric.delta >= 0
     : metric.delta <= 0;
   const deltaColor = metric.delta === 0
-    ? "#8892a4"
+    ? "var(--text-secondary)"
     : deltaPositive
     ? "#22c55e"
     : "#ef4444";
@@ -27,8 +27,8 @@ export default function KpiCard({ label, metric, format, currency = "INR", icon,
   return (
     <div
       style={{
-        background: "#161b27",
-        border: "1px solid #2a3245",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
         borderRadius: 10,
         padding: small ? "14px 16px" : "18px 20px",
         display: "flex",
@@ -40,26 +40,26 @@ export default function KpiCard({ label, metric, format, currency = "INR", icon,
         cursor: "default",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = "#3a4560";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.borderColor = "#2a3245";
+        (e.currentTarget as HTMLDivElement).style.borderColor = "var(--border)";
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 11, color: "#8892a4", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>
           {label}
         </span>
-        {icon && <span style={{ color: "#8892a4" }}>{icon}</span>}
+        {icon && <span style={{ color: "var(--text-secondary)" }}>{icon}</span>}
       </div>
-      <div style={{ fontSize: small ? 20 : 24, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.5px" }}>
+      <div style={{ fontSize: small ? 20 : 24, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.5px" }}>
         {loading ? (
-          <div style={{ height: small ? 20 : 24, width: 80, background: "#1c2333", borderRadius: 4, animation: "pulse 1.5s ease-in-out infinite" }} />
+          <div style={{ height: small ? 20 : 24, width: 80, background: "var(--bg-input)", borderRadius: 4, animation: "pulse 1.5s ease-in-out infinite" }} />
         ) : fmt(metric.value, format, currency)}
       </div>
       <div style={{ fontSize: 11, color: deltaColor, display: "flex", alignItems: "center", gap: 3 }}>
         <span style={{ fontWeight: 600 }}>{arrow} {Math.abs(metric.delta).toFixed(1)}%</span>
-        <span style={{ color: "#555f6e" }}>vs prev period</span>
+        <span style={{ color: "var(--text-muted)" }}>vs prev period</span>
       </div>
     </div>
   );

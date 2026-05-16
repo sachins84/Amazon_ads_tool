@@ -14,7 +14,7 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = 5, style 
       width,
       height,
       borderRadius,
-      background: "linear-gradient(90deg, #1c2333 25%, #252e42 50%, #1c2333 75%)",
+      background: "linear-gradient(90deg, var(--bg-input) 25%, #252e42 50%, var(--bg-input) 75%)",
       backgroundSize: "200% 100%",
       animation: "shimmer 1.5s infinite",
       ...style,
@@ -25,8 +25,8 @@ export function Skeleton({ width = "100%", height = 16, borderRadius = 5, style 
 export function KpiCardSkeleton({ small = false }: { small?: boolean }) {
   return (
     <div style={{
-      background: "#161b27",
-      border: "1px solid #2a3245",
+      background: "var(--bg-card)",
+      border: "1px solid var(--border)",
       borderRadius: 10,
       padding: small ? "14px 16px" : "18px 20px",
       display: "flex",
@@ -44,8 +44,8 @@ export function KpiCardSkeleton({ small = false }: { small?: boolean }) {
 export function ChartSkeleton({ height = 260 }: { height?: number }) {
   return (
     <div style={{
-      background: "#161b27",
-      border: "1px solid #2a3245",
+      background: "var(--bg-card)",
+      border: "1px solid var(--border)",
       borderRadius: 10,
       padding: 20,
       height,

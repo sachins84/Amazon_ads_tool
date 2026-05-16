@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAccount } from "@/lib/account-context";
+import { useTheme } from "@/lib/theme";
 
 const tabs = [
   { label: "Master Overview",   href: "/master-overview"   },
@@ -15,6 +16,7 @@ export default function TopNav() {
   const path = usePathname();
   const router = useRouter();
   const { accounts, activeAccount, setActiveAccountId, loading } = useAccount();
+  const { theme, toggle } = useTheme();
 
   function handleAccountChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setActiveAccountId(e.target.value);
@@ -25,8 +27,8 @@ export default function TopNav() {
   return (
     <header
       style={{
-        background: "#161b27",
-        borderBottom: "1px solid #2a3245",
+        background: "var(--bg-card)",
+        borderBottom: "1px solid var(--border)",
         display: "flex",
         alignItems: "center",
         height: 56,
@@ -56,8 +58,8 @@ export default function TopNav() {
         >
           A
         </div>
-        <span style={{ fontWeight: 700, fontSize: 15, color: "#e2e8f0", letterSpacing: "-0.3px" }}>
-          Amazon<span style={{ color: "#6366f1" }}>Ads</span>
+        <span style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)", letterSpacing: "-0.3px" }}>
+          Amazon<span style={{ color: "var(--accent)" }}>Ads</span>
         </span>
       </div>
 
@@ -74,11 +76,11 @@ export default function TopNav() {
                 borderRadius: 6,
                 fontSize: 13,
                 fontWeight: active ? 600 : 400,
-                color: active ? "#e2e8f0" : "#8892a4",
-                background: active ? "#1c2333" : "transparent",
+                color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                background: active ? "var(--bg-input)" : "transparent",
                 textDecoration: "none",
                 transition: "all 0.15s",
-                borderBottom: active ? "2px solid #6366f1" : "2px solid transparent",
+                borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
               }}
             >
               {tab.label}
@@ -107,10 +109,10 @@ export default function TopNav() {
                 value={activeAccount?.id ?? ""}
                 onChange={handleAccountChange}
                 style={{
-                  background: "#1c2333",
-                  border: "1px solid #2a3245",
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--border)",
                   borderRadius: 6,
-                  color: activeAccount ? "#e2e8f0" : "#8892a4",
+                  color: activeAccount ? "var(--text-primary)" : "var(--text-secondary)",
                   padding: "5px 10px",
                   fontSize: 12,
                   cursor: "pointer",
@@ -130,10 +132,10 @@ export default function TopNav() {
             <Link
               href="/accounts"
               style={{
-                background: "#1c2333",
-                border: "1px solid #2a3245",
+                background: "var(--bg-input)",
+                border: "1px solid var(--border)",
                 borderRadius: 6,
-                color: "#8892a4",
+                color: "var(--text-secondary)",
                 padding: "5px 12px",
                 fontSize: 12,
                 textDecoration: "none",
@@ -144,6 +146,23 @@ export default function TopNav() {
             </Link>
           )
         )}
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggle}
+          title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 30, height: 30, borderRadius: 6,
+            background: "transparent", border: "1px solid transparent",
+            color: "var(--text-secondary)", fontSize: 14, cursor: "pointer",
+            transition: "all 0.15s",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-input)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+        >
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
 
         {/* Accounts settings link */}
         <Link
@@ -156,10 +175,10 @@ export default function TopNav() {
             width: 30,
             height: 30,
             borderRadius: 6,
-            background: path === "/accounts" ? "#1c2333" : "transparent",
+            background: path === "/accounts" ? "var(--bg-input)" : "transparent",
             border: "1px solid",
-            borderColor: path === "/accounts" ? "#2a3245" : "transparent",
-            color: path === "/accounts" ? "#e2e8f0" : "#8892a4",
+            borderColor: path === "/accounts" ? "var(--border)" : "transparent",
+            color: path === "/accounts" ? "var(--text-primary)" : "var(--text-secondary)",
             textDecoration: "none",
             fontSize: 16,
             transition: "all 0.15s",

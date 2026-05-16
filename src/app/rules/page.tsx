@@ -58,13 +58,13 @@ export default function RulesPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1400, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0" }}>Rules</h1>
-            <p style={{ fontSize: 12, color: "#8892a4", marginTop: 2 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Rules</h1>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
               {accountId ? `For ${activeAccount?.name}` : "All accounts (pick a brand for run)"} · {rules.length} rule{rules.length === 1 ? "" : "s"}
             </p>
           </div>
@@ -77,7 +77,7 @@ export default function RulesPage() {
         </div>
 
         {runResult && (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 12, borderRadius: 8, fontSize: 12, color: "#a5b4fc", marginBottom: 12 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 12, borderRadius: 8, fontSize: 12, color: "#a5b4fc", marginBottom: 12 }}>
             {runResult}
           </div>
         )}
@@ -95,9 +95,9 @@ export default function RulesPage() {
         )}
 
         {loading ? (
-          <div style={{ color: "#8892a4", padding: 16 }}>Loading…</div>
+          <div style={{ color: "var(--text-secondary)", padding: 16 }}>Loading…</div>
         ) : rules.length === 0 ? (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 32, borderRadius: 10, textAlign: "center", color: "#8892a4" }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 32, borderRadius: 10, textAlign: "center", color: "var(--text-secondary)" }}>
             No rules yet. Click <strong>+ New rule</strong> to create one. Examples: <em>“Pause keywords with &gt;₹500 spend and 0 orders in last 14 days,”</em> or <em>“Lower bid 20% on keywords with ACOS &gt; 50%.”</em>
           </div>
         ) : (
@@ -112,16 +112,16 @@ export default function RulesPage() {
 
 function RuleCard({ rule, onToggle, onDelete }: { rule: Rule; onToggle: () => void; onDelete: () => void }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 16 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{rule.name}</div>
-          <div style={{ fontSize: 11, color: "#8892a4", marginTop: 2 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{rule.name}</div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
             applies to <strong>{rule.appliesTo}</strong> · {rule.programs?.join(", ") ?? "all programs"} · mode <strong>{rule.mode}</strong> · last run {rule.lastRunAt ?? "never"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onToggle} style={{ ...btnSecondary, background: rule.enabled ? "#1c2333" : "rgba(34,197,94,0.15)", color: rule.enabled ? "#8892a4" : "#86efac" }}>
+          <button onClick={onToggle} style={{ ...btnSecondary, background: rule.enabled ? "var(--bg-input)" : "rgba(34,197,94,0.15)", color: rule.enabled ? "var(--text-secondary)" : "#86efac" }}>
             {rule.enabled ? "Disable" : "Enable"}
           </button>
           <button onClick={onDelete} style={{ ...btnSecondary, color: "#ef4444" }}>Delete</button>
@@ -196,8 +196,8 @@ function RuleEditor({ accountId, onSave, onCancel }: {
   };
 
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 20, marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>New rule</div>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>New rule</div>
 
       <Field label="Name">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pause SP keywords wasting spend" style={inputStyle} />
@@ -214,8 +214,8 @@ function RuleEditor({ accountId, onSave, onCancel }: {
           {PROGRAMS.map((p) => (
             <button key={p} onClick={() => toggleProgram(p)} style={{
               ...btnSecondary,
-              background: programs.includes(p) ? "rgba(99,102,241,0.15)" : "#1c2333",
-              color:      programs.includes(p) ? "#a5b4fc" : "#8892a4",
+              background: programs.includes(p) ? "rgba(99,102,241,0.15)" : "var(--bg-input)",
+              color:      programs.includes(p) ? "#a5b4fc" : "var(--text-secondary)",
             }}>{p}</button>
           ))}
         </div>
@@ -286,27 +286,27 @@ function RuleEditor({ accountId, onSave, onCancel }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 11, color: "#8892a4", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{label}</div>
       {children}
     </div>
   );
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "#0d1117", border: "1px solid #2a3245", borderRadius: 6,
-  color: "#e2e8f0", padding: "6px 10px", fontSize: 12, outline: "none",
+  background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6,
+  color: "var(--text-primary)", padding: "6px 10px", fontSize: 12, outline: "none",
 };
 const btnSecondary: React.CSSProperties = {
-  padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-  border: "1px solid #2a3245", color: "#8892a4", fontSize: 12, cursor: "pointer",
+  padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+  border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
 };
 function btnPrimary(disabled: boolean): React.CSSProperties {
   return {
     padding: "6px 14px", borderRadius: 6,
-    background: disabled ? "#1c2333" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+    background: disabled ? "var(--bg-input)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
     border: "1px solid",
-    borderColor: disabled ? "#2a3245" : "transparent",
-    color: disabled ? "#555f6e" : "#fff",
+    borderColor: disabled ? "var(--border)" : "transparent",
+    color: disabled ? "var(--text-muted)" : "#fff",
     fontSize: 12, fontWeight: 600,
     cursor: disabled ? "default" : "pointer",
   };

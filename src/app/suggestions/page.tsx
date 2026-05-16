@@ -98,13 +98,13 @@ export default function SuggestionsPage() {
     .reduce((a, s) => a + (s.expectedImpact?.savedSpend ?? 0), 0);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1400, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0" }}>Suggestions</h1>
-            <p style={{ fontSize: 12, color: "#8892a4", marginTop: 2 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Suggestions</h1>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
               {accountId ? `${activeAccount?.name} · ` : ""}{suggestions.length} {status === "ANY" ? "" : status.toLowerCase()} suggestion{suggestions.length === 1 ? "" : "s"}
               {totalSpendImpact > 0 && status === "PENDING" && ` · est. ${fmt(totalSpendImpact, "currency", currency)} potential savings`}
             </p>
@@ -130,7 +130,7 @@ export default function SuggestionsPage() {
         </div>
 
         {loading ? (
-          <div style={{ color: "#8892a4", padding: 16 }}>Loading…</div>
+          <div style={{ color: "var(--text-secondary)", padding: 16 }}>Loading…</div>
         ) : suggestions.length === 0 ? (
           <Empty status={status} hasAccount={!!accountId} />
         ) : (
@@ -151,8 +151,8 @@ function RuleGroup({ ruleId, items, currency, onUpdate }: {
 }) {
   const totalSpend = items.reduce((s, i) => s + (i.expectedImpact?.savedSpend ?? 0), 0);
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 16, marginBottom: 12 }}>
-      <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 10 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 10 }}>
         Rule <code style={{ color: "#a5b4fc" }}>{ruleId.slice(0, 8)}</code> · {items.length} suggestion{items.length === 1 ? "" : "s"}
         {totalSpend > 0 && ` · est. ${fmt(totalSpend, "currency", currency)} savings`}
       </div>
@@ -167,21 +167,21 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
   const statusColor = s.status === "PENDING" ? "#a5b4fc"
     : s.status === "APPROVED" ? "#fde68a"
     : s.status === "APPLIED" ? "#86efac"
-    : s.status === "DISMISSED" ? "#555f6e"
+    : s.status === "DISMISSED" ? "var(--text-muted)"
     : "#ef4444";
   return (
-    <div style={{ borderTop: "1px solid #1c2333", paddingTop: 10, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+    <div style={{ borderTop: "1px solid var(--bg-input)", paddingTop: 10, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ ...pill("#2a3245", "#a5b4fc"), fontSize: 10 }}>{s.targetType}</span>
+          <span style={{ ...pill("var(--border)", "#a5b4fc"), fontSize: 10 }}>{s.targetType}</span>
           {s.program && <span style={{ ...pill("rgba(99,102,241,0.15)", "#a5b4fc"), fontSize: 10 }}>{s.program}</span>}
           <span style={{ ...pill("rgba(245,158,11,0.15)", "#fde68a"), fontSize: 10 }}>{s.actionType}{s.actionValue != null ? ` ${s.actionValue}` : ""}</span>
           <span style={{ ...pill("transparent", statusColor), fontSize: 10, border: `1px solid ${statusColor}` }}>{s.status}</span>
         </div>
-        <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 500, marginTop: 4 }} title={s.targetId}>
+        <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, marginTop: 4 }} title={s.targetId}>
           {s.targetName ?? `id ${s.targetId}`}
         </div>
-        <div style={{ fontSize: 11, color: "#8892a4", marginTop: 2 }}>{s.reason}</div>
+        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{s.reason}</div>
         {s.expectedImpact && (
           <div style={{ fontSize: 11, color: "#a5b4fc", marginTop: 2 }}>
             Impact:&nbsp;
@@ -194,13 +194,13 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
       {s.status === "PENDING" && (
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button onClick={() => onUpdate(s.id, "APPROVED")} style={{ ...btnSecondary, color: "#86efac" }}>Approve</button>
-          <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "#8892a4" }}>Dismiss</button>
+          <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "var(--text-secondary)" }}>Dismiss</button>
         </div>
       )}
       {s.status === "APPROVED" && (
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button onClick={() => onUpdate(s.id, "APPLIED", true)} style={{ ...btnSecondary, color: "#a5b4fc", borderColor: "#6366f1" }} title="Push to Amazon">Apply to Amazon</button>
-          <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "#8892a4" }}>Dismiss</button>
+          <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "var(--text-secondary)" }}>Dismiss</button>
         </div>
       )}
     </div>
@@ -209,7 +209,7 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
 
 function Empty({ status, hasAccount }: { status: SuggestionStatus | "ANY"; hasAccount: boolean }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 32, borderRadius: 10, textAlign: "center", color: "#8892a4" }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 32, borderRadius: 10, textAlign: "center", color: "var(--text-secondary)" }}>
       No {status === "ANY" ? "" : status.toLowerCase() + " "}suggestions.{" "}
       {hasAccount ? "Create a rule on /rules and click ▶ Run rules now to generate some." : "Pick a brand from the top-right dropdown."}
     </div>
@@ -217,20 +217,20 @@ function Empty({ status, hasAccount }: { status: SuggestionStatus | "ANY"; hasAc
 }
 
 const inputStyle: React.CSSProperties = {
-  background: "#0d1117", border: "1px solid #2a3245", borderRadius: 6,
-  color: "#e2e8f0", padding: "6px 10px", fontSize: 12, outline: "none",
+  background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6,
+  color: "var(--text-primary)", padding: "6px 10px", fontSize: 12, outline: "none",
 };
 const btnSecondary: React.CSSProperties = {
-  padding: "6px 12px", borderRadius: 6, background: "#1c2333",
-  border: "1px solid #2a3245", color: "#8892a4", fontSize: 12, cursor: "pointer",
+  padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+  border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
 };
 function btnPrimary(disabled: boolean): React.CSSProperties {
   return {
     padding: "6px 14px", borderRadius: 6,
-    background: disabled ? "#1c2333" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+    background: disabled ? "var(--bg-input)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
     border: "1px solid",
-    borderColor: disabled ? "#2a3245" : "transparent",
-    color: disabled ? "#555f6e" : "#fff",
+    borderColor: disabled ? "var(--border)" : "transparent",
+    color: disabled ? "var(--text-muted)" : "#fff",
     fontSize: 12, fontWeight: 600,
     cursor: disabled ? "default" : "pointer",
   };

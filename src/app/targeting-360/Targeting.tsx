@@ -320,15 +320,15 @@ export default function Targeting360Page() {
   }, [tab, level, filteredCampaigns, filteredAdGroups, filteredTargets, flatRows, flatCount]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0d1117" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)" }}>
       <TopNav />
       <main style={{ padding: "24px 28px", maxWidth: 1600, margin: "0 auto" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0" }}>Targeting 360</h1>
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>Targeting 360</h1>
             {tab === "HIERARCHY" ? (
-              <div style={{ fontSize: 11, color: "#8892a4", marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>
                 <button onClick={backToCampaigns} style={crumbBtn(level === "CAMPAIGNS")}>
                   {activeAccount?.name ?? "Account"} · Campaigns
                 </button>
@@ -350,7 +350,7 @@ export default function Targeting360Page() {
                 )}
               </div>
             ) : (
-              <div style={{ fontSize: 11, color: "#8892a4", marginTop: 4 }}>{activeAccount?.name ?? "Account"} · all keywords + product targets</div>
+              <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>{activeAccount?.name ?? "Account"} · all keywords + product targets</div>
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -386,7 +386,7 @@ export default function Targeting360Page() {
         </div>
 
         {!accountId && (
-          <div style={{ background: "#161b27", border: "1px solid #2a3245", padding: 16, borderRadius: 8, fontSize: 13, color: "#8892a4" }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 16, borderRadius: 8, fontSize: 13, color: "var(--text-secondary)" }}>
             Pick a brand from the top-right dropdown.
           </div>
         )}
@@ -532,12 +532,12 @@ function EditorModal({ ctx, currency, accountId, onClose, onResult }: {
   return (
     <div style={modalBackdrop} onClick={onClose}>
       <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0", marginBottom: 6 }}>{title}</div>
-        <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 14 }}>{prettyType(ctx.targetType)}: {ctx.targetName}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>{title}</div>
+        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 14 }}>{prettyType(ctx.targetType)}: {ctx.targetName}</div>
 
         {!isToggle && (
           <>
-            <div style={{ fontSize: 11, color: "#8892a4", marginBottom: 4 }}>Current {ctx.valueLabel.toLowerCase()}: <strong style={{ color: "#e2e8f0" }}>{fmt(ctx.currentValue, "currency", currency)}</strong></div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Current {ctx.valueLabel.toLowerCase()}: <strong style={{ color: "var(--text-primary)" }}>{fmt(ctx.currentValue, "currency", currency)}</strong></div>
             <input
               type="number" step="0.01" min="0.02"
               value={value}
@@ -562,7 +562,7 @@ function EditorModal({ ctx, currency, accountId, onClose, onResult }: {
             {busy === "APPLY" ? "Applying…" : "Apply to Amazon now"}
           </button>
         </div>
-        <div style={{ fontSize: 10, color: "#555f6e", marginTop: 10, textAlign: "right" }}>
+        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 10, textAlign: "right" }}>
           Queue = add as PENDING in /suggestions · Apply = push to Amazon immediately
         </div>
       </div>
@@ -579,16 +579,16 @@ const modalBackdrop: React.CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "center",
 };
 const modalCard: React.CSSProperties = {
-  background: "#161b27", border: "1px solid #2a3245", borderRadius: 10,
+  background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10,
   padding: 20, width: 440, maxWidth: "90vw",
 };
 const modalCancelBtn: React.CSSProperties = {
   padding: "6px 12px", borderRadius: 6, background: "transparent",
-  border: "1px solid #2a3245", color: "#8892a4", fontSize: 12, cursor: "pointer",
+  border: "1px solid var(--border)", color: "var(--text-secondary)", fontSize: 12, cursor: "pointer",
 };
 const modalSecondaryBtn: React.CSSProperties = {
-  padding: "6px 14px", borderRadius: 6, background: "#1c2333",
-  border: "1px solid #2a3245", color: "#a5b4fc", fontSize: 12, fontWeight: 600, cursor: "pointer",
+  padding: "6px 14px", borderRadius: 6, background: "var(--bg-input)",
+  border: "1px solid var(--border)", color: "#a5b4fc", fontSize: 12, fontWeight: 600, cursor: "pointer",
 };
 const modalPrimaryBtn: React.CSSProperties = {
   padding: "6px 14px", borderRadius: 6,
@@ -638,13 +638,13 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
         </select>
       </FilterBar>
       <FilterBar>
-        <span style={{ fontSize: 11, color: "#8892a4", alignSelf: "center" }}>Intent:</span>
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", alignSelf: "center" }}>Intent:</span>
         {(["BRANDED","GENERIC","COMPETITION","AUTO","PAT","OTHER"] as Intent[]).map((i) => (
           <button key={i} onClick={() => toggleIntent(i)} style={{
             ...chipStyleOn(filters.intents.includes(i)),
-            background: filters.intents.includes(i) ? intentChipColor(i).bg : "#1c2333",
-            color:      filters.intents.includes(i) ? intentChipColor(i).fg : "#8892a4",
-            borderColor: filters.intents.includes(i) ? intentChipColor(i).fg : "#2a3245",
+            background: filters.intents.includes(i) ? intentChipColor(i).bg : "var(--bg-input)",
+            color:      filters.intents.includes(i) ? intentChipColor(i).fg : "var(--text-secondary)",
+            borderColor: filters.intents.includes(i) ? intentChipColor(i).fg : "var(--border)",
           }}>
             {intentLabelShort(i)}
           </button>
@@ -666,16 +666,16 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
               <tr key={c.id} style={tableRow}>
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.type} /></Td>
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><IntentChip intent={c.intent} /></Td>
-                <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}>{c.type === "SP" && c.targetingType ? <Pill text={c.targetingType} /> : <span style={{ color: "#555f6e" }}>—</span>}</Td>
+                <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}>{c.type === "SP" && c.targetingType ? <Pill text={c.targetingType} /> : <span style={{ color: "var(--text-muted)" }}>—</span>}</Td>
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
                 <Td onClick={() => onDrill(c)} title={c.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{c.name}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{fmt(c.budget, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(c.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{c.orders}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}</Td>
                 <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{c.ctr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.ctr.toFixed(2)}%</Td>
                 <Td><LastActionPill mark={last[c.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -741,13 +741,13 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, p
                 <Td onClick={() => onDrill(ag)} style={{ cursor: "pointer" }}><Pill text={ag.type} /></Td>
                 <Td onClick={() => onDrill(ag)} style={{ cursor: "pointer" }}><Pill text={ag.status} muted={ag.status !== "ENABLED"} /></Td>
                 <Td onClick={() => onDrill(ag)} title={ag.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{ag.name}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(ag.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(ag.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{ag.orders}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.spend, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.sales, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.orders}</Td>
                 <Td align="right" style={{ color: roasColor(ag.roas) }}>{ag.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(ag.acos) }}>{ag.acos.toFixed(1)}%</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{ag.ctr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%</Td>
                 <Td><LastActionPill mark={last[ag.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -802,18 +802,18 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
             {rows.map((t) => (
               <tr key={t.id} style={tableRow}>
                 <Td><Pill text={t.kind === "KEYWORD" ? "KW" : t.kind === "AUTO" ? "AUTO" : "PT"} /></Td>
-                <Td>{t.matchType ? <Pill text={t.matchType} /> : <span style={{ color: "#555f6e" }}>—</span>}</Td>
+                <Td>{t.matchType ? <Pill text={t.matchType} /> : <span style={{ color: "var(--text-muted)" }}>—</span>}</Td>
                 <Td><Pill text={t.state} muted={t.state !== "ENABLED"} /></Td>
                 <Td title={t.display} style={cellNameStyle}>{t.display}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{fmt(t.bid, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(t.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(t.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{t.orders}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.sales, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.orders}</Td>
                 <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{t.ctr.toFixed(2)}%</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{fmt(t.cpc, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{t.cvr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.ctr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.cpc, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.cvr.toFixed(2)}%</Td>
                 <Td><LastActionPill mark={last[t.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -876,12 +876,12 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
                 <Td><Pill text={t.matchType} /></Td>
                 <Td><Pill text={t.status} muted={t.status !== "ENABLED"} /></Td>
                 <Td title={t.value} style={cellNameStyle}>{t.value}</Td>
-                <Td title={t.campaignName} style={{ ...cellNameStyle, maxWidth: 200, color: "#8892a4" }}>{t.campaignName}</Td>
-                <Td title={t.adGroupName} style={{ ...cellNameStyle, maxWidth: 180, color: "#8892a4" }}>{t.adGroupName}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{fmt(t.bid, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(t.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#e2e8f0" }}>{fmt(t.revenue, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "#8892a4" }}>{t.orders}</Td>
+                <Td title={t.campaignName} style={{ ...cellNameStyle, maxWidth: 200, color: "var(--text-secondary)" }}>{t.campaignName}</Td>
+                <Td title={t.adGroupName} style={{ ...cellNameStyle, maxWidth: 180, color: "var(--text-secondary)" }}>{t.adGroupName}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.revenue, "currency", currency)}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.orders}</Td>
                 <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
                 <Td><LastActionPill mark={last[t.id]} currency={currency} /></Td>
@@ -908,7 +908,7 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
         </table>
         {rows.length === 0 && !loading && <Empty msg="No keywords/targets match the filters." />}
         {pages > 1 && (
-          <div style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "#8892a4" }}>
+          <div style={{ padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--text-secondary)" }}>
             <span>{(page * pageSize) + 1}–{Math.min((page + 1) * pageSize, totalCount)} of {totalCount.toLocaleString()}</span>
             <div style={{ display: "flex", gap: 6 }}>
               <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} style={pagerBtn(page === 0)}>‹ Prev</button>
@@ -953,7 +953,7 @@ function TargetingFilterBar({ filters, setFilters }: { filters: TargetingFilters
         <RangeFilter label="ACOS%" min={filters.acosMin} max={filters.acosMax}
           onMin={(v) => setFilters({ ...filters, acosMin: v })} onMax={(v) => setFilters({ ...filters, acosMax: v })} />
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <label style={{ fontSize: 11, color: "#8892a4" }}>Spend ≥</label>
+          <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>Spend ≥</label>
           <input value={filters.spendMin} onChange={(e) => setFilters({ ...filters, spendMin: e.target.value })} type="number" style={{ ...inputStyle, width: 90 }} />
         </div>
       </FilterBar>
@@ -968,38 +968,38 @@ function FilterBar({ children }: { children: React.ReactNode }) {
 }
 function TableShell({ children, loading }: { children: React.ReactNode; loading: boolean }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: 4 }}>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 4 }}>
       {loading
-        ? <div style={{ padding: 24, textAlign: "center", color: "#8892a4", fontSize: 12 }}>Loading…</div>
+        ? <div style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)", fontSize: 12 }}>Loading…</div>
         : <div style={{ overflowX: "auto" }}>{children}</div>}
     </div>
   );
 }
 function Empty({ msg }: { msg: string }) {
-  return <div style={{ padding: 24, textAlign: "center", color: "#555f6e", fontSize: 12 }}>{msg}</div>;
+  return <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>{msg}</div>;
 }
 function RangeFilter({ label, min, max, onMin, onMax }: {
   label: string; min: string; max: string; onMin: (v: string) => void; onMax: (v: string) => void;
 }) {
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-      <label style={{ fontSize: 11, color: "#8892a4" }}>{label}</label>
+      <label style={{ fontSize: 11, color: "var(--text-secondary)" }}>{label}</label>
       <input value={min} onChange={(e) => onMin(e.target.value)} placeholder="min" type="number" style={{ ...inputStyle, width: 60 }} />
-      <span style={{ color: "#555f6e" }}>–</span>
+      <span style={{ color: "var(--text-muted)" }}>–</span>
       <input value={max} onChange={(e) => onMax(e.target.value)} placeholder="max" type="number" style={{ ...inputStyle, width: 60 }} />
     </div>
   );
 }
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ background: "#161b27", border: "1px solid #2a3245", borderRadius: 10, padding: "12px 14px" }}>
-      <div style={{ fontSize: 10, color: "#8892a4", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0", marginTop: 4 }}>{value}</div>
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginTop: 4 }}>{value}</div>
     </div>
   );
 }
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return <th style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "#8892a4" }}>{children}</th>;
+  return <th style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>{children}</th>;
 }
 function Td({ children, align = "left", style, title, onClick }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string; onClick?: () => void }) {
   return <td onClick={onClick} style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
@@ -1027,13 +1027,13 @@ function RowActions({ state, pending, currency, onToggle, onEdit, editLabel }: {
 }
 
 function LastActionPill({ mark, currency }: { mark?: LastActionMark; currency: string }) {
-  if (!mark) return <span style={{ color: "#555f6e", fontSize: 11 }}>—</span>;
+  if (!mark) return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
   const { actionType, actionValue, status, at } = mark;
   // Color by status
   const palette: Record<LastActionMark["status"], { bg: string; fg: string; border: string; icon: string }> = {
     APPLIED:   { bg: "rgba(34,197,94,0.12)",  fg: "#86efac", border: "#22c55e", icon: "✓" },
     APPROVED:  { bg: "rgba(99,102,241,0.12)", fg: "#a5b4fc", border: "#6366f1", icon: "📋" },
-    DISMISSED: { bg: "rgba(85,95,110,0.18)",  fg: "#8892a4", border: "#3a4560", icon: "✕" },
+    DISMISSED: { bg: "rgba(85,95,110,0.18)",  fg: "var(--text-secondary)", border: "var(--border)", icon: "✕" },
     FAILED:    { bg: "rgba(239,68,68,0.12)",  fg: "#ef4444", border: "#ef4444", icon: "⚠" },
   };
   const c = palette[status];
@@ -1077,7 +1077,7 @@ function PendingPill({ mark, currency }: { mark: PendingMark; currency: string }
 
 const miniBtn: React.CSSProperties = {
   padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
-  background: "#1c2333", border: "1px solid #2a3245",
+  background: "var(--bg-input)", border: "1px solid var(--border)",
   color: "#a5b4fc", cursor: "pointer",
 };
 
@@ -1099,7 +1099,7 @@ function intentChipColor(i: Intent): { bg: string; fg: string } {
     COMPETITION: { bg: "rgba(239,68,68,0.15)",  fg: "#ef4444" },
     AUTO:        { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
     PAT:         { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
-    OTHER:       { bg: "rgba(85,95,110,0.20)",  fg: "#8892a4" },
+    OTHER:       { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
   }[i];
 }
 
@@ -1117,33 +1117,33 @@ function Pill({ text, muted }: { text: string; muted?: boolean }) {
     BROAD:    { bg: "rgba(167,139,250,0.10)", fg: "#ddd6fe" },
     ENABLED:  { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
     PAUSED:   { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "#8892a4" },
+    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
   };
-  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "#8892a4" };
-  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "#555f6e" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
+  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "var(--text-secondary)" };
+  return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "var(--text-muted)" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
 }
 
-function roasColor(r: number) { return r >= 2 ? "#22c55e" : r >= 1 ? "#f59e0b" : r > 0 ? "#ef4444" : "#555f6e"; }
-function acosColor(a: number) { return a === 0 ? "#555f6e" : a <= 25 ? "#22c55e" : a <= 50 ? "#f59e0b" : "#ef4444"; }
+function roasColor(r: number) { return r >= 2 ? "#22c55e" : r >= 1 ? "#f59e0b" : r > 0 ? "#ef4444" : "var(--text-muted)"; }
+function acosColor(a: number) { return a === 0 ? "var(--text-muted)" : a <= 25 ? "#22c55e" : a <= 50 ? "#f59e0b" : "#ef4444"; }
 
 const inputStyle: React.CSSProperties = {
-  background: "#0d1117", border: "1px solid #2a3245", borderRadius: 6,
-  color: "#e2e8f0", padding: "6px 10px", fontSize: 12, outline: "none",
+  background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6,
+  color: "var(--text-primary)", padding: "6px 10px", fontSize: 12, outline: "none",
 };
 function chipStyleOn(on: boolean): React.CSSProperties {
   return {
     padding: "6px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
-    background: on ? "rgba(99,102,241,0.18)" : "#1c2333",
-    color:      on ? "#a5b4fc" : "#8892a4",
-    border:    `1px solid ${on ? "#6366f1" : "#2a3245"}`,
+    background: on ? "rgba(99,102,241,0.18)" : "var(--bg-input)",
+    color:      on ? "#a5b4fc" : "var(--text-secondary)",
+    border:    `1px solid ${on ? "#6366f1" : "var(--border)"}`,
   };
 }
 function tabBtn(active: boolean): React.CSSProperties {
   return {
     padding: "6px 14px", borderRadius: 6, fontSize: 12,
-    background: active ? "#1c2333" : "transparent",
-    color: active ? "#e2e8f0" : "#8892a4",
-    border: active ? "1px solid #2a3245" : "1px solid transparent",
+    background: active ? "var(--bg-input)" : "transparent",
+    color: active ? "var(--text-primary)" : "var(--text-secondary)",
+    border: active ? "1px solid var(--border)" : "1px solid transparent",
     fontWeight: active ? 600 : 400, cursor: "pointer",
     borderBottom: active ? "2px solid #6366f1" : "2px solid transparent",
   };
@@ -1151,22 +1151,22 @@ function tabBtn(active: boolean): React.CSSProperties {
 function pagerBtn(disabled: boolean): React.CSSProperties {
   return {
     padding: "4px 10px", borderRadius: 4, fontSize: 11,
-    background: "#1c2333", border: "1px solid #2a3245",
-    color: disabled ? "#555f6e" : "#a5b4fc",
+    background: "var(--bg-input)", border: "1px solid var(--border)",
+    color: disabled ? "var(--text-muted)" : "#a5b4fc",
     cursor: disabled ? "default" : "pointer",
   };
 }
 
 const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: 12 };
-const tableHeadRow: React.CSSProperties = { borderBottom: "1px solid #2a3245" };
-const tableRow: React.CSSProperties = { borderBottom: "1px solid #1c2333" };
+const tableHeadRow: React.CSSProperties = { borderBottom: "1px solid var(--border)" };
+const tableRow: React.CSSProperties = { borderBottom: "1px solid var(--bg-input)" };
 const tableRowClickable: React.CSSProperties = { ...tableRow, cursor: "pointer" };
-const cellNameStyle: React.CSSProperties = { color: "#e2e8f0", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-const crumbSep: React.CSSProperties = { margin: "0 6px", color: "#555f6e" };
+const cellNameStyle: React.CSSProperties = { color: "var(--text-primary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const crumbSep: React.CSSProperties = { margin: "0 6px", color: "var(--text-muted)" };
 function crumbBtn(active: boolean): React.CSSProperties {
   return {
     background: "transparent", border: "none", padding: 0,
-    color: active ? "#e2e8f0" : "#8892a4",
+    color: active ? "var(--text-primary)" : "var(--text-secondary)",
     fontWeight: active ? 600 : 400, cursor: active ? "default" : "pointer",
     fontSize: 11,
   };
