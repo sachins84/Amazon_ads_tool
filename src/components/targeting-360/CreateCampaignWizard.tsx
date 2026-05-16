@@ -155,8 +155,8 @@ function StepNav({ step, targetingType }: { step: Step; targetingType: Targeting
         return (
           <div key={l} style={{
             flex: 1, padding: "6px 10px", borderRadius: 4, textAlign: "center",
-            background: active ? "rgba(99,102,241,0.15)" : done ? "rgba(34,197,94,0.10)" : "var(--bg-input)",
-            color:      active ? "#a5b4fc" : done ? "#86efac" : "var(--text-secondary)",
+            background: active ? "var(--c-indigo-bg)" : done ? "var(--c-success-bg)" : "var(--bg-input)",
+            color:      active ? "var(--c-indigo-text)" : done ? "var(--c-success-text)" : "var(--text-secondary)",
             borderBottom: active ? "2px solid #6366f1" : "2px solid transparent",
             fontWeight: active ? 600 : 400,
           }}>{stepNum}. {l}</div>
@@ -367,7 +367,7 @@ function AutoBid({ label, hint, value, onChange, currency }: { label: string; hi
 function Step5({ s, currency }: { s: WizardState; currency: string }) {
   return (
     <div style={{ display: "grid", gap: 8, fontSize: 12, color: "var(--text-primary)" }}>
-      <div style={{ background: "rgba(99,102,241,0.10)", border: "1px solid #6366f1", borderRadius: 8, padding: 12, color: "#a5b4fc" }}>
+      <div style={{ background: "var(--c-indigo-bg)", border: "1px solid #6366f1", borderRadius: 8, padding: 12, color: "var(--c-indigo-text)" }}>
         Review the configuration below. Clicking <strong>Create on Amazon</strong> below will ask for one final confirmation before pushing the changes live.
       </div>
       <ReviewBlock title="Campaign" rows={[
@@ -420,15 +420,15 @@ function ResultView({ result, onClose }: { result: { success: boolean; steps: Re
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{
         padding: 12, borderRadius: 8, fontSize: 13,
-        background: result.success ? "rgba(34,197,94,0.12)" : "rgba(245,158,11,0.12)",
-        color:      result.success ? "#86efac" : "#fde68a",
+        background: result.success ? "var(--c-success-bg)" : "var(--c-warning-bg)",
+        color:      result.success ? "var(--c-success-text)" : "var(--c-warning-text)",
         border: `1px solid ${result.success ? "#22c55e" : "#f59e0b"}`,
       }}>
         {result.success ? "✓ Campaign created successfully" : "⚠ Some steps failed — see below. Already-created entities exist on Amazon."}
       </div>
       {Object.entries(result.steps).map(([k, v]) => (
         <div key={k} style={{ background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6, padding: 10, fontSize: 12 }}>
-          <div style={{ color: v?.ok ? "#86efac" : "#ef4444" }}>{v?.ok ? "✓" : "✕"} {k}</div>
+          <div style={{ color: v?.ok ? "var(--c-success-text)" : "#ef4444" }}>{v?.ok ? "✓" : "✕"} {k}</div>
           {v?.campaignId && <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>campaignId: <code>{v.campaignId}</code></div>}
           {v?.adGroupId  && <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>adGroupId: <code>{v.adGroupId}</code></div>}
           {v?.count !== undefined && <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>{v.count} item(s)</div>}
@@ -518,9 +518,9 @@ const input: React.CSSProperties = {
 };
 const miniLabel: React.CSSProperties = { fontSize: 10, color: "var(--text-secondary)", marginBottom: 4 };
 const hintBox: React.CSSProperties = {
-  fontSize: 11, color: "#a5b4fc",
-  padding: "8px 10px", background: "rgba(99,102,241,0.08)",
-  border: "1px solid rgba(99,102,241,0.18)", borderRadius: 6,
+  fontSize: 11, color: "var(--c-indigo-text)",
+  padding: "8px 10px", background: "var(--c-info-banner-bg)",
+  border: "1px solid var(--c-indigo-bg)", borderRadius: 6,
 };
 const btnCancel: React.CSSProperties = {
   padding: "6px 12px", borderRadius: 6, background: "transparent",
@@ -528,7 +528,7 @@ const btnCancel: React.CSSProperties = {
 };
 const btnSecondary: React.CSSProperties = {
   padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
-  border: "1px solid var(--border)", color: "#a5b4fc", fontSize: 12, cursor: "pointer",
+  border: "1px solid var(--border)", color: "var(--c-indigo-text)", fontSize: 12, cursor: "pointer",
 };
 function btnPrimary(disabled: boolean): React.CSSProperties {
   return {

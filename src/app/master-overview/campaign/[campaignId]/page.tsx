@@ -100,13 +100,13 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
         )}
 
         {loading && warming && (
-          <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#a5b4fc" }}>
+          <div style={{ background: "var(--c-info-banner-bg)", border: "1px solid var(--c-info-banner-bd)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "var(--c-indigo-text)" }}>
             ⏳ Fetching ad-group reports from Amazon. First load 30s–3 min cold; cached 1 hour after.
           </div>
         )}
 
         {error && (
-          <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#ef4444" }}>
+          <div style={{ background: "var(--c-danger-banner-bg)", border: "1px solid var(--c-danger-banner-bd)", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#ef4444" }}>
             ⚠ {error} <button onClick={load} style={{ marginLeft: 12, background: "transparent", border: "none", color: "#6366f1", cursor: "pointer" }}>Retry</button>
           </div>
         )}
@@ -146,7 +146,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
                       <Td><Pill text={ag.type} /></Td>
                       <Td><Pill text={ag.status} muted={ag.status !== "ENABLED"} /></Td>
                       <Td style={{ color: "var(--text-primary)", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        <Link href={`/master-overview/adgroup/${ag.id}?campaignId=${campaignId}`} title={ag.name} style={{ color: "#a5b4fc", textDecoration: "none" }}>
+                        <Link href={`/master-overview/adgroup/${ag.id}?campaignId=${campaignId}`} title={ag.name} style={{ color: "var(--c-indigo-text)", textDecoration: "none" }}>
                           {ag.name}
                         </Link>
                       </Td>
@@ -227,13 +227,13 @@ function Td({ children, align = "left", style, title }: { children: React.ReactN
 }
 function Pill({ text, muted }: { text: string; muted?: boolean }) {
   const palette: Record<string, { bg: string; fg: string }> = {
-    SP:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
-    SB:       { bg: "rgba(139,92,246,0.15)", fg: "#c4b5fd" },
-    SD:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
-    ENABLED:  { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
-    PAUSED:   { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
+    SP:       { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)" },
+    SB:       { bg: "var(--c-violet-bg)", fg: "var(--c-violet-text)" },
+    SD:       { bg: "var(--c-violet2-bg)", fg: "var(--c-violet2-text)" },
+    ENABLED:  { bg: "var(--c-success-bg)",  fg: "var(--c-success-text)" },
+    PAUSED:   { bg: "var(--c-warning-bg)", fg: "var(--c-warning-text)" },
+    ARCHIVED: { bg: "var(--c-neutral-bg)",  fg: "var(--text-secondary)" },
   };
-  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "var(--text-secondary)" };
+  const c = palette[text] ?? { bg: "var(--c-neutral-bg)", fg: "var(--text-secondary)" };
   return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "var(--text-muted)" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
 }

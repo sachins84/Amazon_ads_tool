@@ -23,6 +23,31 @@
   --success-muted: #22c55e20;
   --warning-muted: #f59e0b20;
   --danger-muted: #ef444420;
+
+  /* Chip + accent text colors — tuned for the active theme.
+     Dark: pastels on tinted bg. Light: dark-saturated on tinted bg. */
+  --c-success-text:  #86efac;
+  --c-success-bg:    rgba(34,197,94,0.15);
+  --c-warning-text:  #fde68a;
+  --c-warning-bg:    rgba(245,158,11,0.15);
+  --c-danger-text:   #ef4444;
+  --c-danger-bg:     rgba(239,68,68,0.15);
+  --c-indigo-text:   #a5b4fc;
+  --c-indigo-bg:     rgba(99,102,241,0.15);
+  --c-violet-text:   #c4b5fd;
+  --c-violet-bg:     rgba(139,92,246,0.15);
+  --c-violet2-text:  #ddd6fe;
+  --c-violet2-bg:    rgba(167,139,250,0.15);
+  --c-neutral-text:  #8892a4;
+  --c-neutral-bg:    rgba(85,95,110,0.20);
+
+  /* Banner backgrounds — slight tint, with the c-*-text working on top */
+  --c-info-banner-bg:    rgba(99,102,241,0.08);
+  --c-info-banner-bd:    rgba(99,102,241,0.22);
+  --c-warning-banner-bg: rgba(245,158,11,0.08);
+  --c-warning-banner-bd: rgba(245,158,11,0.25);
+  --c-danger-banner-bg:  rgba(239,68,68,0.08);
+  --c-danger-banner-bd:  rgba(239,68,68,0.22);
 }
 
 [data-theme="light"] {
@@ -33,10 +58,34 @@
   --border: #dfe4ec;
   --border-light: #ebeff5;
   --text-primary: #1a202c;
-  --text-secondary: #525f7f;
+  --text-secondary: #4b5563;
   --text-muted: #94a3b8;
   --scrollbar: #c5cbd6;
   --scrollbar-hover: #94a3b8;
+
+  /* Light theme chip text uses darker, saturated values so labels read on white.
+     Background tints are slightly bumped so the pill shape stays visible. */
+  --c-success-text:  #15803d;
+  --c-success-bg:    rgba(34,197,94,0.16);
+  --c-warning-text:  #b45309;
+  --c-warning-bg:    rgba(245,158,11,0.22);
+  --c-danger-text:   #b91c1c;
+  --c-danger-bg:     rgba(239,68,68,0.14);
+  --c-indigo-text:   #4338ca;
+  --c-indigo-bg:     rgba(99,102,241,0.14);
+  --c-violet-text:   #6d28d9;
+  --c-violet-bg:     rgba(139,92,246,0.14);
+  --c-violet2-text:  #5b21b6;
+  --c-violet2-bg:    rgba(167,139,250,0.18);
+  --c-neutral-text:  #475569;
+  --c-neutral-bg:    rgba(85,95,110,0.10);
+
+  --c-info-banner-bg:    rgba(99,102,241,0.07);
+  --c-info-banner-bd:    rgba(99,102,241,0.30);
+  --c-warning-banner-bg: rgba(245,158,11,0.10);
+  --c-warning-banner-bd: rgba(245,158,11,0.40);
+  --c-danger-banner-bg:  rgba(239,68,68,0.07);
+  --c-danger-banner-bd:  rgba(239,68,68,0.30);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

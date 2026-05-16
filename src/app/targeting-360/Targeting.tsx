@@ -392,7 +392,7 @@ export default function Targeting360Page() {
         )}
 
         {error && (
-          <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#ef4444" }}>
+          <div style={{ background: "var(--c-danger-banner-bg)", border: "1px solid var(--c-danger-banner-bd)", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#ef4444" }}>
             ⚠ {error}
           </div>
         )}
@@ -452,9 +452,9 @@ export default function Targeting360Page() {
           <div style={{
             position: "fixed", bottom: 20, right: 20, zIndex: 100,
             padding: "12px 18px", borderRadius: 8, fontSize: 12,
-            background: toast.kind === "ok" ? "rgba(34,197,94,0.18)" : "rgba(239,68,68,0.18)",
+            background: toast.kind === "ok" ? "var(--c-success-bg)" : "var(--c-danger-bg)",
             border: `1px solid ${toast.kind === "ok" ? "#22c55e" : "#ef4444"}`,
-            color: toast.kind === "ok" ? "#86efac" : "#ef4444",
+            color: toast.kind === "ok" ? "var(--c-success-text)" : "#ef4444",
             maxWidth: 380, lineHeight: 1.4,
           }}>{toast.msg}</div>
         )}
@@ -548,7 +548,7 @@ function EditorModal({ ctx, currency, accountId, onClose, onResult }: {
           </>
         )}
         {isToggle && (
-          <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 14, padding: "8px 12px", background: "rgba(99,102,241,0.10)", borderRadius: 6 }}>
+          <div style={{ fontSize: 12, color: "var(--c-indigo-text)", marginBottom: 14, padding: "8px 12px", background: "var(--c-indigo-bg)", borderRadius: 6 }}>
             Will change state from <strong>{ctx.currentState}</strong> → <strong>{newState}</strong>
           </div>
         )}
@@ -588,7 +588,7 @@ const modalCancelBtn: React.CSSProperties = {
 };
 const modalSecondaryBtn: React.CSSProperties = {
   padding: "6px 14px", borderRadius: 6, background: "var(--bg-input)",
-  border: "1px solid var(--border)", color: "#a5b4fc", fontSize: 12, fontWeight: 600, cursor: "pointer",
+  border: "1px solid var(--border)", color: "var(--c-indigo-text)", fontSize: 12, fontWeight: 600, cursor: "pointer",
 };
 const modalPrimaryBtn: React.CSSProperties = {
   padding: "6px 14px", borderRadius: 6,
@@ -1031,10 +1031,10 @@ function LastActionPill({ mark, currency }: { mark?: LastActionMark; currency: s
   const { actionType, actionValue, status, at } = mark;
   // Color by status
   const palette: Record<LastActionMark["status"], { bg: string; fg: string; border: string; icon: string }> = {
-    APPLIED:   { bg: "rgba(34,197,94,0.12)",  fg: "#86efac", border: "#22c55e", icon: "✓" },
-    APPROVED:  { bg: "rgba(99,102,241,0.12)", fg: "#a5b4fc", border: "#6366f1", icon: "📋" },
-    DISMISSED: { bg: "rgba(85,95,110,0.18)",  fg: "var(--text-secondary)", border: "var(--border)", icon: "✕" },
-    FAILED:    { bg: "rgba(239,68,68,0.12)",  fg: "#ef4444", border: "#ef4444", icon: "⚠" },
+    APPLIED:   { bg: "var(--c-success-bg)",  fg: "var(--c-success-text)", border: "#22c55e", icon: "✓" },
+    APPROVED:  { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)", border: "#6366f1", icon: "📋" },
+    DISMISSED: { bg: "var(--c-neutral-bg)",  fg: "var(--text-secondary)", border: "var(--border)", icon: "✕" },
+    FAILED:    { bg: "var(--c-danger-bg)",  fg: "#ef4444", border: "#ef4444", icon: "⚠" },
   };
   const c = palette[status];
   let action = actionType.replace("_", " ").toLowerCase();
@@ -1069,7 +1069,7 @@ function PendingPill({ mark, currency }: { mark: PendingMark; currency: string }
   return (
     <a href="/suggestions" title="Pending in /suggestions — click to review" style={{
       padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
-      background: "rgba(245,158,11,0.18)", color: "#fde68a",
+      background: "var(--c-warning-bg)", color: "var(--c-warning-text)",
       border: "1px solid #f59e0b", textDecoration: "none",
     }}>⏳ {label}</a>
   );
@@ -1078,7 +1078,7 @@ function PendingPill({ mark, currency }: { mark: PendingMark; currency: string }
 const miniBtn: React.CSSProperties = {
   padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600,
   background: "var(--bg-input)", border: "1px solid var(--border)",
-  color: "#a5b4fc", cursor: "pointer",
+  color: "var(--c-indigo-text)", cursor: "pointer",
 };
 
 function IntentChip({ intent }: { intent: Intent }) {
@@ -1094,32 +1094,32 @@ function intentLabelShort(i: Intent): string {
 }
 function intentChipColor(i: Intent): { bg: string; fg: string } {
   return {
-    BRANDED:     { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
-    GENERIC:     { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
-    COMPETITION: { bg: "rgba(239,68,68,0.15)",  fg: "#ef4444" },
-    AUTO:        { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    PAT:         { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
-    OTHER:       { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
+    BRANDED:     { bg: "var(--c-success-bg)",  fg: "var(--c-success-text)" },
+    GENERIC:     { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)" },
+    COMPETITION: { bg: "var(--c-danger-bg)",  fg: "#ef4444" },
+    AUTO:        { bg: "var(--c-warning-bg)", fg: "var(--c-warning-text)" },
+    PAT:         { bg: "var(--c-violet2-bg)", fg: "var(--c-violet2-text)" },
+    OTHER:       { bg: "var(--c-neutral-bg)",  fg: "var(--text-secondary)" },
   }[i];
 }
 
 function Pill({ text, muted }: { text: string; muted?: boolean }) {
   const palette: Record<string, { bg: string; fg: string }> = {
-    SP:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
-    SB:       { bg: "rgba(139,92,246,0.15)", fg: "#c4b5fd" },
-    SD:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
-    KW:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
-    PT:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
-    AUTO:     { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    MANUAL:   { bg: "rgba(34,197,94,0.12)",  fg: "#86efac" },
-    EXACT:    { bg: "rgba(99,102,241,0.10)", fg: "#a5b4fc" },
-    PHRASE:   { bg: "rgba(139,92,246,0.10)", fg: "#c4b5fd" },
-    BROAD:    { bg: "rgba(167,139,250,0.10)", fg: "#ddd6fe" },
-    ENABLED:  { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
-    PAUSED:   { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
-    ARCHIVED: { bg: "rgba(85,95,110,0.20)",  fg: "var(--text-secondary)" },
+    SP:       { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)" },
+    SB:       { bg: "var(--c-violet-bg)", fg: "var(--c-violet-text)" },
+    SD:       { bg: "var(--c-violet2-bg)", fg: "var(--c-violet2-text)" },
+    KW:       { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)" },
+    PT:       { bg: "var(--c-violet2-bg)", fg: "var(--c-violet2-text)" },
+    AUTO:     { bg: "var(--c-warning-bg)", fg: "var(--c-warning-text)" },
+    MANUAL:   { bg: "var(--c-success-bg)",  fg: "var(--c-success-text)" },
+    EXACT:    { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)" },
+    PHRASE:   { bg: "var(--c-violet-bg)", fg: "var(--c-violet-text)" },
+    BROAD:    { bg: "var(--c-violet2-bg)", fg: "var(--c-violet2-text)" },
+    ENABLED:  { bg: "var(--c-success-bg)",  fg: "var(--c-success-text)" },
+    PAUSED:   { bg: "var(--c-warning-bg)", fg: "var(--c-warning-text)" },
+    ARCHIVED: { bg: "var(--c-neutral-bg)",  fg: "var(--text-secondary)" },
   };
-  const c = palette[text] ?? { bg: "rgba(85,95,110,0.20)", fg: "var(--text-secondary)" };
+  const c = palette[text] ?? { bg: "var(--c-neutral-bg)", fg: "var(--text-secondary)" };
   return <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, background: c.bg, color: muted ? "var(--text-muted)" : c.fg, fontSize: 10, fontWeight: 600 }}>{text}</span>;
 }
 
@@ -1133,8 +1133,8 @@ const inputStyle: React.CSSProperties = {
 function chipStyleOn(on: boolean): React.CSSProperties {
   return {
     padding: "6px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
-    background: on ? "rgba(99,102,241,0.18)" : "var(--bg-input)",
-    color:      on ? "#a5b4fc" : "var(--text-secondary)",
+    background: on ? "var(--c-indigo-bg)" : "var(--bg-input)",
+    color:      on ? "var(--c-indigo-text)" : "var(--text-secondary)",
     border:    `1px solid ${on ? "#6366f1" : "var(--border)"}`,
   };
 }
@@ -1152,7 +1152,7 @@ function pagerBtn(disabled: boolean): React.CSSProperties {
   return {
     padding: "4px 10px", borderRadius: 4, fontSize: 11,
     background: "var(--bg-input)", border: "1px solid var(--border)",
-    color: disabled ? "var(--text-muted)" : "#a5b4fc",
+    color: disabled ? "var(--text-muted)" : "var(--c-indigo-text)",
     cursor: disabled ? "default" : "pointer",
   };
 }

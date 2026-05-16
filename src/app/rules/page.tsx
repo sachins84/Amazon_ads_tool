@@ -77,7 +77,7 @@ export default function RulesPage() {
         </div>
 
         {runResult && (
-          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 12, borderRadius: 8, fontSize: 12, color: "#a5b4fc", marginBottom: 12 }}>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", padding: 12, borderRadius: 8, fontSize: 12, color: "var(--c-indigo-text)", marginBottom: 12 }}>
             {runResult}
           </div>
         )}
@@ -121,13 +121,13 @@ function RuleCard({ rule, onToggle, onDelete }: { rule: Rule; onToggle: () => vo
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onToggle} style={{ ...btnSecondary, background: rule.enabled ? "var(--bg-input)" : "rgba(34,197,94,0.15)", color: rule.enabled ? "var(--text-secondary)" : "#86efac" }}>
+          <button onClick={onToggle} style={{ ...btnSecondary, background: rule.enabled ? "var(--bg-input)" : "var(--c-success-bg)", color: rule.enabled ? "var(--text-secondary)" : "var(--c-success-text)" }}>
             {rule.enabled ? "Disable" : "Enable"}
           </button>
           <button onClick={onDelete} style={{ ...btnSecondary, color: "#ef4444" }}>Delete</button>
         </div>
       </div>
-      <div style={{ marginTop: 8, fontSize: 12, color: "#a5b4fc", fontFamily: "ui-monospace, monospace" }}>
+      <div style={{ marginTop: 8, fontSize: 12, color: "var(--c-indigo-text)", fontFamily: "ui-monospace, monospace" }}>
         IF {describeConditions(rule.conditions)} THEN {rule.actions.map(describeAction).join("; ")}
       </div>
     </div>
@@ -214,8 +214,8 @@ function RuleEditor({ accountId, onSave, onCancel }: {
           {PROGRAMS.map((p) => (
             <button key={p} onClick={() => toggleProgram(p)} style={{
               ...btnSecondary,
-              background: programs.includes(p) ? "rgba(99,102,241,0.15)" : "var(--bg-input)",
-              color:      programs.includes(p) ? "#a5b4fc" : "var(--text-secondary)",
+              background: programs.includes(p) ? "var(--c-indigo-bg)" : "var(--bg-input)",
+              color:      programs.includes(p) ? "var(--c-indigo-text)" : "var(--text-secondary)",
             }}>{p}</button>
           ))}
         </div>

@@ -153,7 +153,7 @@ function RuleGroup({ ruleId, items, currency, onUpdate }: {
   return (
     <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 10 }}>
-        Rule <code style={{ color: "#a5b4fc" }}>{ruleId.slice(0, 8)}</code> · {items.length} suggestion{items.length === 1 ? "" : "s"}
+        Rule <code style={{ color: "var(--c-indigo-text)" }}>{ruleId.slice(0, 8)}</code> · {items.length} suggestion{items.length === 1 ? "" : "s"}
         {totalSpend > 0 && ` · est. ${fmt(totalSpend, "currency", currency)} savings`}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -164,18 +164,18 @@ function RuleGroup({ ruleId, items, currency, onUpdate }: {
 }
 
 function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: string; onUpdate: (id: string, status: SuggestionStatus, apply?: boolean) => void }) {
-  const statusColor = s.status === "PENDING" ? "#a5b4fc"
-    : s.status === "APPROVED" ? "#fde68a"
-    : s.status === "APPLIED" ? "#86efac"
+  const statusColor = s.status === "PENDING" ? "var(--c-indigo-text)"
+    : s.status === "APPROVED" ? "var(--c-warning-text)"
+    : s.status === "APPLIED" ? "var(--c-success-text)"
     : s.status === "DISMISSED" ? "var(--text-muted)"
     : "#ef4444";
   return (
     <div style={{ borderTop: "1px solid var(--bg-input)", paddingTop: 10, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ ...pill("var(--border)", "#a5b4fc"), fontSize: 10 }}>{s.targetType}</span>
-          {s.program && <span style={{ ...pill("rgba(99,102,241,0.15)", "#a5b4fc"), fontSize: 10 }}>{s.program}</span>}
-          <span style={{ ...pill("rgba(245,158,11,0.15)", "#fde68a"), fontSize: 10 }}>{s.actionType}{s.actionValue != null ? ` ${s.actionValue}` : ""}</span>
+          <span style={{ ...pill("var(--border)", "var(--c-indigo-text)"), fontSize: 10 }}>{s.targetType}</span>
+          {s.program && <span style={{ ...pill("var(--c-indigo-bg)", "var(--c-indigo-text)"), fontSize: 10 }}>{s.program}</span>}
+          <span style={{ ...pill("var(--c-warning-bg)", "var(--c-warning-text)"), fontSize: 10 }}>{s.actionType}{s.actionValue != null ? ` ${s.actionValue}` : ""}</span>
           <span style={{ ...pill("transparent", statusColor), fontSize: 10, border: `1px solid ${statusColor}` }}>{s.status}</span>
         </div>
         <div style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500, marginTop: 4 }} title={s.targetId}>
@@ -183,7 +183,7 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
         </div>
         <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>{s.reason}</div>
         {s.expectedImpact && (
-          <div style={{ fontSize: 11, color: "#a5b4fc", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "var(--c-indigo-text)", marginTop: 2 }}>
             Impact:&nbsp;
             {s.expectedImpact.savedSpend != null && <>save {fmt(s.expectedImpact.savedSpend, "currency", currency)} </>}
             {s.expectedImpact.addedSales != null && <>(±{fmt(s.expectedImpact.addedSales, "currency", currency)} sales) </>}
@@ -193,13 +193,13 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
       </div>
       {s.status === "PENDING" && (
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          <button onClick={() => onUpdate(s.id, "APPROVED")} style={{ ...btnSecondary, color: "#86efac" }}>Approve</button>
+          <button onClick={() => onUpdate(s.id, "APPROVED")} style={{ ...btnSecondary, color: "var(--c-success-text)" }}>Approve</button>
           <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "var(--text-secondary)" }}>Dismiss</button>
         </div>
       )}
       {s.status === "APPROVED" && (
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-          <button onClick={() => onUpdate(s.id, "APPLIED", true)} style={{ ...btnSecondary, color: "#a5b4fc", borderColor: "#6366f1" }} title="Push to Amazon">Apply to Amazon</button>
+          <button onClick={() => onUpdate(s.id, "APPLIED", true)} style={{ ...btnSecondary, color: "var(--c-indigo-text)", borderColor: "#6366f1" }} title="Push to Amazon">Apply to Amazon</button>
           <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "var(--text-secondary)" }}>Dismiss</button>
         </div>
       )}
