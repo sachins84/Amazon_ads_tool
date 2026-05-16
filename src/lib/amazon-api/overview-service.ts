@@ -9,6 +9,7 @@ import {
   readCampaignMetrics, readCampaignMeta, getRefreshState, campaignMetricsCoverage,
 } from "@/lib/db/metrics-store";
 import type { Program } from "./reports";
+import { inferIntent, type Intent } from "./intent";
 
 export interface OverviewResult {
   brandName:   string | null;
@@ -31,6 +32,8 @@ export interface OverviewResult {
     id: string; name: string; type: Program;
     status: "ENABLED" | "PAUSED" | "ARCHIVED";
     budget: number; portfolioId: string | null;
+    intent: Intent;
+    targetingType?: "MANUAL" | "AUTO";
     spend: number; sales: number; orders: number;
     impressions: number; clicks: number;
     ctr: number; cpc: number; cvr: number; acos: number; roas: number;
@@ -104,13 +107,18 @@ export async function getOverviewForAccount(
     const clicks = agg?.clicks ?? 0;
     const impr   = agg?.impressions ?? 0;
     const orders = agg?.orders ?? 0;
+    const name   = m.name ?? `Campaign ${m.campaignId}`;
+    // Auto-targeting SP campaigns are inherently AUTO intent.
+    const intent = m.targetingType === "AUTO" ? "AUTO" : inferIntent(name);
     campaigns.push({
       id: m.campaignId,
-      name: m.name ?? `Campaign ${m.campaignId}`,
+      name,
       type: m.program,
       status: m.state ?? "ARCHIVED",
       budget: m.dailyBudget ?? 0,
       portfolioId: m.portfolioId,
+      intent,
+      targetingType: m.targetingType ?? undefined,
       spend: round2(spend), sales: round2(sales), orders,
       impressions: impr, clicks,
       ctr: pct(clicks, impr), cpc: div(spend, clicks),
@@ -123,12 +131,14 @@ export async function getOverviewForAccount(
   // Surface daily rows that don't have a meta entry (campaign archived since refresh).
   for (const [campaignId, agg] of byCampaign) {
     if (seen.has(campaignId)) continue;
+    const name = `Campaign ${campaignId}`;
     campaigns.push({
       id: campaignId,
-      name: `Campaign ${campaignId}`,
+      name,
       type: agg.program,
       status: "ARCHIVED",
       budget: 0, portfolioId: null,
+      intent: "OTHER",
       spend: round2(agg.cost), sales: round2(agg.sales), orders: agg.orders,
       impressions: agg.impressions, clicks: agg.clicks,
       ctr: pct(agg.clicks, agg.impressions), cpc: div(agg.cost, agg.clicks),

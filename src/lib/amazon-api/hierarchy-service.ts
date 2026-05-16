@@ -176,7 +176,7 @@ export async function getAdGroupsForCampaign(
 
 // ─── Targeting (keywords + product targets) for one ad group ────────────────
 
-export type TargetKind = "KEYWORD" | "PRODUCT_TARGET";
+export type TargetKind = "KEYWORD" | "PRODUCT_TARGET" | "AUTO";
 
 export interface TargetingRow {
   id: string;            // keywordId or targetId
@@ -204,6 +204,7 @@ export interface AdGroupTargetingOverview {
   dateRange:   { startDate: string; endDate: string };
   keywords:       TargetingRow[];
   productTargets: TargetingRow[];
+  autoTargets:    TargetingRow[];
   totals: { spend: number; sales: number; orders: number; clicks: number; impressions: number; acos: number; roas: number };
   errors:  { keywords?: string; productTargets?: string; report?: string };
 }
@@ -257,7 +258,7 @@ export async function getTargetingForAdGroup(
     .map((m) => {
       const a = byId.get(m.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
       return {
-        id: m.targetId, kind: "PRODUCT_TARGET", display: m.display ?? "Auto target",
+        id: m.targetId, kind: "PRODUCT_TARGET", display: m.display ?? "—",
         state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
         campaignId: m.campaignId, adGroupId: m.adGroupId,
         spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
@@ -268,7 +269,23 @@ export async function getTargetingForAdGroup(
       };
     });
 
-  const allRows = [...keywords, ...productTargets];
+  const autoTargets: TargetingRow[] = meta
+    .filter((m) => m.kind === "AUTO")
+    .map((m) => {
+      const a = byId.get(m.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+      return {
+        id: m.targetId, kind: "AUTO", display: m.display ?? "Auto target",
+        state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
+        campaignId: m.campaignId, adGroupId: m.adGroupId,
+        spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
+        impressions: a.impressions, clicks: a.clicks,
+        ctr: pct(a.clicks, a.impressions), cpc: div(a.cost, a.clicks),
+        cvr: pct(a.orders, a.clicks), acos: pct(a.cost, a.sales, 1),
+        roas: div(a.sales, a.cost),
+      };
+    });
+
+  const allRows = [...keywords, ...productTargets, ...autoTargets];
   const t = allRows.reduce(
     (acc, r) => ({
       spend: acc.spend + r.spend, sales: acc.sales + r.sales, orders: acc.orders + r.orders,
@@ -279,10 +296,10 @@ export async function getTargetingForAdGroup(
 
   const result: AdGroupTargetingOverview = {
     brandName, marketplace, currency,
-    campaignId: keywords[0]?.campaignId ?? productTargets[0]?.campaignId ?? "",
+    campaignId: keywords[0]?.campaignId ?? productTargets[0]?.campaignId ?? autoTargets[0]?.campaignId ?? "",
     adGroupId,
     dateRange: { startDate, endDate },
-    keywords, productTargets,
+    keywords, productTargets, autoTargets,
     totals: {
       spend: round2(t.spend), sales: round2(t.sales), orders: t.orders,
       clicks: t.clicks, impressions: t.impressions,

@@ -237,7 +237,7 @@ export interface TargetingMetaRow {
   campaignId: string;
   adGroupId:  string;
   program:    Program;
-  kind:       "KEYWORD" | "PRODUCT_TARGET";
+  kind:       "KEYWORD" | "PRODUCT_TARGET" | "AUTO";
   display:    string | null;
   matchType:  "EXACT" | "PHRASE" | "BROAD" | null;
   state:      "ENABLED" | "PAUSED" | "ARCHIVED" | null;

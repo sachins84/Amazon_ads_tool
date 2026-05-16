@@ -17,10 +17,13 @@ import { queueSuggestion } from "@/lib/api-client";
 type Program = "SP" | "SB" | "SD";
 type Status  = "ENABLED" | "PAUSED" | "ARCHIVED";
 
+type Intent = "BRANDED" | "GENERIC" | "COMPETITION" | "AUTO" | "PAT" | "OTHER";
+
 interface CampaignRow {
   id: string; name: string; type: Program; status: Status;
   budget: number; portfolioId: string | null;
   targetingType?: "MANUAL" | "AUTO";
+  intent: Intent;
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
@@ -33,7 +36,7 @@ interface AdGroupRow {
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
 }
 interface TargetingRow {
-  id: string; kind: "KEYWORD" | "PRODUCT_TARGET"; display: string;
+  id: string; kind: "KEYWORD" | "PRODUCT_TARGET" | "AUTO"; display: string;
   matchType?: "EXACT" | "PHRASE" | "BROAD";
   state: Status; bid: number;
   campaignId: string; adGroupId: string;
@@ -61,11 +64,12 @@ interface CampaignFilters {
   search: string; programs: Program[];
   targetingType: "ALL" | "MANUAL" | "AUTO";
   status: Status | "ALL";
+  intents: Intent[];  // empty = all
 }
 interface AdGroupFilters  { search: string; status: Status | "ALL"; }
 interface TargetingFilters {
   search: string;
-  kind: "ALL" | "KEYWORD" | "PRODUCT_TARGET";
+  kind: "ALL" | "KEYWORD" | "PRODUCT_TARGET" | "AUTO";
   matchType: "ALL" | "EXACT" | "PHRASE" | "BROAD";
   status: Status | "ALL";
   bidMin: string; bidMax: string;
@@ -159,7 +163,7 @@ export default function Targeting360Page() {
   }, [accountId]);
   useEffect(() => { reloadPending(); }, [reloadPending, level, tab]);
 
-  const [campFilters, setCampFilters] = useState<CampaignFilters>({ search: "", programs: ["SP","SB","SD"], targetingType: "ALL", status: "ALL" });
+  const [campFilters, setCampFilters] = useState<CampaignFilters>({ search: "", programs: ["SP","SB","SD"], targetingType: "ALL", status: "ALL", intents: [] });
   const [agFilters,   setAgFilters]   = useState<AdGroupFilters>({ search: "", status: "ALL" });
   const [tgFilters,   setTgFilters]   = useState<TargetingFilters>({
     search: "", kind: "ALL", matchType: "ALL", status: "ALL",
@@ -205,7 +209,11 @@ export default function Targeting360Page() {
       const res = await fetch(`/api/adgroups/${adGroupId}/targeting?accountId=${accountId}&dateRange=${encodeURIComponent(dateRange)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setTargets([...(data.keywords ?? []), ...(data.productTargets ?? [])]);
+      setTargets([
+        ...(data.keywords ?? []),
+        ...(data.productTargets ?? []),
+        ...(data.autoTargets ?? []),
+      ]);
     } catch (e) { setError(String(e)); }
     finally { setLoading(false); }
   }, [accountId, dateRange]);
@@ -263,6 +271,7 @@ export default function Targeting360Page() {
       if (c.targetingType !== campFilters.targetingType) return false;
     }
     if (campFilters.status !== "ALL" && c.status !== campFilters.status) return false;
+    if (campFilters.intents.length > 0 && !campFilters.intents.includes(c.intent)) return false;
     return true;
   }).sort((a, b) => b.spend - a.spend), [campaigns, campFilters]);
 
@@ -573,6 +582,10 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
     const next = filters.programs.includes(p) ? filters.programs.filter((x) => x !== p) : [...filters.programs, p];
     setFilters({ ...filters, programs: next });
   };
+  const toggleIntent = (i: Intent) => {
+    const next = filters.intents.includes(i) ? filters.intents.filter((x) => x !== i) : [...filters.intents, i];
+    setFilters({ ...filters, intents: next });
+  };
   return (
     <>
       <FilterBar>
@@ -595,11 +608,24 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
           <option value="ARCHIVED">Archived</option>
         </select>
       </FilterBar>
+      <FilterBar>
+        <span style={{ fontSize: 11, color: "#8892a4", alignSelf: "center" }}>Intent:</span>
+        {(["BRANDED","GENERIC","COMPETITION","AUTO","PAT","OTHER"] as Intent[]).map((i) => (
+          <button key={i} onClick={() => toggleIntent(i)} style={{
+            ...chipStyleOn(filters.intents.includes(i)),
+            background: filters.intents.includes(i) ? intentChipColor(i).bg : "#1c2333",
+            color:      filters.intents.includes(i) ? intentChipColor(i).fg : "#8892a4",
+            borderColor: filters.intents.includes(i) ? intentChipColor(i).fg : "#2a3245",
+          }}>
+            {intentLabelShort(i)}
+          </button>
+        ))}
+      </FilterBar>
       <TableShell loading={loading}>
         <table style={tableStyle}>
           <thead>
             <tr style={tableHeadRow}>
-              <Th>Type</Th><Th>Targeting</Th><Th>Status</Th><Th align="left">Campaign</Th>
+              <Th>Type</Th><Th>Intent</Th><Th>Targeting</Th><Th>Status</Th><Th align="left">Campaign</Th>
               <Th align="right">Budget</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
               <Th align="left">Last Action</Th>
@@ -610,6 +636,7 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
             {rows.map((c) => (
               <tr key={c.id} style={tableRow}>
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.type} /></Td>
+                <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><IntentChip intent={c.intent} /></Td>
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}>{c.type === "SP" && c.targetingType ? <Pill text={c.targetingType} /> : <span style={{ color: "#555f6e" }}>—</span>}</Td>
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
                 <Td onClick={() => onDrill(c)} title={c.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{c.name}</Td>
@@ -745,7 +772,7 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
           <tbody>
             {rows.map((t) => (
               <tr key={t.id} style={tableRow}>
-                <Td><Pill text={t.kind === "KEYWORD" ? "KW" : "PT"} /></Td>
+                <Td><Pill text={t.kind === "KEYWORD" ? "KW" : t.kind === "AUTO" ? "AUTO" : "PT"} /></Td>
                 <Td>{t.matchType ? <Pill text={t.matchType} /> : <span style={{ color: "#555f6e" }}>—</span>}</Td>
                 <Td><Pill text={t.state} muted={t.state !== "ENABLED"} /></Td>
                 <Td title={t.display} style={cellNameStyle}>{t.display}</Td>
@@ -764,11 +791,11 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
                     state={t.state}
                     pending={pending[t.id]} currency={currency}
                     onToggle={() => openEditor({
-                      targetType: t.kind, targetId: t.id, targetName: t.display, program: "SP",
+                      targetType: t.kind === "AUTO" ? "PRODUCT_TARGET" : t.kind, targetId: t.id, targetName: t.display, program: "SP",
                       currentState: t.state, currentValue: t.bid, valueLabel: "Bid", action: "TOGGLE_STATE",
                     })}
                     onEdit={() => openEditor({
-                      targetType: t.kind, targetId: t.id, targetName: t.display, program: "SP",
+                      targetType: t.kind === "AUTO" ? "PRODUCT_TARGET" : t.kind, targetId: t.id, targetName: t.display, program: "SP",
                       currentState: t.state, currentValue: t.bid, valueLabel: "Bid", action: "SET_BID",
                     })}
                     editLabel="Edit bid"
@@ -877,6 +904,7 @@ function TargetingFilterBar({ filters, setFilters }: { filters: TargetingFilters
           <option value="ALL">All kinds</option>
           <option value="KEYWORD">Keywords</option>
           <option value="PRODUCT_TARGET">Product Targets</option>
+          <option value="AUTO">Auto Targets</option>
         </select>
         <select value={filters.matchType} onChange={(e) => setFilters({ ...filters, matchType: e.target.value as TargetingFilters["matchType"] })} style={inputStyle}>
           <option value="ALL">All matches</option>
@@ -1024,6 +1052,28 @@ const miniBtn: React.CSSProperties = {
   color: "#a5b4fc", cursor: "pointer",
 };
 
+function IntentChip({ intent }: { intent: Intent }) {
+  const c = intentChipColor(intent);
+  return <span style={{
+    display: "inline-block", padding: "2px 6px", borderRadius: 4,
+    background: c.bg, color: c.fg, fontSize: 10, fontWeight: 600,
+  }}>{intentLabelShort(intent)}</span>;
+}
+
+function intentLabelShort(i: Intent): string {
+  return { BRANDED: "Brand", GENERIC: "Generic", COMPETITION: "Comp", AUTO: "Auto", PAT: "PAT", OTHER: "—" }[i];
+}
+function intentChipColor(i: Intent): { bg: string; fg: string } {
+  return {
+    BRANDED:     { bg: "rgba(34,197,94,0.15)",  fg: "#86efac" },
+    GENERIC:     { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
+    COMPETITION: { bg: "rgba(239,68,68,0.15)",  fg: "#ef4444" },
+    AUTO:        { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
+    PAT:         { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
+    OTHER:       { bg: "rgba(85,95,110,0.20)",  fg: "#8892a4" },
+  }[i];
+}
+
 function Pill({ text, muted }: { text: string; muted?: boolean }) {
   const palette: Record<string, { bg: string; fg: string }> = {
     SP:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
@@ -1031,8 +1081,8 @@ function Pill({ text, muted }: { text: string; muted?: boolean }) {
     SD:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
     KW:       { bg: "rgba(99,102,241,0.15)", fg: "#a5b4fc" },
     PT:       { bg: "rgba(167,139,250,0.15)", fg: "#ddd6fe" },
+    AUTO:     { bg: "rgba(245,158,11,0.15)", fg: "#fde68a" },
     MANUAL:   { bg: "rgba(34,197,94,0.12)",  fg: "#86efac" },
-    AUTO:     { bg: "rgba(245,158,11,0.12)", fg: "#fde68a" },
     EXACT:    { bg: "rgba(99,102,241,0.10)", fg: "#a5b4fc" },
     PHRASE:   { bg: "rgba(139,92,246,0.10)", fg: "#c4b5fd" },
     BROAD:    { bg: "rgba(167,139,250,0.10)", fg: "#ddd6fe" },

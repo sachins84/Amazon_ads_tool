@@ -129,13 +129,22 @@ export async function refreshAccountRecent(accountId: string, days = 14): Promis
     })),
     ...productTargetsResult.map((t) => {
       const expr = t.expression?.[0] ?? t.resolvedExpression?.[0];
-      const display = expr
-        ? (expr.type === "asinSameAs" ? `ASIN: ${expr.value}` : `${expr.type}${expr.value ? `: ${expr.value}` : ""}`)
-        : "Auto target";
+      // Auto-targeting expressions Amazon returns:
+      //   queryHighRelMatches    = close match
+      //   queryBroadRelMatches   = loose match
+      //   asinSubstituteRelated  = substitutes
+      //   asinAccessoryRelated   = complements
+      const isAuto = expr ? AUTO_EXPRESSION_TYPES.has(String(expr.type)) : t.expressionType === "AUTO";
+      const display = isAuto && expr
+        ? autoLabel(String(expr.type))
+        : expr
+          ? (expr.type === "asinSameAs" ? `ASIN: ${expr.value}` : `${expr.type}${expr.value ? `: ${expr.value}` : ""}`)
+          : "Auto target";
       return {
         accountId, targetId: t.targetId,
         campaignId: t.campaignId, adGroupId: t.adGroupId,
-        program: "SP" as Program, kind: "PRODUCT_TARGET" as const,
+        program: "SP" as Program,
+        kind: (isAuto ? "AUTO" : "PRODUCT_TARGET") as TargetingMetaRow["kind"],
         display,
         matchType: null,
         state: t.state, bid: t.bid ?? null,
@@ -221,6 +230,22 @@ function deriveKind(keywordType: string): TargetingDailyRow["kind"] {
   if (t === "BROAD" || t === "EXACT" || t === "PHRASE" || t === "KEYWORD") return "KEYWORD";
   if (t.includes("AUTO")) return "AUTO";
   return "PRODUCT_TARGET";
+}
+
+const AUTO_EXPRESSION_TYPES = new Set([
+  "queryHighRelMatches",
+  "queryBroadRelMatches",
+  "asinSubstituteRelated",
+  "asinAccessoryRelated",
+]);
+
+function autoLabel(type: string): string {
+  return {
+    queryHighRelMatches:   "Auto · close-match",
+    queryBroadRelMatches:  "Auto · loose-match",
+    asinSubstituteRelated: "Auto · substitutes",
+    asinAccessoryRelated:  "Auto · complements",
+  }[type] ?? `Auto · ${type}`;
 }
 
 // ─── Date helpers (UTC, YYYY-MM-DD) ─────────────────────────────────────────
