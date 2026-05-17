@@ -13,9 +13,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import TopNav from "@/components/shared/TopNav";
 import { fmt } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
-import type { Suggestion, Bucket, SuggestionStatus } from "@/lib/rules/types";
+import type { Suggestion, Bucket } from "@/lib/rules/types";
 import { ALL_INTENTS, type Intent, intentLabel } from "@/lib/amazon-api/intent";
 import { ALL_OPTIMIZER_PROGRAMS, ANY, type OptimizerProgram, type AcosTargetRow } from "@/lib/db/acos-targets-repo";
+import Explorer from "@/components/optimizer/Explorer";
 
 const BUCKETS: Bucket[] = ["SCALE_UP","BID_UP","SCALE_DOWN","BID_DOWN","PAUSE","HOLD"];
 
@@ -40,11 +41,8 @@ export default function OptimizerPage() {
   const [pauseZeroDays,      setPauseZeroDays]      = useState("7");
 
   const [bucketFilter, setBucketFilter] = useState<Bucket | "ALL">("ALL");
-  const [statusFilter, setStatusFilter] = useState<SuggestionStatus | "PENDING">("PENDING");
-  const [search,       setSearch]       = useState("");
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [loading,    setLoading]    = useState(false);
   const [running,    setRunning]    = useState(false);
   const [runMsg,     setRunMsg]     = useState<string | null>(null);
 
@@ -54,15 +52,13 @@ export default function OptimizerPage() {
   });
   useEffect(() => { if (reviewer) localStorage.setItem("amazon-ads:reviewer", reviewer); }, [reviewer]);
 
+  // PENDING-only — drives the count chips. Explorer fetches its own data.
   const load = useCallback(async () => {
     if (!accountId) { setSuggestions([]); return; }
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/suggestions?accountId=${accountId}&status=${statusFilter}`);
-      const j = await res.json() as { suggestions: Suggestion[] };
-      setSuggestions((j.suggestions ?? []).filter((s) => s.bucket !== null));
-    } finally { setLoading(false); }
-  }, [accountId, statusFilter]);
+    const res = await fetch(`/api/suggestions?accountId=${accountId}&status=PENDING`);
+    const j = await res.json() as { suggestions: Suggestion[] };
+    setSuggestions((j.suggestions ?? []).filter((s) => s.bucket !== null));
+  }, [accountId]);
   useEffect(() => { load(); }, [load]);
 
   const run = async () => {
@@ -96,14 +92,6 @@ export default function OptimizerPage() {
       setTimeout(() => setRunMsg(null), 8000);
     }
   };
-
-  const filtered = useMemo(() => {
-    return suggestions.filter((s) => {
-      if (bucketFilter !== "ALL" && s.bucket !== bucketFilter) return false;
-      if (search && !(s.targetName ?? "").toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
-  }, [suggestions, bucketFilter, search]);
 
   const counts = useMemo(() => {
     const map: Partial<Record<Bucket, number>> = {};
@@ -163,7 +151,7 @@ export default function OptimizerPage() {
           )}
         </div>
 
-        {/* Bucket + status filters */}
+        {/* Bucket filter chips — drive the explorer below */}
         <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 11, color: "var(--text-secondary)", marginRight: 6 }}>Bucket:</span>
           <button onClick={() => setBucketFilter("ALL")} style={chipStyleOn(bucketFilter === "ALL")}>All ({suggestions.length})</button>
@@ -176,125 +164,20 @@ export default function OptimizerPage() {
               {BUCKET_COLOR[b].label} {counts[b] != null ? `(${counts[b]})` : ""}
             </button>
           ))}
-          <span style={{ flex: 1 }} />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as SuggestionStatus)} style={inputStyle}>
-            <option value="PENDING">Pending</option>
-            <option value="APPROVED">Approved</option>
-            <option value="APPLIED">Applied</option>
-            <option value="DISMISSED">Dismissed</option>
-            <option value="HELD">Held</option>
-            <option value="FAILED">Failed</option>
-            <option value="ANY">All statuses</option>
-          </select>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name…" style={{ ...inputStyle, width: 200 }} />
         </div>
 
-        {/* Table */}
-        <div style={card}>
-          {!accountId ? (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)" }}>Pick a brand from the top-right dropdown.</div>
-          ) : loading ? (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)" }}>Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
-              No {statusFilter.toLowerCase()} suggestions{bucketFilter !== "ALL" ? ` in ${BUCKET_COLOR[bucketFilter as Bucket].label}` : ""}. Click ▶ Run optimizer above.
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
-                    <Th>Bucket</Th><Th>Level</Th><Th align="left">Name</Th>
-                    <Th align="right">Current</Th>
-                    <Th align="right">Suggested</Th>
-                    <Th align="right">Override</Th>
-                    <Th align="left">Why</Th>
-                    <Th align="right">Conf</Th>
-                    <Th align="right">Actions</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((s) => (
-                    <Row key={s.id} s={s} currency={currency} reviewer={reviewer} onApplied={load} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* Drill-down explorer (portfolio → campaigns → ad groups → keywords/targets) */}
+        <Explorer
+          accountId={accountId}
+          currency={currency}
+          reviewer={reviewer}
+          bucketFilter={bucketFilter}
+        />
 
         {/* Outcomes — scored APPLIED suggestions */}
         <OutcomesPanel accountId={accountId} currency={currency} />
       </main>
     </div>
-  );
-}
-
-function Row({ s, currency, reviewer, onApplied }: { s: Suggestion; currency: string; reviewer: string; onApplied: () => void }) {
-  const [override, setOverride] = useState<string>(s.overrideValue != null ? String(s.overrideValue) : (s.actionValue != null ? String(s.actionValue) : ""));
-  const [busy, setBusy] = useState<"" | "APPROVE" | "APPLY" | "DISMISS" | "HOLD">("");
-
-  const submit = async (status: SuggestionStatus, apply: boolean) => {
-    setBusy(status === "APPROVED" ? "APPROVE" : status === "APPLIED" ? "APPLY" : status === "DISMISSED" ? "DISMISS" : status === "HELD" ? "HOLD" : "");
-    try {
-      const overrideNum = override === "" ? undefined : parseFloat(override);
-      const note = status === "DISMISSED" || status === "HELD" ? (window.prompt(`Note (required for ${status.toLowerCase()})`) ?? undefined) : undefined;
-      if ((status === "DISMISSED" || status === "HELD") && !note) { setBusy(""); return; }
-
-      const res = await fetch(`/api/suggestions/${s.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status, apply,
-          overrideValue: overrideNum,
-          reviewer,
-          decisionNote: note,
-        }),
-      });
-      if (!res.ok && apply) {
-        const j = await res.json().catch(() => ({}));
-        alert(`Apply failed: ${j.message ?? j.error ?? res.status}`);
-      }
-      onApplied();
-    } finally { setBusy(""); }
-  };
-
-  const bucket = s.bucket ?? "HOLD";
-  const c = BUCKET_COLOR[bucket];
-  const isApplied   = s.status === "APPLIED";
-  const isDismissed = s.status === "DISMISSED";
-  const isPending   = s.status === "PENDING";
-
-  return (
-    <tr style={{ borderBottom: "1px solid var(--bg-input)", opacity: isDismissed ? 0.5 : 1 }}>
-      <Td><span style={{ padding: "2px 6px", borderRadius: 4, background: c.bg, color: c.fg, fontSize: 10, fontWeight: 600 }}>{c.label}</span></Td>
-      <Td><span style={{ fontSize: 10, color: "var(--text-secondary)" }}>{s.targetType.replace("_"," ")}{s.program ? ` · ${s.program}` : ""}</span></Td>
-      <Td style={{ color: "var(--text-primary)", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.targetName ?? s.targetId}>{s.targetName}</Td>
-      <Td align="right" style={{ color: "var(--text-secondary)" }}>{s.currentValue != null ? fmt(s.currentValue, "currency", currency) : "—"}</Td>
-      <Td align="right" style={{ color: "var(--text-primary)" }}>
-        {s.actionType === "PAUSE" ? <span style={{ color: c.fg }}>PAUSE</span>
-          : s.actionValue != null ? fmt(s.actionValue, "currency", currency) : "—"}
-      </Td>
-      <Td align="right">
-        {s.actionType === "PAUSE" || s.actionValue == null ? <span style={{ color: "var(--text-muted)" }}>—</span> : (
-          <input type="number" step="0.01" value={override} onChange={(e) => setOverride(e.target.value)} style={{ ...inputStyle, width: 100, textAlign: "right" }} disabled={!isPending} />
-        )}
-      </Td>
-      <Td style={{ color: "var(--text-secondary)", maxWidth: 300, fontSize: 11 }}>{s.reason}</Td>
-      <Td align="right" style={{ color: "var(--text-secondary)" }}>{s.confidence != null ? `${Math.round(s.confidence * 100)}%` : "—"}</Td>
-      <Td align="right">
-        {s.status !== "PENDING" ? (
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{s.status}{s.reviewer ? ` · ${s.reviewer}` : ""}</span>
-        ) : (
-          <div style={{ display: "inline-flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => submit("APPLIED", true)} disabled={!!busy} style={miniBtnPrimary}>{busy === "APPLY" ? "…" : "Apply"}</button>
-            <button onClick={() => submit("APPROVED", false)} disabled={!!busy} style={miniBtn}>Approve</button>
-            <button onClick={() => submit("HELD", false)}     disabled={!!busy} style={miniBtn}>Hold</button>
-            <button onClick={() => submit("DISMISSED", false)} disabled={!!busy} style={{ ...miniBtn, color: "var(--text-muted)" }}>✕</button>
-          </div>
-        )}
-      </Td>
-    </tr>
   );
 }
 
@@ -629,14 +512,6 @@ const card: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6,
   color: "var(--text-primary)", padding: "6px 10px", fontSize: 12, outline: "none", width: "100%",
-};
-const miniBtn: React.CSSProperties = {
-  padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer",
-  background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--c-indigo-text)",
-};
-const miniBtnPrimary: React.CSSProperties = {
-  padding: "4px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer",
-  background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "1px solid transparent", color: "#fff",
 };
 function btnPrimary(disabled: boolean): React.CSSProperties {
   return {
