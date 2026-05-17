@@ -14,18 +14,26 @@ interface Props {
 }
 
 export default function KpiCard({ label, metric, format, currency = "INR", icon, small, loading }: Props) {
-  const hasBaseline = metric.prev !== undefined && metric.prev !== 0;
+  // Three cases:
+  //  1. prev is undefined → legacy API response (backend not redeployed yet)
+  //  2. prev is a number > 0 → real comparison possible
+  //  3. prev === 0 → no spend/value in prev period (current may still be > 0)
+  const hasComparison = metric.prev !== undefined && metric.prev > 0;
+  const prevWasZeroButCurrentExists = metric.prev === 0 && metric.value > 0;
+
   const deltaPositive = metric.positive
     ? metric.delta >= 0
     : metric.delta <= 0;
-  const deltaColor = !hasBaseline
-    ? "var(--text-muted)"
+  const deltaColor = !hasComparison
+    ? prevWasZeroButCurrentExists
+      ? (metric.positive ? "#22c55e" : "#ef4444")
+      : "var(--text-muted)"
     : metric.delta === 0
     ? "var(--text-secondary)"
     : deltaPositive
     ? "#22c55e"
     : "#ef4444";
-  const arrow = !hasBaseline ? "—" : metric.delta > 0 ? "↑" : metric.delta < 0 ? "↓" : "—";
+  const arrow = !hasComparison ? (prevWasZeroButCurrentExists ? "↑" : "—") : metric.delta > 0 ? "↑" : metric.delta < 0 ? "↓" : "—";
 
   return (
     <div
@@ -60,12 +68,25 @@ export default function KpiCard({ label, metric, format, currency = "INR", icon,
           <div style={{ height: small ? 20 : 24, width: 80, background: "var(--bg-input)", borderRadius: 4, animation: "pulse 1.5s ease-in-out infinite" }} />
         ) : fmt(metric.value, format, currency)}
       </div>
-      <div style={{ fontSize: 11, color: deltaColor, display: "flex", alignItems: "center", gap: 3 }} title={hasBaseline ? `Previous: ${fmt(metric.prev!, format, currency)}` : "No data for previous period"}>
-        {hasBaseline ? (
+      <div style={{ fontSize: 11, color: deltaColor, display: "flex", alignItems: "center", gap: 3 }}
+        title={
+          hasComparison ? `Previous: ${fmt(metric.prev!, format, currency)}` :
+          prevWasZeroButCurrentExists ? `Previous period had 0 ${label.toLowerCase()} — extend refresh window for older baseline` :
+          metric.prev === undefined ? "Comparison data not available (backend may need redeploy)" :
+          "No activity in either period"
+        }>
+        {hasComparison ? (
           <>
             <span style={{ fontWeight: 600 }}>{arrow} {Math.abs(metric.delta).toFixed(1)}%</span>
             <span style={{ color: "var(--text-muted)" }}>vs prev period</span>
           </>
+        ) : prevWasZeroButCurrentExists ? (
+          <>
+            <span style={{ fontWeight: 600 }}>{arrow} new</span>
+            <span style={{ color: "var(--text-muted)" }}>vs prev period (was 0)</span>
+          </>
+        ) : metric.prev === undefined ? (
+          <span style={{ color: "var(--text-muted)" }}>— comparison loading</span>
         ) : (
           <span style={{ color: "var(--text-muted)" }}>— no prior data</span>
         )}
