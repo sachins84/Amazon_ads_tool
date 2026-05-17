@@ -217,6 +217,9 @@ export default function OptimizerPage() {
             </div>
           )}
         </div>
+
+        {/* Outcomes — scored APPLIED suggestions */}
+        <OutcomesPanel accountId={accountId} currency={currency} />
       </main>
     </div>
   );
@@ -287,6 +290,166 @@ function Row({ s, currency, reviewer, onApplied }: { s: Suggestion; currency: st
         )}
       </Td>
     </tr>
+  );
+}
+
+// ─── Outcomes panel ─────────────────────────────────────────────────────────
+
+interface OutcomeRow {
+  suggestion_id: string;
+  window_days: number;
+  spend_before: number; sales_before: number; orders_before: number; roas_before: number | null;
+  spend_after:  number; sales_after:  number; orders_after:  number; roas_after:  number | null;
+  captured_at: string;
+}
+
+interface AppliedRow {
+  id: string;
+  target_type: string;
+  target_id: string;
+  target_name: string | null;
+  program: string | null;
+  action_type: string;
+  action_value: number | null;
+  override_value: number | null;
+  current_value: number | null;
+  bucket: Bucket | null;
+  reason: string;
+  applied_at: string;
+  reviewer: string | null;
+}
+
+const OUTCOME_WINDOWS = [1, 3, 7, 14] as const;
+
+function OutcomesPanel({ accountId, currency }: { accountId: string; currency: string }) {
+  const [data, setData] = useState<{ suggestions: AppliedRow[]; outcomes: Record<string, OutcomeRow[]> }>({ suggestions: [], outcomes: {} });
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!accountId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/optimizer/outcomes?accountId=${accountId}&limit=200`, { cache: "no-store" });
+      if (res.ok) setData(await res.json());
+    } finally { setLoading(false); }
+  }, [accountId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function recapture() {
+    if (!accountId) return;
+    setRefreshing(true);
+    try {
+      await fetch(`/api/optimizer/outcomes?accountId=${accountId}`, { method: "POST" });
+      await load();
+    } finally { setRefreshing(false); }
+  }
+
+  if (!accountId) return null;
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+        <div>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>Outcomes</h2>
+          <p style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+            Applied suggestions, scored against the same N-day window before vs after — feeds future engine tuning.
+          </p>
+        </div>
+        <button onClick={recapture} disabled={refreshing} style={{ ...chipStyleOn(false), opacity: refreshing ? 0.6 : 1 }}>
+          {refreshing ? "Scoring…" : "↻ Recapture"}
+        </button>
+      </div>
+
+      <div style={card}>
+        {loading ? (
+          <div style={{ padding: 18, textAlign: "center", color: "var(--text-secondary)", fontSize: 12 }}>Loading…</div>
+        ) : data.suggestions.length === 0 ? (
+          <div style={{ padding: 18, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+            No applied suggestions yet. Apply one above and outcomes will land here as days pass.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                  <Th>Applied</Th>
+                  <Th>Bucket</Th>
+                  <Th align="left">Name</Th>
+                  <Th align="right">Action</Th>
+                  {OUTCOME_WINDOWS.map((w) => <Th key={w} align="right">{w}d ROAS</Th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {data.suggestions.map((s) => (
+                  <OutcomeTableRow
+                    key={s.id}
+                    s={s}
+                    outcomes={data.outcomes[s.id] ?? []}
+                    currency={currency}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutcomeTableRow({ s, outcomes, currency }: { s: AppliedRow; outcomes: OutcomeRow[]; currency: string }) {
+  const byWindow = new Map(outcomes.map((o) => [o.window_days, o]));
+  const bucket = s.bucket ?? "HOLD";
+  const c = BUCKET_COLOR[bucket];
+  const appliedDate = s.applied_at.slice(0, 10);
+  const action = s.action_type === "PAUSE"
+    ? "PAUSE"
+    : (s.override_value ?? s.action_value) != null
+      ? fmt(s.override_value ?? s.action_value!, "currency", currency)
+      : "—";
+
+  return (
+    <tr style={{ borderBottom: "1px solid var(--bg-input)" }}>
+      <Td style={{ color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{appliedDate}</Td>
+      <Td><span style={{ padding: "2px 6px", borderRadius: 4, background: c.bg, color: c.fg, fontSize: 10, fontWeight: 600 }}>{c.label}</span></Td>
+      <Td style={{ color: "var(--text-primary)", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.target_name ?? s.target_id}>
+        {s.target_name ?? s.target_id}
+        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{s.target_type.replace("_"," ")}{s.program ? ` · ${s.program}` : ""}</div>
+      </Td>
+      <Td align="right" style={{ color: "var(--text-primary)", whiteSpace: "nowrap" }}>{action}</Td>
+      {OUTCOME_WINDOWS.map((w) => {
+        const o = byWindow.get(w);
+        if (!o) return <Td key={w} align="right"><span style={{ color: "var(--text-muted)" }}>—</span></Td>;
+        return <Td key={w} align="right"><RoasDelta before={o.roas_before} after={o.roas_after} spendAfter={o.spend_after} /></Td>;
+      })}
+    </tr>
+  );
+}
+
+function RoasDelta({ before, after, spendAfter }: { before: number | null; after: number | null; spendAfter: number }) {
+  const fmtRoas = (v: number | null) => (v == null ? "—" : v.toFixed(2));
+  const delta = before != null && after != null && before > 0 ? ((after - before) / before) * 100 : null;
+  const noSpend = !spendAfter;
+
+  const color = noSpend
+    ? "var(--text-muted)"
+    : delta == null ? "var(--text-secondary)"
+    : delta >= 5 ? "var(--c-success-text)"
+    : delta <= -5 ? "var(--c-danger-text)"
+    : "var(--text-secondary)";
+
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.1 }}>
+      <span style={{ color: "var(--text-primary)" }}>{fmtRoas(before)} → {fmtRoas(after)}</span>
+      {delta != null && (
+        <span style={{ fontSize: 9, color }}>
+          {delta >= 0 ? "↑" : "↓"} {Math.abs(delta).toFixed(0)}%
+        </span>
+      )}
+      {noSpend && <span style={{ fontSize: 9, color }}>no spend</span>}
+    </div>
   );
 }
 

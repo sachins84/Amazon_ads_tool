@@ -141,6 +141,26 @@ function migrate(db: Database.Database) {
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- ─── Suggestion outcomes ─────────────────────────────────────────────
+    -- For each APPLIED suggestion we snapshot the (sum) metrics in the
+    -- N days BEFORE apply_date and the N days AFTER, so the optimizer can
+    -- score itself retroactively. One row per (suggestion_id, window_days).
+    CREATE TABLE IF NOT EXISTS suggestion_outcomes (
+      suggestion_id   TEXT NOT NULL REFERENCES suggestions(id) ON DELETE CASCADE,
+      window_days     INTEGER NOT NULL,    -- 1, 3, 7, 14
+      spend_before    REAL NOT NULL DEFAULT 0,
+      sales_before    REAL NOT NULL DEFAULT 0,
+      orders_before   INTEGER NOT NULL DEFAULT 0,
+      roas_before     REAL,
+      spend_after     REAL NOT NULL DEFAULT 0,
+      sales_after     REAL NOT NULL DEFAULT 0,
+      orders_after    INTEGER NOT NULL DEFAULT 0,
+      roas_after      REAL,
+      captured_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (suggestion_id, window_days)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sugg_outcomes_captured ON suggestion_outcomes (captured_at);
+
     -- ─── Suggestion runs (audit log) ─────────────────────────────────────
     CREATE TABLE IF NOT EXISTS suggestion_runs (
       id              TEXT PRIMARY KEY,

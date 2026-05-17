@@ -20,6 +20,7 @@ import {
   fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
   type Program,
 } from "./reports";
+import { captureOutcomesForAccount } from "@/lib/rules/outcome-capture";
 
 export interface RefreshResult {
   accountId: string;
@@ -210,6 +211,16 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     durationMs,
     error: errors.filter((e) => e.phase === "targeting" || e.phase === "list_keywords" || e.phase === "list_targets").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
   });
+
+  // ─── Outcome capture ─────────────────────────────────────────────────
+  // Now that fresh metrics are in the store, score any APPLIED suggestions
+  // whose after-windows have just become measurable. Cheap (reads only the
+  // tiny APPLIED set + already-pulled daily rows); failures are non-fatal.
+  try {
+    captureOutcomesForAccount(accountId);
+  } catch (err) {
+    console.error(`[refresh] outcome-capture ${accountId} failed:`, String(err));
+  }
 
   return {
     accountId,
