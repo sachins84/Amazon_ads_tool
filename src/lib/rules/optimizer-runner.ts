@@ -19,7 +19,8 @@ import {
   readTargetingMetrics, readTargetingMeta,
 } from "@/lib/db/metrics-store";
 import {
-  evaluateEntity, type OptimizerObjective, type OptimizerEntity, type WindowMetrics,
+  evaluateEntity, effectiveTarget,
+  type OptimizerObjective, type OptimizerEntity, type WindowMetrics, type OptimizerSuggestion,
 } from "./optimizer";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { inferIntent, type Intent } from "@/lib/amazon-api/intent";
@@ -168,19 +169,76 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
     };
   });
 
-  // ─── Run the engine ─────────────────────────────────────────────────────
+  // ─── Hierarchical cascade ───────────────────────────────────────────────
+  // Pass 1: keywords / product targets — find PAUSE candidates first.
+  // Pass 2: ad groups — re-evaluate with the bad children removed. If the
+  //   projected ACOS now meets target, the ad-group action is downgraded to
+  //   HOLD ("KW-pauses sufficient").
+  // Pass 3: campaigns — same logic, removing both the KW pauses and the
+  //   ad-group pauses we ended up keeping.
   const rule = ensureOptimizerRule();
-  const allEntities = [...campaignEntities, ...adGroupEntities, ...targetEntities];
-
-  const inserts: Parameters<typeof createSuggestions>[0] = [];
+  const evalMap = new Map<string, OptimizerSuggestion>();
   const byBucket: Record<string, number> = {};
 
-  for (const e of allEntities) {
+  // Pass 1
+  for (const e of targetEntities) {
     if (e.state !== "ENABLED" && e.state !== "PAUSED") continue;
-    const out = evaluateEntity(e, input.objective);
-    if (out.bucket === "HOLD") continue;
-    byBucket[out.bucket] = (byBucket[out.bucket] ?? 0) + 1;
+    evalMap.set(e.id, evaluateEntity(e, input.objective));
+  }
 
+  const adGroupDeflation = new Map<string, Deflation>();
+  const campaignDeflation = new Map<string, Deflation>();
+  for (const e of targetEntities) {
+    const ev = evalMap.get(e.id);
+    if (!ev || ev.bucket !== "PAUSE") continue;
+    const d = entityDeflation(e);
+    if (e.adGroupId)  addDeflation(adGroupDeflation,  e.adGroupId,  d);
+    if (e.campaignId) addDeflation(campaignDeflation, e.campaignId, d);
+  }
+
+  // Pass 2
+  for (const e of adGroupEntities) {
+    if (e.state !== "ENABLED" && e.state !== "PAUSED") continue;
+    const raw = evaluateEntity(e, input.objective);
+    const d = adGroupDeflation.get(e.id);
+    const cascaded = cascadeIfHelps(e, raw, d, input.objective, "KW");
+    evalMap.set(e.id, cascaded);
+  }
+
+  // Roll ad-group level PAUSE recommendations up into campaign deflation —
+  // the campaign's projected ACOS should account for those too.
+  for (const e of adGroupEntities) {
+    const ev = evalMap.get(e.id);
+    if (!ev || ev.bucket !== "PAUSE") continue;
+    if (!e.campaignId) continue;
+    const ownKwDef = adGroupDeflation.get(e.id);
+    const remaining: Deflation = {
+      spend:       Math.max(0, e.m7d.spend       - (ownKwDef?.spend       ?? 0)),
+      sales:       Math.max(0, e.m7d.sales       - (ownKwDef?.sales       ?? 0)),
+      orders:      Math.max(0, e.m7d.orders      - (ownKwDef?.orders      ?? 0)),
+      clicks:      Math.max(0, e.m7d.clicks      - (ownKwDef?.clicks      ?? 0)),
+      impressions: Math.max(0, e.m7d.impressions - (ownKwDef?.impressions ?? 0)),
+      count: 1,
+    };
+    addDeflation(campaignDeflation, e.campaignId, remaining);
+  }
+
+  // Pass 3
+  for (const e of campaignEntities) {
+    if (e.state !== "ENABLED" && e.state !== "PAUSED") continue;
+    const raw = evaluateEntity(e, input.objective);
+    const d = campaignDeflation.get(e.id);
+    const cascaded = cascadeIfHelps(e, raw, d, input.objective, "child");
+    evalMap.set(e.id, cascaded);
+  }
+
+  // Build inserts
+  const allEntities = [...targetEntities, ...adGroupEntities, ...campaignEntities];
+  const inserts: Parameters<typeof createSuggestions>[0] = [];
+  for (const e of allEntities) {
+    const out = evalMap.get(e.id);
+    if (!out || out.bucket === "HOLD") continue;
+    byBucket[out.bucket] = (byBucket[out.bucket] ?? 0) + 1;
     inserts.push({
       ruleId:        rule.id,
       accountId:     input.accountId,
@@ -199,23 +257,16 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
 
   const created = createSuggestions(inserts);
 
-  // Stamp the bucket / signals / confidence on the rows we just inserted.
-  // Suggestions table fields added in the schema migration.
+  // Stamp bucket / signals / confidence on the rows we just inserted.
   const stmt = getDb().prepare(`
     UPDATE suggestions SET bucket = ?, signals_json = ?, confidence = ?
     WHERE rule_id = ? AND account_id = ? AND target_id = ? AND status = 'PENDING'
-      AND created_at >= datetime('now', '-30 seconds')
+      AND created_at >= datetime('now', '-60 seconds')
   `);
-  for (let i = 0; i < inserts.length; i++) {
-    const e = allEntities.find((x) => x.id === inserts[i].targetId);
-    if (!e) continue;
-    const sig = inserts[i].metricSnapshot as unknown as Record<string, unknown>;
-    stmt.run(
-      (sig?.bucket as string) ?? bucketByActionType(inserts[i].actionType, sig),
-      JSON.stringify(sig),
-      (sig?.confidence as number | undefined) ?? null,
-      rule.id, input.accountId, inserts[i].targetId,
-    );
+  for (const ins of inserts) {
+    const out = evalMap.get(ins.targetId);
+    if (!out) continue;
+    stmt.run(out.bucket, JSON.stringify(out.signals), out.confidence, rule.id, input.accountId, ins.targetId);
   }
 
   // Audit log row
@@ -224,10 +275,6 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(uuidv4(), input.accountId, null, "1d/3d/7d", allEntities.length, created);
 
-  // Cleaner: replace the bulk update with one that uses cached bucket values.
-  // (The query above relied on bucket sitting in metricSnapshot — fix below.)
-  syncOptimizerFields(rule.id, input.accountId, inserts, allEntities, input.objective);
-
   return {
     accountId: input.accountId,
     objectiveId: null,
@@ -235,6 +282,84 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
     suggestionsCreated: created,
     byBucket,
     durationMs: Date.now() - t0,
+  };
+}
+
+// ─── Cascade helpers ────────────────────────────────────────────────────────
+
+interface Deflation {
+  spend: number; sales: number; orders: number; clicks: number; impressions: number;
+  count: number;
+}
+
+function entityDeflation(e: OptimizerEntity): Deflation {
+  return {
+    spend: e.m7d.spend, sales: e.m7d.sales, orders: e.m7d.orders,
+    clicks: e.m7d.clicks, impressions: e.m7d.impressions, count: 1,
+  };
+}
+
+function addDeflation(map: Map<string, Deflation>, parentId: string, d: Deflation) {
+  const cur = map.get(parentId);
+  if (!cur) { map.set(parentId, { ...d }); return; }
+  cur.spend += d.spend; cur.sales += d.sales; cur.orders += d.orders;
+  cur.clicks += d.clicks; cur.impressions += d.impressions;
+  cur.count += d.count;
+}
+
+/**
+ * If the raw evaluation wants a SCALE_DOWN / BID_DOWN / PAUSE on this entity
+ * but the projected metrics (with flagged children removed) would meet
+ * target, downgrade to HOLD and explain the cascade. If they wouldn't meet
+ * target, annotate the original reason so reviewers know surgical fixes
+ * alone aren't enough.
+ *
+ * `childKind` is just a label for the reason string ("KW" or "child").
+ */
+function cascadeIfHelps(
+  e: OptimizerEntity,
+  raw: OptimizerSuggestion,
+  d: Deflation | undefined,
+  obj: OptimizerObjective,
+  childKind: string,
+): OptimizerSuggestion {
+  if (!d || d.count === 0) return raw;
+
+  const downgradable = raw.bucket === "SCALE_DOWN" || raw.bucket === "BID_DOWN" || raw.bucket === "PAUSE";
+  if (!downgradable) return raw;
+
+  const target = effectiveTarget(e, obj);
+  const projSpend = Math.max(0, e.m7d.spend - d.spend);
+  const projSales = Math.max(0, e.m7d.sales - d.sales);
+  const projAcos  = projSales > 0 ? (projSpend / projSales) * 100 : null;
+
+  // Slack: allow up to 10% above target before we still escalate.
+  if (projAcos != null && projAcos <= target * 1.1) {
+    return {
+      ...raw,
+      bucket: "HOLD",
+      actionType: "ENABLE",
+      actionValue: null,
+      reason: `Pausing ${d.count} ${childKind}${d.count > 1 ? "s" : ""} projects ACOS ${projAcos.toFixed(1)}% ≤ target ${target.toFixed(1)}%. No ${e.type === "CAMPAIGN" ? "campaign" : "ad-group"}-level change needed.`,
+      confidence: 0.7,
+      signals: {
+        ...raw.signals,
+        cascadeChildrenPaused: d.count,
+        cascadeProjectedAcos:  projAcos,
+      } as unknown as OptimizerSuggestion["signals"],
+    };
+  }
+
+  // Cascade can't save it — keep original action, prefix reason.
+  const projStr = projAcos != null ? `${projAcos.toFixed(1)}%` : "still no sales";
+  return {
+    ...raw,
+    reason: `Even after pausing ${d.count} ${childKind}${d.count > 1 ? "s" : ""}, projected ACOS ${projStr} > target ${target.toFixed(1)}%. ${raw.reason}`,
+    signals: {
+      ...raw.signals,
+      cascadeChildrenPaused: d.count,
+      cascadeProjectedAcos:  projAcos,
+    } as unknown as OptimizerSuggestion["signals"],
   };
 }
 
@@ -320,32 +445,3 @@ function relativeRange(days: number) {
   return { startDate: fmt(start), endDate: fmt(end) };
 }
 
-// Sync the new optimizer columns onto just-inserted suggestion rows.
-function syncOptimizerFields(
-  ruleId: string,
-  accountId: string,
-  inserts: Array<{ targetId: string; actionType: string; metricSnapshot: unknown }>,
-  entities: OptimizerEntity[],
-  obj: OptimizerObjective,
-) {
-  const stmt = getDb().prepare(`
-    UPDATE suggestions
-    SET bucket = ?, signals_json = ?, confidence = ?
-    WHERE rule_id = ? AND account_id = ? AND target_id = ? AND status = 'PENDING'
-      AND created_at >= datetime('now', '-60 seconds')
-  `);
-  for (const ins of inserts) {
-    const e = entities.find((x) => x.id === ins.targetId);
-    if (!e) continue;
-    const out = evaluateEntity(e, obj);  // recompute to grab bucket + confidence cleanly
-    stmt.run(out.bucket, JSON.stringify(out.signals), out.confidence, ruleId, accountId, ins.targetId);
-  }
-}
-
-function bucketByActionType(actionType: string, _sig: unknown): string {
-  // Fallback bucket inference if we somehow miss the engine's call.
-  if (actionType === "PAUSE") return "PAUSE";
-  if (actionType === "SET_BID") return "BID_DOWN";
-  if (actionType === "SET_BUDGET") return "SCALE_DOWN";
-  return "HOLD";
-}
