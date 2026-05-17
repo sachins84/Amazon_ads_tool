@@ -96,6 +96,7 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     portfolioId: c.portfolioId ?? null,
     targetingType: c.targetingType ?? null,
     brandEntityId: c.brandEntityId ?? null,
+    format: c.format,
   }));
 
   const campaignDaily: CampaignDailyRow[] = campaignReports.rows

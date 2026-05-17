@@ -14,6 +14,8 @@ import TopNav from "@/components/shared/TopNav";
 import { fmt } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
 import type { Suggestion, Bucket, SuggestionStatus } from "@/lib/rules/types";
+import { ALL_INTENTS, type Intent, intentLabel } from "@/lib/amazon-api/intent";
+import { ALL_OPTIMIZER_PROGRAMS, ANY, type OptimizerProgram, type AcosTargetRow } from "@/lib/db/acos-targets-repo";
 
 const BUCKETS: Bucket[] = ["SCALE_UP","BID_UP","SCALE_DOWN","BID_DOWN","PAUSE","HOLD"];
 
@@ -31,7 +33,7 @@ export default function OptimizerPage() {
   const accountId = activeAccount?.id ?? "";
   const currency  = activeAccount?.adsMarketplace === "IN" ? "INR" : "USD";
 
-  const [targetRoas,         setTargetRoas]         = useState("2.5");
+  const [defaultTargetAcos,  setDefaultTargetAcos]  = useState("25");
   const [maxScaleUpPct,      setMaxScaleUpPct]      = useState("20");
   const [maxScaleDownPct,    setMaxScaleDownPct]    = useState("30");
   const [minSpendThreshold,  setMinSpendThreshold]  = useState("100");
@@ -74,7 +76,7 @@ export default function OptimizerPage() {
         body: JSON.stringify({
           accountId,
           objective: {
-            targetRoas:              parseFloat(targetRoas),
+            defaultTargetAcos:       parseFloat(defaultTargetAcos),
             maxScaleUpPct:           parseFloat(maxScaleUpPct),
             maxScaleDownPct:         parseFloat(maxScaleDownPct),
             minSpendThreshold:       parseFloat(minSpendThreshold),
@@ -119,7 +121,7 @@ export default function OptimizerPage() {
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>AI Optimizer</h1>
             <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
-              {accountId ? `${activeAccount?.name} · ${currency}` : "Pick a brand to start"} · decisions driven by 1d/3d/7d ROAS, trend, impression share & CPC
+              {accountId ? `${activeAccount?.name} · ${currency}` : "Pick a brand to start"} · target ACOS per (program × intent), 1d/3d/7d windows, trend, impression share & CPC
             </p>
           </div>
           <input
@@ -128,12 +130,15 @@ export default function OptimizerPage() {
           />
         </div>
 
+        {/* Target ACOS matrix */}
+        <AcosTargetMatrix accountId={accountId} />
+
         {/* Objective + caps */}
         <div style={{ ...card, marginBottom: 14, padding: 16 }}>
-          <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Objective</div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Defaults & caps</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr) auto", gap: 12, alignItems: "end" }}>
-            <Field label={`Target ROAS (${currency} sales / spend)`}>
-              <input value={targetRoas} onChange={(e) => setTargetRoas(e.target.value)} type="number" step="0.1" min="0.1" style={inputStyle} />
+            <Field label="Default ACOS % (fallback)">
+              <input value={defaultTargetAcos} onChange={(e) => setDefaultTargetAcos(e.target.value)} type="number" step="0.5" min="0.5" style={inputStyle} />
             </Field>
             <Field label="Max scale-up %">
               <input value={maxScaleUpPct} onChange={(e) => setMaxScaleUpPct(e.target.value)} type="number" style={inputStyle} />
@@ -290,6 +295,146 @@ function Row({ s, currency, reviewer, onApplied }: { s: Suggestion; currency: st
         )}
       </Td>
     </tr>
+  );
+}
+
+// ─── ACOS target matrix editor ──────────────────────────────────────────────
+
+const PROGRAM_LABEL: Record<OptimizerProgram, string> = {
+  SP: "SP", SB: "SB", SB_VIDEO: "SB Video", SD: "SD",
+};
+
+type CellKey = `${OptimizerProgram | typeof ANY}|${Intent | typeof ANY}`;
+type CellMap = Record<CellKey, string>; // string so blank cells stay editable
+
+function AcosTargetMatrix({ accountId }: { accountId: string }) {
+  const [cells, setCells] = useState<CellMap>({} as CellMap);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    if (!accountId) return;
+    const res = await fetch(`/api/optimizer/targets?accountId=${accountId}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const j = await res.json() as { targets: AcosTargetRow[] };
+    const next: CellMap = {} as CellMap;
+    for (const t of j.targets) {
+      next[`${t.program}|${t.intent}` as CellKey] = String(t.targetAcos);
+    }
+    setCells(next);
+    setDirty(false);
+  }, [accountId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  function setCell(p: OptimizerProgram | typeof ANY, i: Intent | typeof ANY, v: string) {
+    const key = `${p}|${i}` as CellKey;
+    setCells((prev) => ({ ...prev, [key]: v }));
+    setDirty(true);
+  }
+
+  async function save() {
+    if (!accountId) return;
+    setSaving(true);
+    try {
+      const targets: AcosTargetRow[] = [];
+      for (const [key, val] of Object.entries(cells)) {
+        const trimmed = String(val ?? "").trim();
+        if (!trimmed) continue;
+        const num = parseFloat(trimmed);
+        if (!Number.isFinite(num) || num <= 0) continue;
+        const [program, intent] = key.split("|") as [AcosTargetRow["program"], AcosTargetRow["intent"]];
+        targets.push({ program, intent, targetAcos: num });
+      }
+      await fetch(`/api/optimizer/targets?accountId=${accountId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targets }),
+      });
+      setDirty(false);
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2500);
+    } finally { setSaving(false); }
+  }
+
+  // Display rows: each intent + an "Any intent" row. Columns: each program + "Any program".
+  const intentRows: (Intent | typeof ANY)[] = [...ALL_INTENTS, ANY];
+  const programCols: (OptimizerProgram | typeof ANY)[] = [...ALL_OPTIMIZER_PROGRAMS, ANY];
+
+  if (!accountId) return null;
+
+  return (
+    <div style={{ ...card, marginBottom: 14, padding: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Target ACOS matrix (%)
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            Most specific cell wins. Leave blank to fall back to (program → intent → default).
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {savedAt && <span style={{ fontSize: 11, color: "var(--c-success-text)" }}>Saved.</span>}
+          <button
+            onClick={save}
+            disabled={!dirty || saving}
+            style={{ ...chipStyleOn(false), background: dirty ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "var(--bg-input)", color: dirty ? "#fff" : "var(--text-muted)", border: "1px solid transparent", padding: "6px 14px" }}
+          >
+            {saving ? "Saving…" : "Save matrix"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+          <thead>
+            <tr style={{ color: "var(--text-secondary)" }}>
+              <th style={{ padding: "6px 8px", textAlign: "left", fontWeight: 500 }}>Intent ↓ / Program →</th>
+              {programCols.map((p) => (
+                <th key={p} style={{ padding: "6px 8px", fontWeight: 600, color: p === ANY ? "var(--text-muted)" : "var(--text-primary)", minWidth: 78 }}>
+                  {p === ANY ? "Any" : PROGRAM_LABEL[p as OptimizerProgram]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {intentRows.map((i) => (
+              <tr key={i} style={{ borderTop: "1px solid var(--bg-input)" }}>
+                <td style={{ padding: "4px 8px", color: i === ANY ? "var(--text-muted)" : "var(--text-primary)", fontWeight: 500 }}>
+                  {i === ANY ? "Any" : intentLabel(i as Intent)}
+                </td>
+                {programCols.map((p) => {
+                  const key = `${p}|${i}` as CellKey;
+                  const v = cells[key] ?? "";
+                  const isFallback = p === ANY || i === ANY;
+                  return (
+                    <td key={key} style={{ padding: 2 }}>
+                      <input
+                        value={v}
+                        onChange={(e) => setCell(p, i, e.target.value)}
+                        type="number"
+                        step="1"
+                        min="1"
+                        placeholder={isFallback ? "—" : ""}
+                        style={{
+                          ...inputStyle,
+                          width: 70, textAlign: "right",
+                          padding: "4px 8px", fontSize: 11,
+                          background: isFallback ? "var(--bg-base)" : "var(--bg-input)",
+                          color: v ? "var(--text-primary)" : "var(--text-muted)",
+                        }}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

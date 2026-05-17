@@ -215,6 +215,8 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_amd_account_campaign ON adgroup_metrics_daily (account_id, campaign_id, date);
 
     -- Campaign metadata snapshot (name/state/budget) — refreshed alongside metrics.
+    -- format: 'STANDARD' (default) or 'VIDEO' — only meaningful for SB campaigns;
+    -- lets the optimizer treat SB-Video as its own program for target-ACOS lookups.
     CREATE TABLE IF NOT EXISTS campaign_meta (
       account_id     TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
       campaign_id    TEXT NOT NULL,
@@ -225,8 +227,27 @@ function migrate(db: Database.Database) {
       portfolio_id   TEXT,
       targeting_type TEXT,
       brand_entity_id TEXT,
+      format         TEXT NOT NULL DEFAULT 'STANDARD',
       updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (account_id, campaign_id)
+    );
+
+    -- ─── ACOS target matrix ──────────────────────────────────────────────
+    -- One target per (program, intent) cell. '*' = "any" sentinel (SQLite
+    -- NULLs in PKs are distinct, so we use a string sentinel instead).
+    -- Lookup precedence:
+    --   1. exact (program, intent)
+    --   2. (program, '*')
+    --   3. ('*', intent)
+    --   4. ('*', '*')  ← account default
+    -- Stored as percentage (25 = 25% ACOS).
+    CREATE TABLE IF NOT EXISTS acos_targets (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      program      TEXT NOT NULL,        -- 'SP' | 'SB' | 'SB_VIDEO' | 'SD' | '*'
+      intent       TEXT NOT NULL,        -- 'BRANDED' | 'GENERIC' | 'COMPETITION' | 'AUTO' | 'PAT' | 'OTHER' | '*'
+      target_acos  REAL NOT NULL,        -- percent (e.g. 25)
+      updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, program, intent)
     );
 
     CREATE TABLE IF NOT EXISTS adgroup_meta (
@@ -312,6 +333,7 @@ function migrate(db: Database.Database) {
   addColumnIfMissing(db, "suggestions",           "decision_note",                "TEXT");
   addColumnIfMissing(db, "suggestions",           "confidence",                   "REAL");
   addColumnIfMissing(db, "campaign_metrics_daily","top_of_search_is",             "REAL");
+  addColumnIfMissing(db, "campaign_meta",          "format",                       "TEXT NOT NULL DEFAULT 'STANDARD'");
 }
 
 interface ColumnInfo { name: string }

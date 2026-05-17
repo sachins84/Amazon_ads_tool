@@ -60,6 +60,17 @@ export interface UnifiedCampaign {
   brandEntityId?: string;
   /** SP only: MANUAL or AUTO targeting */
   targetingType?: "MANUAL" | "AUTO";
+  /** STANDARD or VIDEO. Detected from name on SB; always STANDARD elsewhere.
+   *  Lets the optimizer treat SB-Video as its own program. */
+  format:         "STANDARD" | "VIDEO";
+}
+
+/** Detect a Sponsored Brands Video campaign from its name. SB v4 doesn't
+ *  expose creative type at the campaign level, so we rely on naming tokens
+ *  Mosaic uses: SBV, SBVid, Video, Vid. Conservative — only matches whole
+ *  tokens separated by _, -, |, or space. */
+export function isSBVideoName(name: string): boolean {
+  return /(?:^|[_ \-|])(?:SBV|SBVid|Video|Vid)(?:[_ \-|]|$)/i.test(name);
 }
 
 // ─── SP v3 ───────────────────────────────────────────────────────────────────
@@ -209,6 +220,7 @@ export async function listAllCampaigns(
           endDate:       c.endDate,
           portfolioId:   c.portfolioId,
           targetingType: c.targetingType,
+          format:        "STANDARD",
         });
       }
     } else if (program === "SB") {
@@ -223,6 +235,7 @@ export async function listAllCampaigns(
           endDate:       c.endDate,
           portfolioId:   c.portfolioId,
           brandEntityId: c.brandEntityId,
+          format:        isSBVideoName(c.name) ? "VIDEO" : "STANDARD",
         });
       }
     } else if (program === "SD") {
@@ -237,6 +250,7 @@ export async function listAllCampaigns(
           startDate:   c.startDate,
           endDate:     c.endDate,
           portfolioId: c.portfolioId != null ? String(c.portfolioId) : undefined,
+          format:      "STANDARD",
         });
       }
     }

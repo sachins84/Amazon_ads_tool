@@ -10,15 +10,18 @@ export const dynamic = "force-dynamic";
  *   {
  *     accountId: string,
  *     objective: {
- *       targetRoas: number,
- *       maxScaleUpPct?: number,    // default 20
- *       maxScaleDownPct?: number,  // default 30
- *       minSpendThreshold?: number,// default 100
- *       pauseWhenOrdersZeroDays?: number, // default 7
+ *       defaultTargetAcos: number,       // percent, e.g. 25 for 25% ACOS
+ *       maxScaleUpPct?: number,          // default 20
+ *       maxScaleDownPct?: number,        // default 30
+ *       minSpendThreshold?: number,      // default 100
+ *       pauseWhenOrdersZeroDays?: number,// default 7
  *     },
- *     topNAdGroups?: number,    // optimizer caps per level for speed
+ *     topNAdGroups?: number,
  *     topNTargets?: number,
  *   }
+ *
+ * Per-(program, intent) targets come from the acos_targets table — POST
+ * /api/optimizer/targets to set them. defaultTargetAcos is the fallback.
  *
  * Returns: { entitiesScored, suggestionsCreated, byBucket, durationMs }
  */
@@ -26,7 +29,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     accountId?: string;
     objective?: {
-      targetRoas?: number;
+      defaultTargetAcos?: number;
       maxScaleUpPct?: number;
       maxScaleDownPct?: number;
       minSpendThreshold?: number;
@@ -35,14 +38,14 @@ export async function POST(req: NextRequest) {
     topNAdGroups?: number;
     topNTargets?: number;
   };
-  if (!body.accountId || !body.objective?.targetRoas) {
-    return Response.json({ error: "accountId + objective.targetRoas required" }, { status: 400 });
+  if (!body.accountId || !body.objective?.defaultTargetAcos) {
+    return Response.json({ error: "accountId + objective.defaultTargetAcos required" }, { status: 400 });
   }
   try {
     const r = await runOptimizerForAccount({
       accountId: body.accountId,
       objective: {
-        targetRoas:              body.objective.targetRoas,
+        defaultTargetAcos:       body.objective.defaultTargetAcos,
         maxScaleUpPct:           body.objective.maxScaleUpPct           ?? 20,
         maxScaleDownPct:         body.objective.maxScaleDownPct         ?? 30,
         minSpendThreshold:       body.objective.minSpendThreshold       ?? 100,

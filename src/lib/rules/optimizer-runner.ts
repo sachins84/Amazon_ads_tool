@@ -22,6 +22,8 @@ import {
   evaluateEntity, type OptimizerObjective, type OptimizerEntity, type WindowMetrics,
 } from "./optimizer";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
+import { inferIntent, type Intent } from "@/lib/amazon-api/intent";
+import { buildTargetResolver, type OptimizerProgram } from "@/lib/db/acos-targets-repo";
 
 export interface OptimizerRunResult {
   accountId: string;
@@ -55,6 +57,9 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   const r3 = relativeRange(3);
   const r7 = dateRangeFromPreset("Last 7D");
 
+  // ACOS target matrix lookup (one read, in-memory resolver for all entities)
+  const resolveTarget = buildTargetResolver(input.accountId);
+
   // ─── Campaign-level ─────────────────────────────────────────────────────
   const campMeta   = readCampaignMeta(input.accountId);
   const camp1 = aggCampaigns(readCampaignMetrics(input.accountId, r1.startDate, r1.endDate));
@@ -64,18 +69,36 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   // Account-wide CPC benchmark (used as a sanity check on individual entities)
   const acctAvgCpc = avgCpc(Array.from(camp7.values()));
 
-  const campaignEntities: OptimizerEntity[] = campMeta.map((m) => ({
-    id: m.campaignId,
-    name: m.name ?? `Campaign ${m.campaignId}`,
-    type: "CAMPAIGN",
-    program: m.program,
-    state: m.state ?? "ARCHIVED",
-    currentValue: m.dailyBudget ?? 0,
-    m1d: camp1.get(m.campaignId) ?? zeroWindow(),
-    m3d: camp3.get(m.campaignId) ?? zeroWindow(),
-    m7d: camp7.get(m.campaignId) ?? zeroWindow(),
-    benchmark: { avgCpc: acctAvgCpc },
-  }));
+  // Cache campaign-level (program, intent) once — ad groups + targets inherit
+  // these via campaignId join so we don't have to re-classify every keyword.
+  const campContext = new Map<string, { programKey: OptimizerProgram; intent: Intent; targetAcos: number | null }>();
+  for (const m of campMeta) {
+    const programKey: OptimizerProgram = m.program === "SB" && m.format === "VIDEO" ? "SB_VIDEO" : m.program;
+    const intent = inferIntent(m.name);
+    campContext.set(m.campaignId, {
+      programKey, intent,
+      targetAcos: resolveTarget(programKey, intent),
+    });
+  }
+
+  const campaignEntities: OptimizerEntity[] = campMeta.map((m) => {
+    const ctx = campContext.get(m.campaignId)!;
+    return {
+      id: m.campaignId,
+      name: m.name ?? `Campaign ${m.campaignId}`,
+      type: "CAMPAIGN",
+      program: m.program,
+      programKey: ctx.programKey,
+      intent: ctx.intent,
+      targetAcos: ctx.targetAcos ?? undefined,
+      state: m.state ?? "ARCHIVED",
+      currentValue: m.dailyBudget ?? 0,
+      m1d: camp1.get(m.campaignId) ?? zeroWindow(),
+      m3d: camp3.get(m.campaignId) ?? zeroWindow(),
+      m7d: camp7.get(m.campaignId) ?? zeroWindow(),
+      benchmark: { avgCpc: acctAvgCpc },
+    };
+  });
 
   // ─── Ad-group level (top by spend in 7d) ────────────────────────────────
   const agMeta = readAdGroupMeta(input.accountId);
@@ -91,11 +114,15 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   const agByIdMeta = new Map(agMeta.map((a) => [a.adGroupId, a]));
   const adGroupEntities: OptimizerEntity[] = sortedAgIds.map((id) => {
     const m = agByIdMeta.get(id);
+    const ctx = m ? campContext.get(m.campaignId) : undefined;
     return {
       id,
       name: m?.name ?? `Ad Group ${id}`,
       type: "AD_GROUP",
       program: m?.program ?? "SP",
+      programKey: ctx?.programKey,
+      intent: ctx?.intent,
+      targetAcos: ctx?.targetAcos ?? undefined,
       campaignId: m?.campaignId,
       state: m?.state ?? "ARCHIVED",
       currentValue: m?.defaultBid ?? 0,
@@ -120,12 +147,16 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   const tgByIdMeta = new Map(tgMeta.map((t) => [t.targetId, t]));
   const targetEntities: OptimizerEntity[] = sortedTgIds.map((id) => {
     const m = tgByIdMeta.get(id);
+    const ctx = m ? campContext.get(m.campaignId) : undefined;
     const type = m?.kind === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET";
     return {
       id,
       name: m?.display ?? `id ${id}`,
       type,
       program: m?.program ?? "SP",
+      programKey: ctx?.programKey,
+      intent: ctx?.intent,
+      targetAcos: ctx?.targetAcos ?? undefined,
       campaignId: m?.campaignId,
       adGroupId:  m?.adGroupId,
       state: m?.state ?? "ARCHIVED",

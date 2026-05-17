@@ -36,6 +36,7 @@ export interface CampaignMetaRow {
   portfolioId:  string | null;
   targetingType: "MANUAL" | "AUTO" | null;
   brandEntityId: string | null;
+  format:       "STANDARD" | "VIDEO";
 }
 
 export interface AdGroupMetaRow {
@@ -99,8 +100,8 @@ export function upsertCampaignMeta(rows: CampaignMetaRow[]): number {
   if (rows.length === 0) return 0;
   const stmt = getDb().prepare(`
     INSERT INTO campaign_meta
-      (account_id, campaign_id, program, name, state, daily_budget, portfolio_id, targeting_type, brand_entity_id, updated_at)
-    VALUES (@accountId, @campaignId, @program, @name, @state, @dailyBudget, @portfolioId, @targetingType, @brandEntityId, datetime('now'))
+      (account_id, campaign_id, program, name, state, daily_budget, portfolio_id, targeting_type, brand_entity_id, format, updated_at)
+    VALUES (@accountId, @campaignId, @program, @name, @state, @dailyBudget, @portfolioId, @targetingType, @brandEntityId, @format, datetime('now'))
     ON CONFLICT(account_id, campaign_id) DO UPDATE SET
       program         = excluded.program,
       name            = excluded.name,
@@ -109,6 +110,7 @@ export function upsertCampaignMeta(rows: CampaignMetaRow[]): number {
       portfolio_id    = excluded.portfolio_id,
       targeting_type  = excluded.targeting_type,
       brand_entity_id = excluded.brand_entity_id,
+      format          = excluded.format,
       updated_at      = excluded.updated_at
   `);
   const tx = getDb().transaction((items: typeof rows) => {
@@ -182,6 +184,7 @@ interface RawCampaignMetaRow {
   account_id: string; campaign_id: string; program: string;
   name: string | null; state: string | null; daily_budget: number | null;
   portfolio_id: string | null; targeting_type: string | null; brand_entity_id: string | null;
+  format: string | null;
 }
 
 export function readCampaignMeta(accountId: string): CampaignMetaRow[] {
@@ -196,6 +199,7 @@ export function readCampaignMeta(accountId: string): CampaignMetaRow[] {
       portfolioId: r.portfolio_id,
       targetingType: r.targeting_type as CampaignMetaRow["targetingType"],
       brandEntityId: r.brand_entity_id,
+      format: (r.format === "VIDEO" ? "VIDEO" : "STANDARD") as "STANDARD" | "VIDEO",
     }));
 }
 
