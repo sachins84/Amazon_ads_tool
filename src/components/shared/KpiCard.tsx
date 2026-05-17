@@ -86,7 +86,7 @@ export default function KpiCard({ label, metric, format, currency = "INR", icon,
             <span style={{ color: "var(--text-muted)" }}>vs prev period (was 0)</span>
           </>
         ) : metric.prev === undefined ? (
-          <span style={{ color: "var(--text-muted)" }}>— comparison loading</span>
+          <span style={{ color: "var(--text-muted)" }} title="API didn't return a previous-period value. The server needs a redeploy (npm run build + restart) to pick up the new comparison logic.">— no comparison (server needs rebuild)</span>
         ) : (
           <span style={{ color: "var(--text-muted)" }}>— no prior data</span>
         )}
