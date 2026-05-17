@@ -70,12 +70,13 @@ function exploreAccount(accountId: string) {
   const resolveTarget = buildTargetResolver(accountId);
   const sug = latestSuggestionsByTarget(accountId, "CAMPAIGN");
 
-  let pSpend = 0, pSales = 0, pOrders = 0;
+  let pSpend = 0, pSales = 0, pOrders = 0, pClicks = 0, pImpressions = 0;
   const campaigns = meta.map((m) => {
     const programKey: OptimizerProgram = m.program === "SB" && m.format === "VIDEO" ? "SB_VIDEO" : m.program;
     const intent: Intent = inferIntent(m.name);
     const a = agg.get(m.campaignId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
     pSpend += a.spend; pSales += a.sales; pOrders += a.orders;
+    pClicks += a.clicks; pImpressions += a.impressions;
     return {
       campaignId: m.campaignId,
       name: m.name,
@@ -91,7 +92,7 @@ function exploreAccount(accountId: string) {
   });
 
   return {
-    portfolio: bundle(pSpend, pSales, pOrders, 0, 0),
+    portfolio: bundle(pSpend, pSales, pOrders, pClicks, pImpressions),
     campaigns,
     range: r7,
   };
@@ -117,7 +118,21 @@ function exploreCampaign(accountId: string, campaignId: string) {
   const adGroupMeta = readAdGroupMeta(accountId, campaignId);
   const adGroupRows = readAdGroupMetrics(accountId, r7.startDate, r7.endDate, campaignId);
   const agAgg = new Map<string, typeof campAgg>();
+  const adGroupsWithDirectData = new Set<string>();
   for (const r of adGroupRows) {
+    adGroupsWithDirectData.add(r.adGroupId);
+    const cur = agAgg.get(r.adGroupId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    cur.spend += r.cost; cur.sales += r.sales; cur.orders += r.orders;
+    cur.clicks += r.clicks; cur.impressions += r.impressions;
+    agAgg.set(r.adGroupId, cur);
+  }
+  // SP roll-up: Amazon doesn't expose an SP ad-group report, so we sum
+  // targeting_metrics_daily by adGroupId for any ad group without direct data.
+  // (Same pattern as hierarchy-service — see the QA catalog entry on SP rollup.)
+  const tgRowsForRollup = readTargetingMetrics(accountId, r7.startDate, r7.endDate, { campaignId });
+  for (const r of tgRowsForRollup) {
+    if (r.program !== "SP") continue;
+    if (adGroupsWithDirectData.has(r.adGroupId)) continue;
     const cur = agAgg.get(r.adGroupId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
     cur.spend += r.cost; cur.sales += r.sales; cur.orders += r.orders;
     cur.clicks += r.clicks; cur.impressions += r.impressions;
@@ -162,14 +177,23 @@ function exploreAdGroup(accountId: string, adGroupId: string) {
   if (!agMeta) return { error: "Ad group not found" };
 
   const agRows = readAdGroupMetrics(accountId, r7.startDate, r7.endDate).filter((r) => r.adGroupId === adGroupId);
-  const agAgg = agRows.reduce((acc, r) => {
-    acc.spend += r.cost; acc.sales += r.sales; acc.orders += r.orders;
-    acc.clicks += r.clicks; acc.impressions += r.impressions;
-    return acc;
-  }, { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 });
-
   const tgtMeta = readTargetingMeta(accountId, { adGroupId });
   const tgtRows = readTargetingMetrics(accountId, r7.startDate, r7.endDate, { adGroupId });
+
+  // SP fallback: if no direct ad-group rows came back, sum the targeting rows
+  // for this ad group instead — Amazon doesn't expose an SP ad-group report.
+  const agAgg = agRows.length > 0
+    ? agRows.reduce((acc, r) => {
+        acc.spend += r.cost; acc.sales += r.sales; acc.orders += r.orders;
+        acc.clicks += r.clicks; acc.impressions += r.impressions;
+        return acc;
+      }, { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 })
+    : tgtRows.reduce((acc, r) => {
+        acc.spend += r.cost; acc.sales += r.sales; acc.orders += r.orders;
+        acc.clicks += r.clicks; acc.impressions += r.impressions;
+        return acc;
+      }, { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 });
+
   const tgtAgg = new Map<string, typeof agAgg>();
   for (const r of tgtRows) {
     const cur = tgtAgg.get(r.targetId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };

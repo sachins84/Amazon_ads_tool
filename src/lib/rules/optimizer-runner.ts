@@ -102,10 +102,18 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   });
 
   // ─── Ad-group level (top by spend in 7d) ────────────────────────────────
+  // SP doesn't expose an ad-group report — readAdGroupMetrics returns empty
+  // for SP rows. We roll up targeting_metrics_daily by adGroupId for SP so
+  // the engine actually sees the ad-group's metrics. Without this, every SP
+  // ad group falls through to "below min spend" HOLD and the engine never
+  // makes ad-group recommendations.
   const agMeta = readAdGroupMeta(input.accountId);
-  const ag1 = aggAdGroups(readAdGroupMetrics(input.accountId, r1.startDate, r1.endDate));
-  const ag3 = aggAdGroups(readAdGroupMetrics(input.accountId, r3.startDate, r3.endDate));
-  const ag7 = aggAdGroups(readAdGroupMetrics(input.accountId, r7.startDate, r7.endDate));
+  const tgFor1 = readTargetingMetrics(input.accountId, r1.startDate, r1.endDate);
+  const tgFor3 = readTargetingMetrics(input.accountId, r3.startDate, r3.endDate);
+  const tgFor7 = readTargetingMetrics(input.accountId, r7.startDate, r7.endDate);
+  const ag1 = aggAdGroupsWithSPFallback(readAdGroupMetrics(input.accountId, r1.startDate, r1.endDate), tgFor1);
+  const ag3 = aggAdGroupsWithSPFallback(readAdGroupMetrics(input.accountId, r3.startDate, r3.endDate), tgFor3);
+  const ag7 = aggAdGroupsWithSPFallback(readAdGroupMetrics(input.accountId, r7.startDate, r7.endDate), tgFor7);
 
   const sortedAgIds = [...ag7.entries()]
     .sort((a, b) => b[1].spend - a[1].spend)
@@ -136,9 +144,9 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
 
   // ─── Target/keyword level (top by spend in 7d) ──────────────────────────
   const tgMeta = readTargetingMeta(input.accountId);
-  const tg1 = aggTargets(readTargetingMetrics(input.accountId, r1.startDate, r1.endDate));
-  const tg3 = aggTargets(readTargetingMetrics(input.accountId, r3.startDate, r3.endDate));
-  const tg7 = aggTargets(readTargetingMetrics(input.accountId, r7.startDate, r7.endDate));
+  const tg1 = aggTargets(tgFor1);
+  const tg3 = aggTargets(tgFor3);
+  const tg7 = aggTargets(tgFor7);
 
   const sortedTgIds = [...tg7.entries()]
     .sort((a, b) => b[1].spend - a[1].spend)
@@ -416,9 +424,27 @@ function aggCampaigns(rows: { campaignId: string; cost: number; sales: number; o
   return out;
 }
 
-function aggAdGroups(rows: { adGroupId: string; cost: number; sales: number; orders: number; clicks: number; impressions: number }[]): Map<string, WindowMetrics> {
+/**
+ * Aggregate ad-group rows + roll up SP targeting rows into ad-group buckets
+ * for any ad-group that has no direct row (Amazon doesn't expose an SP
+ * ad-group report — same workaround hierarchy-service uses).
+ */
+function aggAdGroupsWithSPFallback(
+  agRows: { adGroupId: string; program: string; cost: number; sales: number; orders: number; clicks: number; impressions: number }[],
+  tgRows: { adGroupId: string; program: string; cost: number; sales: number; orders: number; clicks: number; impressions: number }[],
+): Map<string, WindowMetrics> {
   const out = new Map<string, WindowMetrics>();
-  for (const r of rows) {
+  const hasDirect = new Set<string>();
+  for (const r of agRows) {
+    hasDirect.add(r.adGroupId);
+    const cur = out.get(r.adGroupId) ?? zeroWindow();
+    cur.spend += r.cost; cur.sales += r.sales; cur.orders += r.orders;
+    cur.clicks += r.clicks; cur.impressions += r.impressions;
+    out.set(r.adGroupId, cur);
+  }
+  for (const r of tgRows) {
+    if (r.program !== "SP") continue;
+    if (hasDirect.has(r.adGroupId)) continue;
     const cur = out.get(r.adGroupId) ?? zeroWindow();
     cur.spend += r.cost; cur.sales += r.sales; cur.orders += r.orders;
     cur.clicks += r.clicks; cur.impressions += r.impressions;
