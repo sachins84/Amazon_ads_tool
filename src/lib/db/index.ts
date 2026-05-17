@@ -71,8 +71,27 @@ function migrate(db: Database.Database) {
       comparator      TEXT NOT NULL,       -- 'GTE' | 'LTE' | 'EQ'
       target_value    REAL NOT NULL,
       enabled         INTEGER NOT NULL DEFAULT 1,
+      -- ─── Optimizer config ─── added for the AI optimization engine.
+      target_roas         REAL,             -- desired ROAS floor (e.g. 2.5x)
+      max_scale_up_pct    REAL DEFAULT 20,  -- cap on budget/bid increases
+      max_scale_down_pct  REAL DEFAULT 30,  -- cap on budget/bid decreases
+      min_spend_threshold REAL DEFAULT 100, -- ignore entities below this spend
+      pause_when_orders_zero_days INTEGER DEFAULT 7,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Optimizer run audit log — drives "evolve over time" by letting future
+    -- runs see what was suggested/applied and what happened next.
+    CREATE TABLE IF NOT EXISTS optimization_runs (
+      id              TEXT PRIMARY KEY,
+      account_id      TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      objective_id    TEXT REFERENCES objectives(id) ON DELETE SET NULL,
+      window_label    TEXT,                 -- e.g. "1d/3d/7d"
+      entities_scored INTEGER NOT NULL,
+      suggestions_created INTEGER NOT NULL,
+      error           TEXT,
+      run_at          TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     -- ─── Rules ──────────────────────────────────────────────────────────
@@ -109,8 +128,15 @@ function migrate(db: Database.Database) {
       reason          TEXT NOT NULL,       -- human-readable explanation
       expected_impact_json TEXT,           -- JSON {savedSpend?, addedSales?, ...}
       metric_snapshot_json TEXT,           -- JSON snapshot of metrics that triggered
-      status          TEXT NOT NULL DEFAULT 'PENDING',  -- 'PENDING' | 'APPROVED' | 'DISMISSED' | 'APPLIED' | 'FAILED'
+      status          TEXT NOT NULL DEFAULT 'PENDING',  -- 'PENDING' | 'APPROVED' | 'DISMISSED' | 'APPLIED' | 'FAILED' | 'HELD'
       applied_at      TEXT,
+      -- Optimizer fields
+      bucket          TEXT,                -- 'SCALE_UP' | 'SCALE_DOWN' | 'PAUSE' | 'BID_UP' | 'BID_DOWN' | 'HOLD'
+      signals_json    TEXT,                -- JSON: {roas1d, roas3d, roas7d, trend, impressionShare, cpc, ...}
+      override_value  REAL,                -- reviewer's override of action_value before apply
+      reviewer        TEXT,                -- who approved/dismissed (display name)
+      decision_note   TEXT,                -- reviewer note
+      confidence      REAL,                -- 0..1 — engine's confidence
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -144,6 +170,7 @@ function migrate(db: Database.Database) {
       cost         REAL    NOT NULL DEFAULT 0,
       orders       INTEGER NOT NULL DEFAULT 0,
       sales        REAL    NOT NULL DEFAULT 0,
+      top_of_search_is REAL,             -- top-of-search impression share (0..100); nullable
       updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (account_id, campaign_id, date, program)
     );
@@ -249,4 +276,27 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_tm_account_adgroup ON targeting_meta (account_id, adgroup_id);
   `);
+
+  // ─── Non-destructive column adds for existing prod DBs ──────────────────
+  // CREATE TABLE IF NOT EXISTS doesn't add columns to existing tables, so
+  // walk the schema and add any missing pieces using ALTER TABLE.
+  addColumnIfMissing(db, "objectives",            "target_roas",                  "REAL");
+  addColumnIfMissing(db, "objectives",            "max_scale_up_pct",             "REAL DEFAULT 20");
+  addColumnIfMissing(db, "objectives",            "max_scale_down_pct",           "REAL DEFAULT 30");
+  addColumnIfMissing(db, "objectives",            "min_spend_threshold",          "REAL DEFAULT 100");
+  addColumnIfMissing(db, "objectives",            "pause_when_orders_zero_days",  "INTEGER DEFAULT 7");
+  addColumnIfMissing(db, "suggestions",           "bucket",                       "TEXT");
+  addColumnIfMissing(db, "suggestions",           "signals_json",                 "TEXT");
+  addColumnIfMissing(db, "suggestions",           "override_value",               "REAL");
+  addColumnIfMissing(db, "suggestions",           "reviewer",                     "TEXT");
+  addColumnIfMissing(db, "suggestions",           "decision_note",                "TEXT");
+  addColumnIfMissing(db, "suggestions",           "confidence",                   "REAL");
+  addColumnIfMissing(db, "campaign_metrics_daily","top_of_search_is",             "REAL");
+}
+
+interface ColumnInfo { name: string }
+function addColumnIfMissing(db: Database.Database, table: string, column: string, decl: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[];
+  if (cols.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
 }

@@ -102,6 +102,7 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     .map((r) => ({
       accountId, campaignId: r.campaignId, date: r.date, program: r.program,
       impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+      topOfSearchIS: r.topOfSearchIS,
     }));
 
   const adGroupMeta: AdGroupMetaRow[] = adGroupsResult.adGroups.map((ag) => ({

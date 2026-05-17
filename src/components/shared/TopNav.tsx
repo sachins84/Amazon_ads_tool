@@ -7,6 +7,7 @@ import { useTheme } from "@/lib/theme";
 const tabs = [
   { label: "Master Overview",   href: "/master-overview"   },
   { label: "Targeting 360",     href: "/targeting-360"     },
+  { label: "Optimizer",         href: "/optimizer"         },
   { label: "Rules",             href: "/rules"             },
   { label: "Suggestions",       href: "/suggestions"       },
   { label: "Brand Analytics",   href: "/brand-analytics"   },

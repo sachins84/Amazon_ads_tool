@@ -47,10 +47,12 @@ export const SP_TARGETING_COLUMNS = [
 ];
 
 // Daily-grouped campaign reports — used for both totals AND time series.
+// topOfSearchImpressionShare is included for the optimizer engine.
 export const SP_CAMPAIGN_COLUMNS = [
   "date", "campaignId", "campaignName",
   "impressions", "clicks", "cost",
   "purchases7d", "sales7d", "purchases30d", "sales30d",
+  "topOfSearchImpressionShare",
 ];
 
 export const SB_CAMPAIGN_COLUMNS = [
@@ -255,6 +257,7 @@ export interface UnifiedCampaignRow {
   cost: number;
   orders: number;        // attributed purchases (program-specific window)
   sales: number;         // attributed sales
+  topOfSearchIS: number | null;  // 0..100 percent, null if not provided
 }
 
 function normalizeRow(program: Program, r: Record<string, unknown>): UnifiedCampaignRow {
@@ -264,6 +267,8 @@ function normalizeRow(program: Program, r: Record<string, unknown>): UnifiedCamp
   const sales = program === "SP"
     ? Number(r.sales7d ?? r.sales ?? 0)
     : Number(r.sales ?? 0);
+  const tosRaw = r.topOfSearchImpressionShare;
+  const tos = tosRaw == null || tosRaw === "" ? null : Number(tosRaw);
   return {
     program,
     date:         String(r.date ?? ""),
@@ -274,6 +279,7 @@ function normalizeRow(program: Program, r: Record<string, unknown>): UnifiedCamp
     cost:         Number(r.cost ?? 0),
     orders,
     sales,
+    topOfSearchIS: Number.isFinite(tos) ? tos : null,
   };
 }
 

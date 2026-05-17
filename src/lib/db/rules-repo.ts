@@ -163,6 +163,12 @@ interface SuggestionRow {
   status: string;
   applied_at: string | null;
   created_at: string; updated_at: string;
+  bucket?: string | null;
+  signals_json?: string | null;
+  override_value?: number | null;
+  reviewer?: string | null;
+  decision_note?: string | null;
+  confidence?: number | null;
 }
 function rowToSuggestion(r: SuggestionRow): Suggestion {
   return {
@@ -177,6 +183,12 @@ function rowToSuggestion(r: SuggestionRow): Suggestion {
     status: r.status as SuggestionStatus,
     appliedAt: r.applied_at,
     createdAt: r.created_at, updatedAt: r.updated_at,
+    bucket:        (r.bucket as Suggestion["bucket"]) ?? null,
+    signals:       r.signals_json ? JSON.parse(r.signals_json) : null,
+    overrideValue: r.override_value ?? null,
+    reviewer:      r.reviewer ?? null,
+    decisionNote:  r.decision_note ?? null,
+    confidence:    r.confidence ?? null,
   };
 }
 
@@ -195,7 +207,12 @@ export function listSuggestions(filter: {
   return (getDb().prepare(sql).all(...args) as SuggestionRow[]).map(rowToSuggestion);
 }
 
-export function createSuggestions(rows: Omit<Suggestion, "id" | "status" | "appliedAt" | "createdAt" | "updatedAt">[]): number {
+type CreateSuggestionInput =
+  Omit<Suggestion, "id" | "status" | "appliedAt" | "createdAt" | "updatedAt"
+    | "bucket" | "signals" | "overrideValue" | "reviewer" | "decisionNote" | "confidence">
+  & Partial<Pick<Suggestion, "bucket" | "signals" | "overrideValue" | "reviewer" | "decisionNote" | "confidence">>;
+
+export function createSuggestions(rows: CreateSuggestionInput[]): number {
   if (rows.length === 0) return 0;
   const stmt = getDb().prepare(`
     INSERT INTO suggestions

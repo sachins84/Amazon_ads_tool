@@ -75,7 +75,8 @@ export interface Objective {
   updatedAt: string;
 }
 
-export type SuggestionStatus = "PENDING" | "APPROVED" | "DISMISSED" | "APPLIED" | "FAILED";
+export type SuggestionStatus = "PENDING" | "APPROVED" | "DISMISSED" | "APPLIED" | "FAILED" | "HELD";
+export type Bucket = "SCALE_UP" | "SCALE_DOWN" | "PAUSE" | "BID_UP" | "BID_DOWN" | "HOLD";
 
 export interface Suggestion {
   id: string;
@@ -95,6 +96,13 @@ export interface Suggestion {
   appliedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Optimizer-only fields. Null on non-optimizer suggestions. */
+  bucket: Bucket | null;
+  signals: Record<string, unknown> | null;
+  overrideValue: number | null;
+  reviewer: string | null;
+  decisionNote: string | null;
+  confidence: number | null;
 }
 
 // ─── Dataset rows the engine evaluates over ──────────────────────────────────

@@ -17,6 +17,7 @@ export interface CampaignDailyRow {
   cost: number;
   orders: number;
   sales: number;
+  topOfSearchIS?: number | null;
 }
 
 export interface AdGroupDailyRow extends Omit<CampaignDailyRow, "campaignId"> {
@@ -53,18 +54,19 @@ export function upsertCampaignMetrics(rows: CampaignDailyRow[]): number {
   if (rows.length === 0) return 0;
   const stmt = getDb().prepare(`
     INSERT INTO campaign_metrics_daily
-      (account_id, campaign_id, date, program, impressions, clicks, cost, orders, sales, updated_at)
-    VALUES (@accountId, @campaignId, @date, @program, @impressions, @clicks, @cost, @orders, @sales, datetime('now'))
+      (account_id, campaign_id, date, program, impressions, clicks, cost, orders, sales, top_of_search_is, updated_at)
+    VALUES (@accountId, @campaignId, @date, @program, @impressions, @clicks, @cost, @orders, @sales, @topOfSearchIS, datetime('now'))
     ON CONFLICT(account_id, campaign_id, date, program) DO UPDATE SET
-      impressions = excluded.impressions,
-      clicks      = excluded.clicks,
-      cost        = excluded.cost,
-      orders      = excluded.orders,
-      sales       = excluded.sales,
-      updated_at  = excluded.updated_at
+      impressions      = excluded.impressions,
+      clicks           = excluded.clicks,
+      cost             = excluded.cost,
+      orders           = excluded.orders,
+      sales            = excluded.sales,
+      top_of_search_is = excluded.top_of_search_is,
+      updated_at       = excluded.updated_at
   `);
   const tx = getDb().transaction((items: typeof rows) => {
-    for (const r of items) stmt.run(r);
+    for (const r of items) stmt.run({ topOfSearchIS: null, ...r });
   });
   tx(rows);
   return rows.length;
@@ -143,15 +145,17 @@ interface RawCampaignDailyRow {
   campaign_id: string; date: string; program: string;
   impressions: number; clicks: number; cost: number;
   orders: number; sales: number;
+  top_of_search_is: number | null;
 }
 
 export function readCampaignMetrics(accountId: string, startDate: string, endDate: string): CampaignDailyRow[] {
   return (getDb()
-    .prepare("SELECT campaign_id, date, program, impressions, clicks, cost, orders, sales FROM campaign_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?")
+    .prepare("SELECT campaign_id, date, program, impressions, clicks, cost, orders, sales, top_of_search_is FROM campaign_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?")
     .all(accountId, startDate, endDate) as RawCampaignDailyRow[])
     .map((r) => ({
       accountId, campaignId: r.campaign_id, date: r.date, program: r.program as Program,
       impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+      topOfSearchIS: r.top_of_search_is ?? null,
     }));
 }
 
