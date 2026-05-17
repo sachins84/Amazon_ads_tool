@@ -170,27 +170,32 @@ function SingleBrandView({
   chartData: { date: string; spend: number; sales: number }[];
   topCampaigns: OverviewCampaignRow[];
 }) {
+  // Pass the metric straight through so KpiCard sees value + prev + delta.
+  // Fallback object (used while loading or for missing KPIs) has delta:0 and
+  // no prev — KpiCard renders the loading state for those.
   const k = data?.kpis;
-  const spend  = k?.spend?.value ?? 0;
-  const sales  = (k?.sales as { value: number } | undefined)?.value ?? 0;
-  const orders = k?.orders?.value ?? 0;
-  const roas   = k?.roas?.value ?? 0;
-  const acos   = k?.acos?.value ?? 0;
-  const ctr    = k?.ctr?.value ?? 0;
-  const cpc    = k?.cpc?.value ?? 0;
-  const cvr    = k?.cvr?.value ?? 0;
-  const impr   = k?.impressions?.value ?? 0;
-  const clicks = k?.clicks?.value ?? 0;
+  type M = { value: number; prev?: number; delta: number; positive: boolean };
+  const fallback = (positive: boolean): M => ({ value: 0, delta: 0, positive });
+  const spend  = (k?.spend  as M) ?? fallback(false);
+  const sales  = (k?.sales  as M) ?? fallback(true);
+  const orders = (k?.orders as M) ?? fallback(true);
+  const roas   = (k?.roas   as M) ?? fallback(true);
+  const acos   = (k?.acos   as M) ?? fallback(false);
+  const ctr    = (k?.ctr    as M) ?? fallback(true);
+  const cpc    = (k?.cpc    as M) ?? fallback(false);
+  const cvr    = (k?.cvr    as M) ?? fallback(true);
+  const impr   = (k?.impressions as M) ?? fallback(true);
+  const clicks = (k?.clicks as M) ?? fallback(true);
 
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
         {loading ? Array.from({ length: 4 }).map((_, i) => <KpiCardSkeleton key={i} />) : (
           <>
-            <KpiCard label="Spend"  metric={{ value: spend,  delta: 0, positive: false }} format="currency"   currency={currency} />
-            <KpiCard label="Sales"  metric={{ value: sales,  delta: 0, positive: true  }} format="currency"   currency={currency} />
-            <KpiCard label="Orders" metric={{ value: orders, delta: 0, positive: true  }} format="number"     currency={currency} />
-            <KpiCard label="ROAS"   metric={{ value: roas,   delta: 0, positive: true  }} format="multiplier" currency={currency} />
+            <KpiCard label="Spend"  metric={spend}  format="currency"   currency={currency} />
+            <KpiCard label="Sales"  metric={sales}  format="currency"   currency={currency} />
+            <KpiCard label="Orders" metric={orders} format="number"     currency={currency} />
+            <KpiCard label="ROAS"   metric={roas}   format="multiplier" currency={currency} />
           </>
         )}
       </div>
@@ -198,12 +203,12 @@ function SingleBrandView({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 16 }}>
         {loading ? Array.from({ length: 6 }).map((_, i) => <KpiCardSkeleton key={i} small />) : (
           <>
-            <KpiCard label="ACOS"        metric={{ value: acos,   delta: 0, positive: false }} format="percent"  currency={currency} small />
-            <KpiCard label="CTR"         metric={{ value: ctr,    delta: 0, positive: true  }} format="percent"  currency={currency} small />
-            <KpiCard label="CPC"         metric={{ value: cpc,    delta: 0, positive: false }} format="currency" currency={currency} small />
-            <KpiCard label="CVR"         metric={{ value: cvr,    delta: 0, positive: true  }} format="percent"  currency={currency} small />
-            <KpiCard label="Impressions" metric={{ value: impr,   delta: 0, positive: true  }} format="compact"  currency={currency} small />
-            <KpiCard label="Clicks"      metric={{ value: clicks, delta: 0, positive: true  }} format="compact"  currency={currency} small />
+            <KpiCard label="ACOS"        metric={acos}   format="percent"  currency={currency} small />
+            <KpiCard label="CTR"         metric={ctr}    format="percent"  currency={currency} small />
+            <KpiCard label="CPC"         metric={cpc}    format="currency" currency={currency} small />
+            <KpiCard label="CVR"         metric={cvr}    format="percent"  currency={currency} small />
+            <KpiCard label="Impressions" metric={impr}   format="compact"  currency={currency} small />
+            <KpiCard label="Clicks"      metric={clicks} format="compact"  currency={currency} small />
           </>
         )}
       </div>
