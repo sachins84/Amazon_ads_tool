@@ -4,12 +4,20 @@
  */
 import type { Program } from "./reports";
 import { dateRangeFromPreset } from "./transform";
+import { prevPeriodFromCurrent } from "./overview-service";
 import { getAccount } from "@/lib/db/accounts";
 import {
   readAdGroupMetrics, readAdGroupMeta,
   readTargetingMetrics, readTargetingMeta,
   getRefreshState,
 } from "@/lib/db/metrics-store";
+
+/** Same shape used as PrevMetrics in overview-service. Kept local to avoid cycles. */
+export interface PrevMetrics {
+  spend: number; sales: number; orders: number;
+  impressions: number; clicks: number;
+  ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+}
 
 export interface AdGroupRow {
   id: string;
@@ -28,6 +36,7 @@ export interface AdGroupRow {
   cvr: number;
   acos: number;
   roas: number;
+  prev?: PrevMetrics;
 }
 
 export interface AdGroupOverview {
@@ -108,6 +117,37 @@ export async function getAdGroupsForCampaign(
     byDate.set(r.date, d);
   }
 
+  // ── Equal-length previous period for row-level deltas ────────────────
+  const { startDate: prevStart, endDate: prevEnd } = prevPeriodFromCurrent(startDate, endDate);
+  const prevDailyRows   = readAdGroupMetrics(accountId, prevStart, prevEnd, campaignId);
+  const prevTargetingRows = readTargetingMetrics(accountId, prevStart, prevEnd, { campaignId });
+  const prevByAg = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
+  const adGroupsWithDirectPrev = new Set<string>();
+  for (const r of prevDailyRows) {
+    adGroupsWithDirectPrev.add(r.adGroupId);
+    const e = prevByAg.get(r.adGroupId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    e.impressions += r.impressions; e.clicks += r.clicks; e.cost += r.cost; e.orders += r.orders; e.sales += r.sales;
+    prevByAg.set(r.adGroupId, e);
+  }
+  for (const r of prevTargetingRows) {
+    if (r.program !== "SP") continue;
+    if (adGroupsWithDirectPrev.has(r.adGroupId)) continue;
+    const e = prevByAg.get(r.adGroupId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    e.impressions += r.impressions; e.clicks += r.clicks; e.cost += r.cost; e.orders += r.orders; e.sales += r.sales;
+    prevByAg.set(r.adGroupId, e);
+  }
+  const prevMetrics = (id: string): PrevMetrics | undefined => {
+    const p = prevByAg.get(id);
+    if (!p) return undefined;
+    return {
+      spend: round2(p.cost), sales: round2(p.sales), orders: p.orders,
+      impressions: p.impressions, clicks: p.clicks,
+      ctr: pct(p.clicks, p.impressions), cpc: div(p.cost, p.clicks),
+      cvr: pct(p.orders, p.clicks), acos: pct(p.cost, p.sales, 1),
+      roas: div(p.sales, p.cost),
+    };
+  };
+
   const rows: AdGroupRow[] = meta.map((ag) => {
     const m = byAg.get(ag.adGroupId);
     const spend = m?.cost ?? 0;
@@ -123,6 +163,7 @@ export async function getAdGroupsForCampaign(
       ctr: pct(clicks, impr), cpc: div(spend, clicks),
       cvr: pct(orders, clicks), acos: pct(spend, sales, 1),
       roas: div(sales, spend),
+      prev: prevMetrics(ag.adGroupId),
     };
   });
 
@@ -138,6 +179,7 @@ export async function getAdGroupsForCampaign(
       ctr: pct(m.clicks, m.impressions), cpc: div(m.cost, m.clicks),
       cvr: pct(m.orders, m.clicks), acos: pct(m.cost, m.sales, 1),
       roas: div(m.sales, m.cost),
+      prev: prevMetrics(adGroupId),
     });
   }
 
@@ -193,6 +235,7 @@ export interface TargetingRow {
   impressions: number;
   clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  prev?: PrevMetrics;
 }
 
 export interface AdGroupTargetingOverview {
@@ -235,6 +278,27 @@ export async function getTargetingForAdGroup(
     byId.set(r.targetId, e);
   }
 
+  // Prev period for row-level deltas on every target.
+  const { startDate: prevStart, endDate: prevEnd } = prevPeriodFromCurrent(startDate, endDate);
+  const prevDailyRows = readTargetingMetrics(accountId, prevStart, prevEnd, { adGroupId });
+  const prevById = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
+  for (const r of prevDailyRows) {
+    const e = prevById.get(r.targetId) ?? { impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    e.impressions += r.impressions; e.clicks += r.clicks; e.cost += r.cost; e.orders += r.orders; e.sales += r.sales;
+    prevById.set(r.targetId, e);
+  }
+  const prevForTarget = (id: string): PrevMetrics | undefined => {
+    const p = prevById.get(id);
+    if (!p) return undefined;
+    return {
+      spend: round2(p.cost), sales: round2(p.sales), orders: p.orders,
+      impressions: p.impressions, clicks: p.clicks,
+      ctr: pct(p.clicks, p.impressions), cpc: div(p.cost, p.clicks),
+      cvr: pct(p.orders, p.clicks), acos: pct(p.cost, p.sales, 1),
+      roas: div(p.sales, p.cost),
+    };
+  };
+
   const errors: AdGroupTargetingOverview["errors"] = {};
 
   const keywords: TargetingRow[] = meta
@@ -250,6 +314,7 @@ export async function getTargetingForAdGroup(
         ctr: pct(a.clicks, a.impressions), cpc: div(a.cost, a.clicks),
         cvr: pct(a.orders, a.clicks), acos: pct(a.cost, a.sales, 1),
         roas: div(a.sales, a.cost),
+        prev: prevForTarget(m.targetId),
       };
     });
 
@@ -266,6 +331,7 @@ export async function getTargetingForAdGroup(
         ctr: pct(a.clicks, a.impressions), cpc: div(a.cost, a.clicks),
         cvr: pct(a.orders, a.clicks), acos: pct(a.cost, a.sales, 1),
         roas: div(a.sales, a.cost),
+        prev: prevForTarget(m.targetId),
       };
     });
 
@@ -282,6 +348,7 @@ export async function getTargetingForAdGroup(
         ctr: pct(a.clicks, a.impressions), cpc: div(a.cost, a.clicks),
         cvr: pct(a.orders, a.clicks), acos: pct(a.cost, a.sales, 1),
         roas: div(a.sales, a.cost),
+        prev: prevForTarget(m.targetId),
       };
     });
 

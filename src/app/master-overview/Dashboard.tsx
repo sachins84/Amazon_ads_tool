@@ -421,11 +421,11 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
                   <Link href={`/master-overview/campaign/${c.id}`} style={{ color: "var(--c-indigo-text)", textDecoration: "none" }}>{c.name}</Link>
                 </Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}</Td>
-                <Td align="right" style={{ color: c.roas >= 2 ? "#22c55e" : c.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{c.roas.toFixed(2)}x</Td>
-                <Td align="right" style={{ color: c.acos > 0 && c.acos <= 25 ? "#22c55e" : c.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{c.acos.toFixed(1)}%</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}<Delta current={c.spend} prev={c.prev?.spend} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}<Delta current={c.sales} prev={c.prev?.sales} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: c.roas >= 2 ? "#22c55e" : c.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{c.roas.toFixed(2)}x<Delta current={c.roas} prev={c.prev?.roas} positive={true} /></Td>
+                <Td align="right" style={{ color: c.acos > 0 && c.acos <= 25 ? "#22c55e" : c.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{c.acos.toFixed(1)}%<Delta current={c.acos} prev={c.prev?.acos} positive={false} /></Td>
               </tr>
             ))}
           </tbody>
@@ -433,6 +433,20 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
       </div>
     </div>
   );
+}
+
+function Delta({ current, prev, positive }: { current: number; prev?: number; positive: boolean }) {
+  if (prev === undefined) return null;
+  if (prev === 0) {
+    if (current === 0) return null;
+    return <div style={{ fontSize: 9, color: positive ? "#22c55e" : "#ef4444", marginTop: 1 }}>↑ new</div>;
+  }
+  const pct = ((current - prev) / Math.abs(prev)) * 100;
+  if (Math.abs(pct) < 0.05) return <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 1 }}>—</div>;
+  const good = positive ? pct > 0 : pct < 0;
+  const color = good ? "#22c55e" : "#ef4444";
+  const arrow = pct > 0 ? "↑" : "↓";
+  return <div style={{ fontSize: 9, color, marginTop: 1 }} title={`Previous: ${prev}`}>{arrow} {Math.abs(pct).toFixed(1)}%</div>;
 }
 
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {

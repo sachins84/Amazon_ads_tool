@@ -22,6 +22,8 @@ export interface OverviewCampaignRow {
   status: "ENABLED" | "PAUSED" | "ARCHIVED";
   budget: number;
   portfolioId: string | null;
+  intent?: "BRANDED" | "GENERIC" | "COMPETITION" | "AUTO" | "PAT" | "OTHER";
+  targetingType?: "MANUAL" | "AUTO";
   spend: number;
   sales: number;
   orders: number;
@@ -32,6 +34,11 @@ export interface OverviewCampaignRow {
   cvr: number;
   acos: number;
   roas: number;
+  prev?: {
+    spend: number; sales: number; orders: number;
+    impressions: number; clicks: number;
+    ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  };
 }
 
 export interface OverviewDailyPoint {

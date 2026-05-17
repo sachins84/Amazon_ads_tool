@@ -20,6 +20,12 @@ type Status  = "ENABLED" | "PAUSED" | "ARCHIVED";
 
 type Intent = "BRANDED" | "GENERIC" | "COMPETITION" | "AUTO" | "PAT" | "OTHER";
 
+interface PrevMetrics {
+  spend: number; sales: number; orders: number;
+  impressions: number; clicks: number;
+  ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+}
+
 interface CampaignRow {
   id: string; name: string; type: Program; status: Status;
   budget: number; portfolioId: string | null;
@@ -28,6 +34,7 @@ interface CampaignRow {
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  prev?: PrevMetrics;
 }
 interface AdGroupRow {
   id: string; name: string; type: Program; status: Status;
@@ -35,6 +42,7 @@ interface AdGroupRow {
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  prev?: PrevMetrics;
 }
 interface TargetingRow {
   id: string; kind: "KEYWORD" | "PRODUCT_TARGET" | "AUTO"; display: string;
@@ -44,6 +52,7 @@ interface TargetingRow {
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  prev?: PrevMetrics;
 }
 
 // Flat-list response shape from /api/targeting (existing endpoint)
@@ -670,12 +679,12 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
                 <Td onClick={() => onDrill(c)} title={c.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{c.name}</Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}</Td>
-                <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x</Td>
-                <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.ctr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}<Delta current={c.spend} prev={c.prev?.spend} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}<Delta current={c.sales} prev={c.prev?.sales} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x<Delta current={c.roas} prev={c.prev?.roas} positive={true} /></Td>
+                <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%<Delta current={c.acos} prev={c.prev?.acos} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.ctr.toFixed(2)}%<Delta current={c.ctr} prev={c.prev?.ctr} positive={true} /></Td>
                 <Td><LastActionPill mark={last[c.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -742,12 +751,12 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, p
                 <Td onClick={() => onDrill(ag)} style={{ cursor: "pointer" }}><Pill text={ag.status} muted={ag.status !== "ENABLED"} /></Td>
                 <Td onClick={() => onDrill(ag)} title={ag.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{ag.name}</Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.orders}</Td>
-                <Td align="right" style={{ color: roasColor(ag.roas) }}>{ag.roas.toFixed(2)}x</Td>
-                <Td align="right" style={{ color: acosColor(ag.acos) }}>{ag.acos.toFixed(1)}%</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.spend, "currency", currency)}<Delta current={ag.spend} prev={ag.prev?.spend} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.sales, "currency", currency)}<Delta current={ag.sales} prev={ag.prev?.sales} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.orders}<Delta current={ag.orders} prev={ag.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: roasColor(ag.roas) }}>{ag.roas.toFixed(2)}x<Delta current={ag.roas} prev={ag.prev?.roas} positive={true} /></Td>
+                <Td align="right" style={{ color: acosColor(ag.acos) }}>{ag.acos.toFixed(1)}%<Delta current={ag.acos} prev={ag.prev?.acos} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%<Delta current={ag.ctr} prev={ag.prev?.ctr} positive={true} /></Td>
                 <Td><LastActionPill mark={last[ag.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -806,14 +815,14 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
                 <Td><Pill text={t.state} muted={t.state !== "ENABLED"} /></Td>
                 <Td title={t.display} style={cellNameStyle}>{t.display}</Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.sales, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.orders}</Td>
-                <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x</Td>
-                <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.ctr.toFixed(2)}%</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.cpc, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.cvr.toFixed(2)}%</Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}<Delta current={t.spend} prev={t.prev?.spend} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.sales, "currency", currency)}<Delta current={t.sales} prev={t.prev?.sales} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.orders}<Delta current={t.orders} prev={t.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x<Delta current={t.roas} prev={t.prev?.roas} positive={true} /></Td>
+                <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%<Delta current={t.acos} prev={t.prev?.acos} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.ctr.toFixed(2)}%<Delta current={t.ctr} prev={t.prev?.ctr} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.cpc, "currency", currency)}<Delta current={t.cpc} prev={t.prev?.cpc} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.cvr.toFixed(2)}%<Delta current={t.cvr} prev={t.prev?.cvr} positive={true} /></Td>
                 <Td><LastActionPill mark={last[t.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -1003,6 +1012,26 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
 }
 function Td({ children, align = "left", style, title, onClick }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string; onClick?: () => void }) {
   return <td onClick={onClick} style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
+}
+
+/**
+ * Small delta indicator below a numeric cell.
+ * - `positive`: true = up-is-good (sales, ROAS, orders). false = up-is-bad (spend, ACOS, CPC).
+ * - Renders nothing when prev is undefined or 0 (no baseline to compare).
+ * - Renders "↑ new" when prev is 0 but current > 0.
+ */
+function Delta({ current, prev, positive }: { current: number; prev?: number; positive: boolean }) {
+  if (prev === undefined) return null;
+  if (prev === 0) {
+    if (current === 0) return null;
+    return <div style={{ fontSize: 9, color: positive ? "#22c55e" : "#ef4444", marginTop: 1 }}>↑ new</div>;
+  }
+  const pct = ((current - prev) / Math.abs(prev)) * 100;
+  if (Math.abs(pct) < 0.05) return <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 1 }}>—</div>;
+  const good = positive ? pct > 0 : pct < 0;
+  const color = good ? "#22c55e" : "#ef4444";
+  const arrow = pct > 0 ? "↑" : "↓";
+  return <div style={{ fontSize: 9, color, marginTop: 1 }} title={`Previous: ${prev}`}>{arrow} {Math.abs(pct).toFixed(1)}%</div>;
 }
 function RowActions({ state, pending, currency, onToggle, onEdit, editLabel }: {
   state: Status;

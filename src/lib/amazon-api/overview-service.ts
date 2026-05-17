@@ -11,6 +11,13 @@ import {
 import type { Program } from "./reports";
 import { inferIntent, type Intent } from "./intent";
 
+/** Previous-period metrics attached to each row. Used by the UI to render deltas. */
+export interface PrevMetrics {
+  spend: number; sales: number; orders: number;
+  impressions: number; clicks: number;
+  ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+}
+
 export interface OverviewResult {
   brandName:   string | null;
   marketplace: string;
@@ -37,6 +44,8 @@ export interface OverviewResult {
     spend: number; sales: number; orders: number;
     impressions: number; clicks: number;
     ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+    /** Equal-length previous period totals + derived metrics. Undefined when no prev data exists. */
+    prev?: PrevMetrics;
   }[];
   spendByType: { name: string; code: Program; value: number; color: string }[];
   dailySeries: { date: string; spend: number; sales: number; orders: number; clicks: number; impressions: number; acos: number; roas: number }[];
@@ -178,6 +187,30 @@ export async function getOverviewForAccount(
   // ── Previous period of equal length (for KPI deltas) ───────────────────
   const { startDate: prevStart, endDate: prevEnd } = prevPeriodFromCurrent(startDate, endDate);
   const prevRows = readCampaignMetrics(accountId, prevStart, prevEnd);
+
+  // Per-campaign prev aggregation — attach to each campaign row for the UI.
+  const prevByCampaign = new Map<string, { spend: number; sales: number; orders: number; impressions: number; clicks: number }>();
+  for (const r of prevRows) {
+    const e = prevByCampaign.get(r.campaignId) ?? { spend: 0, sales: 0, orders: 0, impressions: 0, clicks: 0 };
+    e.spend += r.cost; e.sales += r.sales; e.orders += r.orders;
+    e.impressions += r.impressions; e.clicks += r.clicks;
+    prevByCampaign.set(r.campaignId, e);
+  }
+  // Decorate each campaign row with its prev block.
+  for (const c of campaigns) {
+    const p = prevByCampaign.get(c.id);
+    if (!p) continue;
+    c.prev = {
+      spend: round2(p.spend), sales: round2(p.sales), orders: p.orders,
+      impressions: p.impressions, clicks: p.clicks,
+      ctr:  pct(p.clicks, p.impressions),
+      cpc:  div(p.spend, p.clicks),
+      cvr:  pct(p.orders, p.clicks),
+      acos: pct(p.spend, p.sales, 1),
+      roas: div(p.sales, p.spend),
+    };
+  }
+
   const prevTotals = prevRows.reduce(
     (acc, r) => ({
       spend:       acc.spend + r.cost,
@@ -229,7 +262,7 @@ export async function getOverviewForAccount(
 function zero() { return { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 }; }
 
 /** Returns the period of equal length immediately before [start, end] inclusive. */
-function prevPeriodFromCurrent(start: string, end: string): { startDate: string; endDate: string } {
+export function prevPeriodFromCurrent(start: string, end: string): { startDate: string; endDate: string } {
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   const s = new Date(start);
   const e = new Date(end);
