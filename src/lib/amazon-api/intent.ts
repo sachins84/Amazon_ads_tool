@@ -17,17 +17,30 @@ export function inferIntent(name: string | null | undefined): Intent {
   if (!name) return "OTHER";
   const n = name.toLowerCase();
 
+  // Token-aware separator: matches start, end, underscore, space, dash, pipe.
+  const sep = (token: string) => new RegExp(`(?:^|[_ \\-|])${token}(?:[_ \\-|]|$)`, "i");
+
   // Order matters — match the strongest signal first.
-  if (/\bauto\b|autokw|automatic/i.test(name)) return "AUTO";
-  if (/\bpat\b/i.test(name)) return "PAT";
-  if (/\bbrand\b|branded|\bbb_\b/i.test(name)) {
-    // 'BB_' is BeBodywise (a brand code), not a brand-intent indicator.
-    // Only count BB_ as branded if 'brand' appears separately too.
-    if (/brand/i.test(n.replace(/bb_/gi, ""))) return "BRANDED";
-    if (!/bb_/i.test(name)) return "BRANDED";
+  if (sep("auto").test(n) || /autokw|automatic/.test(n)) return "AUTO";
+  if (sep("pat").test(n)) return "PAT";
+
+  // Branded: 'brand', 'branded', 'br' (as token). 'BB_' alone is the BeBodywise
+  // brand code (not a brand-intent signal), so we don't count it unless the
+  // name ALSO has 'brand' somewhere outside the BB_ prefix.
+  if (/branded|brandkey/.test(n) || sep("brand").test(n) || sep("br").test(n)) {
+    return "BRANDED";
   }
-  if (/competit|\bcomp\b|\bcompetitor\b/i.test(name)) return "COMPETITION";
-  if (/generic/i.test(name)) return "GENERIC";
+
+  // Competition: catches Competition, Competitor, Comp, Compt, Cmpt.
+  if (sep("comp").test(n) || sep("compt").test(n) || sep("cmpt").test(n)
+      || /competit/.test(n)) {
+    return "COMPETITION";
+  }
+
+  // Generic: catches Generic and abbreviated 'Gen' (as a token only — never
+  // matches mid-word like 'generation').
+  if (/generic/.test(n) || sep("gen").test(n)) return "GENERIC";
+
   return "OTHER";
 }
 

@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "qa:api-shape":   "tsx scripts/qa/check-api-shape.ts",
+    "qa:consistency": "tsx scripts/qa/check-consistency.ts",
+    "qa:visual":      "tsx scripts/qa/check-visual.ts",
+    "qa:deploy":      "tsx scripts/qa/check-deploy.ts",
+    "qa:all":         "npm run typecheck && npm run qa:api-shape && npm run qa:consistency && npm run qa:visual"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.3",
@@ -43,7 +49,9 @@
     "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "playwright": "^1.49.0",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }
