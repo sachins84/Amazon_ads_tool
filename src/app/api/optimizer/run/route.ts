@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       maxScaleDownPct?: number;
       minSpendThreshold?: number;
       pauseWhenOrdersZeroDays?: number;
+      maxPortfolioSalesLossPct?: number;
     };
     topNAdGroups?: number;
     topNTargets?: number;
@@ -45,11 +46,12 @@ export async function POST(req: NextRequest) {
     const r = await runOptimizerForAccount({
       accountId: body.accountId,
       objective: {
-        defaultTargetAcos:       body.objective.defaultTargetAcos,
-        maxScaleUpPct:           body.objective.maxScaleUpPct           ?? 20,
-        maxScaleDownPct:         body.objective.maxScaleDownPct         ?? 30,
-        minSpendThreshold:       body.objective.minSpendThreshold       ?? 100,
-        pauseWhenOrdersZeroDays: body.objective.pauseWhenOrdersZeroDays ?? 7,
+        defaultTargetAcos:        body.objective.defaultTargetAcos,
+        maxScaleUpPct:            body.objective.maxScaleUpPct            ?? 20,
+        maxScaleDownPct:          body.objective.maxScaleDownPct          ?? 30,
+        minSpendThreshold:        body.objective.minSpendThreshold        ?? 100,
+        pauseWhenOrdersZeroDays:  body.objective.pauseWhenOrdersZeroDays  ?? 7,
+        maxPortfolioSalesLossPct: body.objective.maxPortfolioSalesLossPct ?? 15,
       },
       topNAdGroups: body.topNAdGroups,
       topNTargets:  body.topNTargets,

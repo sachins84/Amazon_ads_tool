@@ -33,6 +33,13 @@ export interface OptimizerObjective {
   maxScaleDownPct: number;
   minSpendThreshold: number;
   pauseWhenOrdersZeroDays: number;
+  /** Portfolio scale guardrail: cap on the combined m7d.sales of all PAUSE /
+   *  SCALE_DOWN / BID_DOWN suggestions, expressed as a percent of the
+   *  account's total m7d sales. Worst-ACOS cuts run first; once the
+   *  cumulative sales-at-risk exceeds this share, remaining cuts are
+   *  demoted to HOLD with a "scale guardrail" reason so the optimizer
+   *  doesn't shrink the business chasing ACOS. */
+  maxPortfolioSalesLossPct: number;
 }
 
 export interface WindowMetrics {

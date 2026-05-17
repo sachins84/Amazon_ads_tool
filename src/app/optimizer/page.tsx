@@ -34,11 +34,12 @@ export default function OptimizerPage() {
   const accountId = activeAccount?.id ?? "";
   const currency  = activeAccount?.adsMarketplace === "IN" ? "INR" : "USD";
 
-  const [defaultTargetAcos,  setDefaultTargetAcos]  = useState("25");
-  const [maxScaleUpPct,      setMaxScaleUpPct]      = useState("20");
-  const [maxScaleDownPct,    setMaxScaleDownPct]    = useState("30");
-  const [minSpendThreshold,  setMinSpendThreshold]  = useState("100");
-  const [pauseZeroDays,      setPauseZeroDays]      = useState("7");
+  const [defaultTargetAcos,       setDefaultTargetAcos]       = useState("25");
+  const [maxScaleUpPct,           setMaxScaleUpPct]           = useState("20");
+  const [maxScaleDownPct,         setMaxScaleDownPct]         = useState("30");
+  const [minSpendThreshold,       setMinSpendThreshold]       = useState("100");
+  const [pauseZeroDays,           setPauseZeroDays]           = useState("7");
+  const [maxPortfolioSalesLossPct,setMaxPortfolioSalesLossPct]= useState("15");
 
   const [bucketFilter, setBucketFilter] = useState<Bucket | "ALL">("ALL");
 
@@ -72,11 +73,12 @@ export default function OptimizerPage() {
         body: JSON.stringify({
           accountId,
           objective: {
-            defaultTargetAcos:       parseFloat(defaultTargetAcos),
-            maxScaleUpPct:           parseFloat(maxScaleUpPct),
-            maxScaleDownPct:         parseFloat(maxScaleDownPct),
-            minSpendThreshold:       parseFloat(minSpendThreshold),
-            pauseWhenOrdersZeroDays: parseInt(pauseZeroDays, 10),
+            defaultTargetAcos:        parseFloat(defaultTargetAcos),
+            maxScaleUpPct:            parseFloat(maxScaleUpPct),
+            maxScaleDownPct:          parseFloat(maxScaleDownPct),
+            minSpendThreshold:        parseFloat(minSpendThreshold),
+            pauseWhenOrdersZeroDays:  parseInt(pauseZeroDays, 10),
+            maxPortfolioSalesLossPct: parseFloat(maxPortfolioSalesLossPct),
           },
         }),
       });
@@ -124,7 +126,7 @@ export default function OptimizerPage() {
         {/* Objective + caps */}
         <div style={{ ...card, marginBottom: 14, padding: 16 }}>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Defaults & caps</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr) auto", gap: 12, alignItems: "end" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr) auto", gap: 12, alignItems: "end" }}>
             <Field label="Default ACOS % (fallback)">
               <input value={defaultTargetAcos} onChange={(e) => setDefaultTargetAcos(e.target.value)} type="number" step="0.5" min="0.5" style={inputStyle} />
             </Field>
@@ -139,6 +141,9 @@ export default function OptimizerPage() {
             </Field>
             <Field label="Pause after N zero-order days">
               <input value={pauseZeroDays} onChange={(e) => setPauseZeroDays(e.target.value)} type="number" style={inputStyle} />
+            </Field>
+            <Field label="Max portfolio sales loss % (scale guardrail)">
+              <input value={maxPortfolioSalesLossPct} onChange={(e) => setMaxPortfolioSalesLossPct(e.target.value)} type="number" step="1" min="0" max="100" style={inputStyle} />
             </Field>
             <button onClick={run} disabled={!accountId || running} style={btnPrimary(running)}>
               {running ? "Running…" : "▶ Run optimizer"}

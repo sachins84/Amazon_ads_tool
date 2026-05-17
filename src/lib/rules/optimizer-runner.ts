@@ -232,8 +232,14 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
     evalMap.set(e.id, cascaded);
   }
 
-  // Build inserts
+  // ─── Portfolio scale guardrail ─────────────────────────────────────────
+  // Cap how much m7d.sales the engine is allowed to put at risk in a single
+  // run. Worst-ACOS cuts go first; once we'd exceed the cap, remaining
+  // cuts become HOLD with a "scale guardrail" reason.
   const allEntities = [...targetEntities, ...adGroupEntities, ...campaignEntities];
+  applyScaleGuardrail(allEntities, evalMap, campaignEntities, input.objective);
+
+  // Build inserts
   const inserts: Parameters<typeof createSuggestions>[0] = [];
   for (const e of allEntities) {
     const out = evalMap.get(e.id);
@@ -443,5 +449,84 @@ function relativeRange(days: number) {
   const end = new Date();
   const start = new Date(); start.setDate(end.getDate() - days);
   return { startDate: fmt(start), endDate: fmt(end) };
+}
+
+// ─── Portfolio scale guardrail ──────────────────────────────────────────────
+
+/**
+ * Walks every PAUSE / SCALE_DOWN / BID_DOWN suggestion in order of worst
+ * ACOS first. As long as the cumulative m7d.sales of accepted cuts stays
+ * under the cap, suggestions pass through unchanged; once we'd exceed the
+ * cap, remaining cuts get demoted to HOLD and annotated with a "scale
+ * guardrail" reason.
+ *
+ * Mutates `evalMap` in place.
+ */
+function applyScaleGuardrail(
+  allEntities: OptimizerEntity[],
+  evalMap: Map<string, OptimizerSuggestion>,
+  campaignEntities: OptimizerEntity[],
+  obj: OptimizerObjective,
+): void {
+  const cap = obj.maxPortfolioSalesLossPct;
+  if (!Number.isFinite(cap) || cap <= 0 || cap >= 100) return;
+
+  // Use campaign-level totals as the portfolio denominator; KW/AG sales are
+  // a subset of campaign sales, so summing campaigns avoids double-counting.
+  const portfolioSales = campaignEntities.reduce((s, e) => s + (e.m7d.sales || 0), 0);
+  if (portfolioSales <= 0) return;
+  const salesBudget = portfolioSales * (cap / 100);
+
+  interface Candidate {
+    id: string; entity: OptimizerEntity; eval: OptimizerSuggestion;
+    salesAtRisk: number; acos7d: number;
+  }
+  const entityById = new Map(allEntities.map((e) => [e.id, e]));
+  const candidates: Candidate[] = [];
+
+  for (const [id, ev] of evalMap) {
+    if (ev.bucket !== "PAUSE" && ev.bucket !== "SCALE_DOWN" && ev.bucket !== "BID_DOWN") continue;
+    const entity = entityById.get(id);
+    if (!entity) continue;
+
+    let sar: number;
+    if (ev.bucket === "PAUSE") {
+      sar = entity.m7d.sales;
+    } else {
+      // Bid/budget cut → sales loss approximately proportional to the cut.
+      const cutFrac = (entity.currentValue > 0 && ev.actionValue != null)
+        ? Math.max(0, (entity.currentValue - ev.actionValue) / entity.currentValue)
+        : 0;
+      sar = entity.m7d.sales * cutFrac;
+    }
+    const acos = ev.signals.acos7d ?? Number.POSITIVE_INFINITY;
+    candidates.push({ id, entity, eval: ev, salesAtRisk: sar, acos7d: acos });
+  }
+
+  // Worst ACOS first — those cuts have the strongest case for being kept.
+  candidates.sort((a, b) => b.acos7d - a.acos7d);
+
+  let cumLoss = 0;
+  for (const c of candidates) {
+    if (c.salesAtRisk <= 0) continue;            // free cut, pass
+    if (cumLoss + c.salesAtRisk <= salesBudget) {
+      cumLoss += c.salesAtRisk;
+      continue;
+    }
+    // Doesn't fit — demote.
+    evalMap.set(c.id, {
+      ...c.eval,
+      bucket: "HOLD",
+      actionType: "ENABLE",
+      actionValue: null,
+      reason: `Scale guardrail: portfolio sales-at-risk budget (${salesBudget.toFixed(0)}) reached after worse-ACOS cuts. Holding this ${c.entity.type === "CAMPAIGN" ? "campaign" : c.entity.type === "AD_GROUP" ? "ad group" : "target"} so total sales aren't impacted. Original call: ${c.eval.reason}`,
+      confidence: 0.5,
+      signals: {
+        ...c.eval.signals,
+        guardrailHeld: true,
+        guardrailSalesAtRisk: c.salesAtRisk,
+      } as unknown as OptimizerSuggestion["signals"],
+    });
+  }
 }
 
