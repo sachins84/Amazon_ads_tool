@@ -15,18 +15,14 @@
  */
 import { getDb } from "@/lib/db";
 import type { Intent } from "@/lib/amazon-api/intent";
+import {
+  ALL_OPTIMIZER_PROGRAMS, ANY,
+  type OptimizerProgram, type AnyOr, type AcosTargetRow,
+} from "@/lib/optimizer/programs";
 
-export type OptimizerProgram = "SP" | "SB" | "SB_VIDEO" | "SD";
-export const ALL_OPTIMIZER_PROGRAMS: OptimizerProgram[] = ["SP", "SB", "SB_VIDEO", "SD"];
-
-export const ANY = "*" as const;
-export type AnyOr<T extends string> = T | typeof ANY;
-
-export interface AcosTargetRow {
-  program: AnyOr<OptimizerProgram>;
-  intent:  AnyOr<Intent>;
-  targetAcos: number;       // percent (25 = 25%)
-}
+// Re-export so existing server-side imports keep working unchanged.
+export { ALL_OPTIMIZER_PROGRAMS, ANY };
+export type { OptimizerProgram, AnyOr, AcosTargetRow };
 
 interface Raw { program: string; intent: string; target_acos: number }
 

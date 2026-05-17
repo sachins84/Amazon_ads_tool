@@ -15,7 +15,7 @@ import { fmt } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
 import type { Suggestion, Bucket } from "@/lib/rules/types";
 import { ALL_INTENTS, type Intent, intentLabel } from "@/lib/amazon-api/intent";
-import { ALL_OPTIMIZER_PROGRAMS, ANY, type OptimizerProgram, type AcosTargetRow } from "@/lib/db/acos-targets-repo";
+import { ALL_OPTIMIZER_PROGRAMS, ANY, type OptimizerProgram, type AcosTargetRow } from "@/lib/optimizer/programs";
 import Explorer from "@/components/optimizer/Explorer";
 
 const BUCKETS: Bucket[] = ["SCALE_UP","BID_UP","SCALE_DOWN","BID_DOWN","PAUSE","HOLD"];
