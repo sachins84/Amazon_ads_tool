@@ -74,6 +74,7 @@ function exploreAccount(accountId: string) {
   const sug = latestSuggestionsByTarget(accountId, "CAMPAIGN");
   const childBuckets = childBucketsByCampaign(accountId);
   const notes = countNotesByTarget(accountId);
+  const { ai: aiSug, manual: manualSug } = sug;
 
   let pSpend = 0, pSales = 0, pOrders = 0, pClicks = 0, pImpressions = 0;
   const campaigns = meta.map((m) => {
@@ -92,7 +93,8 @@ function exploreAccount(accountId: string) {
       dailyBudget: m.dailyBudget,
       targetAcos: resolveTarget(programKey, intent),
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
-      suggestion: sug.get(m.campaignId) ?? null,
+      aiSuggestion:     aiSug.get(m.campaignId) ?? null,
+      manualSuggestion: manualSug.get(m.campaignId) ?? null,
       childBuckets: childBuckets.get(m.campaignId) ?? {},
       notesCount: notes.get(`CAMPAIGN|${m.campaignId}`) ?? 0,
     };
@@ -147,6 +149,7 @@ function exploreCampaign(accountId: string, campaignId: string) {
   }
 
   const sug = latestSuggestionsByTarget(accountId, "AD_GROUP");
+  const { ai: aiSug, manual: manualSug } = sug;
   const childBuckets = childBucketsByAdGroup(accountId, campaignId);
   const notes = countNotesByTarget(accountId);
   const adGroups = adGroupMeta.map((m) => {
@@ -159,7 +162,8 @@ function exploreCampaign(accountId: string, campaignId: string) {
       state: m.state,
       defaultBid: m.defaultBid,
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
-      suggestion: sug.get(m.adGroupId) ?? null,
+      aiSuggestion:     aiSug.get(m.adGroupId) ?? null,
+      manualSuggestion: manualSug.get(m.adGroupId) ?? null,
       childBuckets: childBuckets.get(m.adGroupId) ?? {},
       notesCount: notes.get(`AD_GROUP|${m.adGroupId}`) ?? 0,
     };
@@ -213,10 +217,10 @@ function exploreAdGroup(accountId: string, adGroupId: string) {
     tgtAgg.set(r.targetId, cur);
   }
 
-  const sug = new Map([
-    ...latestSuggestionsByTarget(accountId, "KEYWORD"),
-    ...latestSuggestionsByTarget(accountId, "PRODUCT_TARGET"),
-  ]);
+  const kwSug = latestSuggestionsByTarget(accountId, "KEYWORD");
+  const patSug = latestSuggestionsByTarget(accountId, "PRODUCT_TARGET");
+  const aiSug     = new Map([...kwSug.ai, ...patSug.ai]);
+  const manualSug = new Map([...kwSug.manual, ...patSug.manual]);
   const notes = countNotesByTarget(accountId);
   const targets = tgtMeta.map((m) => {
     const a = tgtAgg.get(m.targetId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
@@ -233,7 +237,8 @@ function exploreAdGroup(accountId: string, adGroupId: string) {
       state: m.state,
       bid: m.bid,
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
-      suggestion: sug.get(m.targetId) ?? null,
+      aiSuggestion:     aiSug.get(m.targetId) ?? null,
+      manualSuggestion: manualSug.get(m.targetId) ?? null,
     };
   });
 
@@ -336,27 +341,45 @@ function childBucketsByAdGroup(accountId: string, campaignId: string): Map<strin
   return out;
 }
 
-function latestSuggestionsByTarget(accountId: string, targetType: string): Map<string, SuggestionLite> {
-  // Window: 30 days back. Older recommendations are stale and not worth
-  // showing inline — outcomes panel handles the long tail.
+/** Suggestion source — derived from the rule that owns the suggestion. */
+const AI_RULE_NAME = "AI Optimizer";
+
+interface SuggestionsByTarget {
+  ai:     Map<string, SuggestionLite>;
+  manual: Map<string, SuggestionLite>;
+}
+
+/**
+ * Returns the most recent PENDING suggestion per (target_id) from EACH
+ * source (AI Optimizer vs manual rules), so the UI can show both pills
+ * side-by-side. Joins to rules so we can tell which is which without a
+ * schema migration.
+ */
+function latestSuggestionsByTarget(accountId: string, targetType: string): SuggestionsByTarget {
   const rows = getDb().prepare(`
-    SELECT id, target_id, bucket, action_type, action_value, override_value, current_value,
-           reason, status, confidence, reviewer, created_at, applied_at
-    FROM suggestions
-    WHERE account_id = ? AND target_type = ?
-      AND created_at >= datetime('now', '-30 days')
-    ORDER BY created_at DESC
-  `).all(accountId, targetType) as Array<{
+    SELECT s.id, s.target_id, s.bucket, s.action_type, s.action_value,
+           s.override_value, s.current_value, s.reason, s.status, s.confidence,
+           s.reviewer, s.created_at, s.applied_at,
+           CASE WHEN r.name = ? THEN 'AI' ELSE 'MANUAL' END AS source
+    FROM suggestions s
+    LEFT JOIN rules r ON r.id = s.rule_id
+    WHERE s.account_id = ? AND s.target_type = ?
+      AND s.created_at >= datetime('now', '-30 days')
+    ORDER BY s.created_at DESC
+  `).all(AI_RULE_NAME, accountId, targetType) as Array<{
     id: string; target_id: string; bucket: string | null;
     action_type: string; action_value: number | null; override_value: number | null;
     current_value: number | null; reason: string; status: string; confidence: number | null;
     reviewer: string | null; created_at: string; applied_at: string | null;
+    source: "AI" | "MANUAL";
   }>;
 
-  const map = new Map<string, SuggestionLite>();
+  const ai     = new Map<string, SuggestionLite>();
+  const manual = new Map<string, SuggestionLite>();
   for (const r of rows) {
-    if (map.has(r.target_id)) continue; // keep most recent only
-    map.set(r.target_id, {
+    const bucket = r.source === "AI" ? ai : manual;
+    if (bucket.has(r.target_id)) continue; // keep most recent only per source
+    bucket.set(r.target_id, {
       id: r.id,
       bucket: r.bucket,
       actionType: r.action_type,
@@ -371,5 +394,5 @@ function latestSuggestionsByTarget(accountId: string, targetType: string): Map<s
       appliedAt: r.applied_at,
     });
   }
-  return map;
+  return { ai, manual };
 }

@@ -38,20 +38,20 @@ type BucketCounts = Partial<Record<Bucket, number>>;
 interface CampaignNode {
   campaignId: string; name: string | null; program: string; programKey: string;
   intent: string; state: string | null; dailyBudget: number | null;
-  targetAcos: number | null; m7d: Metric; suggestion: SuggestionLite | null;
+  targetAcos: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
   childBuckets: BucketCounts;
   notesCount: number;
 }
 interface AdGroupNode {
   adGroupId: string; name: string | null; campaignId: string; program: string;
-  state: string | null; defaultBid: number | null; m7d: Metric; suggestion: SuggestionLite | null;
+  state: string | null; defaultBid: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
   childBuckets: BucketCounts;
   notesCount: number;
 }
 interface TargetNode {
   targetId: string; adGroupId: string; campaignId: string; program: string;
   kind: string | null; matchType: string | null; display: string | null;
-  state: string | null; bid: number | null; m7d: Metric; suggestion: SuggestionLite | null;
+  state: string | null; bid: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
   notesCount: number;
 }
 
@@ -170,7 +170,8 @@ function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDril
   const rows = useMemo(() =>
     data.campaigns.filter((c) =>
       bucketFilter === "ALL"
-        || c.suggestion?.bucket === bucketFilter
+        || c.aiSuggestion?.bucket === bucketFilter
+        || c.manualSuggestion?.bucket === bucketFilter
         || (c.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.campaigns, bucketFilter]);
@@ -188,7 +189,8 @@ function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDril
           subtitle: `${displayProgram(c.programKey)} · ${c.intent} · budget ${fmt(c.dailyBudget ?? 0, "currency", currency)}/d`,
           targetAcos: c.targetAcos,
           m7d: c.m7d,
-          suggestion: c.suggestion,
+          aiSuggestion:     c.aiSuggestion,
+          manualSuggestion: c.manualSuggestion,
           childBuckets: c.childBuckets,
           notesCount: c.notesCount,
           noteTargetType: "CAMPAIGN",
@@ -216,7 +218,8 @@ function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer
   const rows = useMemo(() =>
     data.adGroups.filter((a) =>
       bucketFilter === "ALL"
-        || a.suggestion?.bucket === bucketFilter
+        || a.aiSuggestion?.bucket === bucketFilter
+        || a.manualSuggestion?.bucket === bucketFilter
         || (a.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.adGroups, bucketFilter]);
@@ -235,7 +238,8 @@ function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer
           subtitle: `Default bid ${fmt(a.defaultBid ?? 0, "currency", currency)} · ${a.state ?? "—"}`,
           targetAcos: data.campaign.targetAcos,
           m7d: a.m7d,
-          suggestion: a.suggestion,
+          aiSuggestion:     a.aiSuggestion,
+          manualSuggestion: a.manualSuggestion,
           childBuckets: a.childBuckets,
           notesCount: a.notesCount,
           noteTargetType: "AD_GROUP",
@@ -265,7 +269,9 @@ function AdGroupView({ data, accountId, bucketFilter, currency, reviewer, onAppl
 }) {
   const rows = useMemo(() =>
     data.targets.filter((t) =>
-      bucketFilter === "ALL" || t.suggestion?.bucket === bucketFilter
+      bucketFilter === "ALL"
+        || t.aiSuggestion?.bucket === bucketFilter
+        || t.manualSuggestion?.bucket === bucketFilter
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.targets, bucketFilter]);
   return (
@@ -283,7 +289,8 @@ function AdGroupView({ data, accountId, bucketFilter, currency, reviewer, onAppl
           subtitle: `${t.kind ?? ""}${t.matchType ? ` · ${t.matchType}` : ""}${t.state ? ` · ${t.state}` : ""}${t.bid != null ? ` · bid ${fmt(t.bid, "currency", currency)}` : ""}`,
           targetAcos: null,
           m7d: t.m7d,
-          suggestion: t.suggestion,
+          aiSuggestion:     t.aiSuggestion,
+          manualSuggestion: t.manualSuggestion,
           notesCount: t.notesCount,
           noteTargetType: t.kind === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET",
           noteTargetId: t.targetId,
@@ -349,7 +356,8 @@ interface RowItem {
   subtitle: string;
   targetAcos: number | null;
   m7d: Metric;
-  suggestion: SuggestionLite | null;
+  aiSuggestion:     SuggestionLite | null;
+  manualSuggestion: SuggestionLite | null;
   childBuckets?: BucketCounts;
   notesCount?: number;
   noteTargetType?: NoteTargetType;
@@ -396,8 +404,6 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
   r: RowItem; accountId: string; currency: string; reviewer: string; onApplied: () => void; showDrill: boolean;
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
-  const sug = r.suggestion;
-  const bucket = sug?.bucket ?? null;
   const acosOver = r.targetAcos != null && r.m7d.acos != null && r.m7d.acos > r.targetAcos;
   const acosUnder = r.targetAcos != null && r.m7d.acos != null && r.m7d.acos < r.targetAcos * 0.8;
   const acosColor = acosOver ? "var(--c-danger-text)" : acosUnder ? "var(--c-success-text)" : "var(--text-primary)";
@@ -425,27 +431,29 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
       <td style={{ ...tdR, color: "var(--text-secondary)" }}>
         {r.targetAcos != null ? `${r.targetAcos.toFixed(1)}%` : "—"}
       </td>
-      <td style={{ padding: "8px 6px", maxWidth: 340 }}>
-        {sug && bucket ? (
-          <div>
-            <span style={{ padding: "2px 6px", borderRadius: 4, background: BUCKET_COLOR[bucket].bg, color: BUCKET_COLOR[bucket].fg, fontSize: 10, fontWeight: 600 }}>
-              {BUCKET_COLOR[bucket].label}
-            </span>
-            <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-muted)" }}>
-              {sug.status}{sug.reviewer ? ` · ${sug.reviewer}` : ""}{sug.confidence != null ? ` · ${Math.round(sug.confidence * 100)}%` : ""}
-            </span>
-            <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-secondary)", maxWidth: 340 }}>{sug.reason}</div>
-          </div>
-        ) : (
+      <td style={{ padding: "8px 6px", maxWidth: 380 }}>
+        <SuggestionBlock label="AI"     sug={r.aiSuggestion} />
+        <SuggestionBlock label="Manual" sug={r.manualSuggestion} />
+        {!r.aiSuggestion && !r.manualSuggestion && (
           <span style={{ color: "var(--text-muted)", fontSize: 11 }}>No recent recommendation</span>
         )}
         <ChildBucketBadges counts={r.childBuckets} />
       </td>
       <td style={{ ...tdR, whiteSpace: "nowrap" }}>
-        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          {sug && sug.status === "PENDING" ? (
-            <RowActions sug={sug} currency={currency} reviewer={reviewer} onApplied={onApplied} />
-          ) : (
+        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+          {r.aiSuggestion?.status === "PENDING" && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              <span style={sourceTag}>AI</span>
+              <RowActions sug={r.aiSuggestion} currency={currency} reviewer={reviewer} onApplied={onApplied} />
+            </div>
+          )}
+          {r.manualSuggestion?.status === "PENDING" && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              <span style={sourceTag}>Rule</span>
+              <RowActions sug={r.manualSuggestion} currency={currency} reviewer={reviewer} onApplied={onApplied} />
+            </div>
+          )}
+          {!r.aiSuggestion?.status && !r.manualSuggestion?.status && (
             <span style={{ fontSize: 10, color: "var(--text-muted)" }}>—</span>
           )}
           {r.noteTargetType && r.noteTargetId && (
@@ -579,6 +587,34 @@ const notesBtn: React.CSSProperties = {
   padding: "3px 7px", borderRadius: 4, fontSize: 10, fontWeight: 500, cursor: "pointer",
   background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)",
 };
+const sourceTag: React.CSSProperties = {
+  display: "inline-block", padding: "1px 6px", borderRadius: 3,
+  background: "var(--bg-input)", border: "1px solid var(--border)",
+  color: "var(--text-secondary)",
+  fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em",
+};
+
+function SuggestionBlock({ label, sug }: { label: "AI" | "Manual"; sug: SuggestionLite | null }) {
+  if (!sug || !sug.bucket) return null;
+  const bucket = sug.bucket;
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <span style={sourceTag}>{label}</span>
+      <span style={{
+        marginLeft: 6,
+        padding: "2px 6px", borderRadius: 4,
+        background: BUCKET_COLOR[bucket].bg, color: BUCKET_COLOR[bucket].fg,
+        fontSize: 10, fontWeight: 600,
+      }}>
+        {BUCKET_COLOR[bucket].label}
+      </span>
+      <span style={{ marginLeft: 6, fontSize: 10, color: "var(--text-muted)" }}>
+        {sug.status}{sug.reviewer ? ` · ${sug.reviewer}` : ""}{sug.confidence != null ? ` · ${Math.round(sug.confidence * 100)}%` : ""}
+      </span>
+      <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-secondary)", maxWidth: 380 }}>{sug.reason}</div>
+    </div>
+  );
+}
 
 function ChildBucketBadges({ counts }: { counts: BucketCounts | undefined }) {
   if (!counts) return null;
