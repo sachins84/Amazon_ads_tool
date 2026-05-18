@@ -9,19 +9,19 @@ import { getAccount } from "@/lib/db/accounts";
 import {
   upsertCampaignMetrics, upsertAdGroupMetrics, upsertTargetingMetrics,
   upsertCampaignMeta,    upsertAdGroupMeta,    upsertTargetingMeta,
-  upsertPlacementMetrics,
+  upsertPlacementMetrics, upsertAdvertisedProductMetrics,
   setRefreshState,
   type CampaignDailyRow, type AdGroupDailyRow, type TargetingDailyRow,
   type CampaignMetaRow,  type AdGroupMetaRow,  type TargetingMetaRow,
-  type PlacementDailyRow,
+  type PlacementDailyRow, type AdvertisedProductDailyRow,
 } from "@/lib/db/metrics-store";
 import { listAllCampaigns }      from "./campaigns";
 import { listAllAdGroups }       from "./adgroups";
 import { listSPKeywords, listSPProductTargets } from "./targeting";
 import {
   fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
-  fetchSPPlacementReport,
-  type Program, type PlacementRow,
+  fetchSPPlacementReport, fetchSPAdvertisedProductReport,
+  type Program, type PlacementRow, type AdvertisedProductRow,
 } from "./reports";
 import { captureOutcomesForAccount } from "@/lib/rules/outcome-capture";
 
@@ -41,7 +41,7 @@ export interface RefreshResult {
 }
 
 type RefreshPhase =
-  | "campaigns" | "adgroups" | "targeting" | "placement"
+  | "campaigns" | "adgroups" | "targeting" | "placement" | "advertised_product"
   | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets";
 
 export async function refreshAccountRecent(accountId: string, days = 21): Promise<RefreshResult> {
@@ -55,7 +55,8 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
 
   // ─── 1. Fetch everything in parallel ───────────────────────────────────
   const [campaignsResult, adGroupsResult, keywordsResult, productTargetsResult,
-         campaignReports, adGroupReports, targetingReport, placementReport] = await Promise.all([
+         campaignReports, adGroupReports, targetingReport, placementReport,
+         advertisedProductReport] = await Promise.all([
     listAllCampaigns(acct.adsProfileId, accountId).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "list_campaigns" });
       return { campaigns: [], errors: [] };
@@ -108,6 +109,15 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     ).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "placement" });
       return [] as PlacementRow[];
+    }),
+    // SP per-ASIN report — drives the ASIN rollup on /segments.
+    chunkedFetch(windowStart, windowEnd, (s, e) =>
+      fetchSPAdvertisedProductReport(acct.adsProfileId, s, e, accountId),
+      (a, b) => [...a, ...b],
+      [] as AdvertisedProductRow[],
+    ).catch((e) => {
+      errors.push({ program: "SP", error: String(e), phase: "advertised_product" });
+      return [] as AdvertisedProductRow[];
     }),
   ]);
 
@@ -221,6 +231,19 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     sales: r.sales,
   }));
 
+  const advertisedProductDaily: AdvertisedProductDailyRow[] = advertisedProductReport.map((r) => ({
+    accountId,
+    campaignId: r.campaignId,
+    adGroupId: r.adGroupId,
+    asin: r.asin,
+    date: r.date,
+    impressions: r.impressions,
+    clicks: r.clicks,
+    cost: r.cost,
+    orders: r.orders,
+    sales: r.sales,
+  }));
+
   const campaignMetaUpserted  = upsertCampaignMeta(campaignMeta);
   const campaignRowsUpserted  = upsertCampaignMetrics(campaignDaily);
   const adGroupMetaUpserted   = upsertAdGroupMeta(adGroupMeta);
@@ -228,7 +251,9 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   const targetingMetaUpserted = upsertTargetingMeta(targetingMeta);
   const targetingRowsUpserted = upsertTargetingMetrics(targetingDaily);
   const placementRowsUpserted = upsertPlacementMetrics(placementDaily);
-  void placementRowsUpserted;  // surfaced via refresh state error column when zero, not in RefreshResult
+  const advertisedProductRowsUpserted = upsertAdvertisedProductMetrics(advertisedProductDaily);
+  void placementRowsUpserted; void advertisedProductRowsUpserted;
+  // (Both surfaced via refresh state error column when zero; not in RefreshResult.)
 
   const durationMs = Date.now() - start;
   const lastRefreshAt = new Date().toISOString();

@@ -25,6 +25,7 @@ interface Resp {
   byIntent: Row[];
   byProgram: Row[];
   byIntentProgram: Array<{ intent: string; program: string } & Row>;
+  byAsin: Array<{ asin: string } & Row>;
 }
 
 const PRESETS = ["Last 7D", "Last 14D", "Last 30D", "Last 60D"];
@@ -96,9 +97,17 @@ export default function SegmentsPage() {
               currency={currency}
             />
 
-            <div style={{ ...card, padding: 14, marginTop: 12, fontSize: 11, color: "var(--text-muted)" }}>
-              ASIN-level rollup coming in a follow-up — needs the spAdvertisedProduct report wired into the daily refresh.
-            </div>
+            {data.byAsin.length > 0 ? (
+              <SegmentTable
+                title={`By ASIN (top ${Math.min(50, data.byAsin.length)} by spend)`}
+                rows={data.byAsin.slice(0, 50)}
+                currency={currency}
+              />
+            ) : (
+              <div style={{ ...card, padding: 14, marginTop: 12, fontSize: 11, color: "var(--text-muted)" }}>
+                ASIN-level rows will populate once the next /api/admin/refresh successfully completes — the spAdvertisedProduct report is now part of the daily pull.
+              </div>
+            )}
           </>
         )}
       </main>

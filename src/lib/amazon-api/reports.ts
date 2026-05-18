@@ -63,6 +63,13 @@ export const SP_PLACEMENT_COLUMNS = [
   "purchases7d", "sales7d",
 ];
 
+/** Columns for the per-advertised-product (per-ASIN) SP report. */
+export const SP_ADVERTISED_PRODUCT_COLUMNS = [
+  "date", "campaignId", "adGroupId", "advertisedAsin",
+  "impressions", "clicks", "cost",
+  "purchases7d", "sales7d",
+];
+
 export const SB_CAMPAIGN_COLUMNS = [
   "date", "campaignId", "campaignName",
   "impressions", "clicks", "cost", "purchases", "sales",
@@ -222,6 +229,53 @@ export interface PlacementRow {
   cost: number;
   orders: number;
   sales: number;
+}
+
+function spAdvertisedProductReportBody(start: string, end: string): ReportRequest {
+  return {
+    name: `SP advertised product ${start}..${end}`,
+    startDate: start, endDate: end,
+    configuration: {
+      adProduct: "SPONSORED_PRODUCTS",
+      groupBy: ["advertiser"],
+      columns: SP_ADVERTISED_PRODUCT_COLUMNS,
+      reportTypeId: "spAdvertisedProduct",
+      timeUnit: "DAILY",
+      format: "GZIP_JSON",
+    },
+  };
+}
+
+export interface AdvertisedProductRow {
+  date: string;
+  campaignId: string;
+  adGroupId: string;
+  asin: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  orders: number;
+  sales: number;
+}
+
+export async function fetchSPAdvertisedProductReport(
+  profileId: string, startDate: string, endDate: string, accountId?: string,
+): Promise<AdvertisedProductRow[]> {
+  const reportId = await createReport(profileId, spAdvertisedProductReportBody(startDate, endDate), accountId);
+  const rows = await waitForReport<Record<string, unknown>>(profileId, reportId, accountId);
+  return rows
+    .filter((r) => r.campaignId && r.advertisedAsin && r.date)
+    .map((r) => ({
+      date:        String(r.date),
+      campaignId:  String(r.campaignId),
+      adGroupId:   String(r.adGroupId ?? ""),
+      asin:        String(r.advertisedAsin),
+      impressions: Number(r.impressions ?? 0),
+      clicks:      Number(r.clicks ?? 0),
+      cost:        Number(r.cost ?? 0),
+      orders:      Number(r.purchases7d ?? 0),
+      sales:       Number(r.sales7d ?? 0),
+    }));
 }
 
 export async function fetchSPPlacementReport(

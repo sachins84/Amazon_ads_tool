@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import {
-  readCampaignMeta, readCampaignMetrics,
+  readCampaignMeta, readCampaignMetrics, readAdvertisedProductMetrics,
 } from "@/lib/db/metrics-store";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { inferIntent, ALL_INTENTS, intentLabel, type Intent } from "@/lib/amazon-api/intent";
@@ -102,12 +102,30 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── By ASIN ──
+  // Roll the per-ASIN daily rows up to a single line per ASIN, regardless of
+  // which campaign or ad group ran it. Returns empty until the next refresh
+  // populates advertised_product_metrics_daily.
+  const asinRows = readAdvertisedProductMetrics(accountId, range.startDate, range.endDate);
+  const asinMap = new Map<string, AggBase>();
+  for (const r of asinRows) {
+    const cur = asinMap.get(r.asin) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    cur.spend += r.cost; cur.sales += r.sales; cur.orders += r.orders;
+    cur.clicks += r.clicks; cur.impressions += r.impressions;
+    asinMap.set(r.asin, cur);
+  }
+  const byAsin = [...asinMap.entries()]
+    .map(([asin, a]) => ({ asin, ...finalize({ label: asin, key: asin, ...a }, total.spend, total.sales) }))
+    .filter((r) => r.spend > 0 || r.sales > 0)
+    .sort((a, b) => b.spend - a.spend);
+
   return Response.json({
     range,
     total: finalize({ label: "Total", key: "TOTAL", ...total }, total.spend, total.sales),
     byIntent,
     byProgram,
     byIntentProgram,
+    byAsin,
   });
 }
 

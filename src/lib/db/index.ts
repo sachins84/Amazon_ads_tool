@@ -234,6 +234,27 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_pmd_account_date ON placement_metrics_daily (account_id, date);
     CREATE INDEX IF NOT EXISTS idx_pmd_account_campaign ON placement_metrics_daily (account_id, campaign_id);
 
+    -- ─── Per-advertised-product (ASIN) breakdown (SP only) ──────────────
+    -- One row per (account, campaign, ad_group, asin, date). Drives the
+    -- ASIN-level rollup on /segments — same ASIN can appear in multiple
+    -- ad groups, so we keep both dimensions and aggregate in the query.
+    CREATE TABLE IF NOT EXISTS advertised_product_metrics_daily (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      campaign_id  TEXT NOT NULL,
+      adgroup_id   TEXT NOT NULL,
+      asin         TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      impressions  INTEGER NOT NULL DEFAULT 0,
+      clicks       INTEGER NOT NULL DEFAULT 0,
+      cost         REAL    NOT NULL DEFAULT 0,
+      orders       INTEGER NOT NULL DEFAULT 0,
+      sales        REAL    NOT NULL DEFAULT 0,
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, campaign_id, adgroup_id, asin, date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_apmd_account_asin ON advertised_product_metrics_daily (account_id, asin);
+    CREATE INDEX IF NOT EXISTS idx_apmd_account_date ON advertised_product_metrics_daily (account_id, date);
+
     CREATE TABLE IF NOT EXISTS adgroup_metrics_daily (
       account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
       campaign_id  TEXT NOT NULL,
