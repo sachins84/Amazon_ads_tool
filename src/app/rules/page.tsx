@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import TopNav from "@/components/shared/TopNav";
+import DataWindowBanner from "@/components/shared/DataWindowBanner";
 import { useAccount } from "@/lib/account-context";
 import type {
   Rule, AppliesTo, Metric, Comparator, Action, ConditionTree, Clause, Program,
@@ -74,6 +75,10 @@ export default function RulesPage() {
             </button>
             <button onClick={() => setCreating(true)} style={btnSecondary}>+ New rule</button>
           </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <DataWindowBanner accountId={accountId} window="Rule run window: Last 7D" />
         </div>
 
         {runResult && (

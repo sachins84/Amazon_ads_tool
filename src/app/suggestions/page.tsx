@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import TopNav from "@/components/shared/TopNav";
+import DataWindowBanner from "@/components/shared/DataWindowBanner";
 import { fmt } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
 import type { Suggestion, SuggestionStatus } from "@/lib/rules/types";
@@ -127,6 +128,10 @@ export default function SuggestionsPage() {
               </button>
             )}
           </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <DataWindowBanner accountId={accountId} window="Suggestion run window: Last 7D" />
         </div>
 
         {loading ? (

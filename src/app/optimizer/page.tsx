@@ -17,6 +17,7 @@ import type { Suggestion, Bucket } from "@/lib/rules/types";
 import { ALL_INTENTS, type Intent, intentLabel } from "@/lib/amazon-api/intent";
 import { ALL_OPTIMIZER_PROGRAMS, ANY, type OptimizerProgram, type AcosTargetRow } from "@/lib/optimizer/programs";
 import Explorer from "@/components/optimizer/Explorer";
+import DataWindowBanner from "@/components/shared/DataWindowBanner";
 
 const BUCKETS: Bucket[] = ["SCALE_UP","BID_UP","SCALE_DOWN","BID_DOWN","PAUSE","HOLD"];
 
@@ -118,6 +119,10 @@ export default function OptimizerPage() {
             value={reviewer} onChange={(e) => setReviewer(e.target.value)}
             placeholder="Your name (for audit)" style={{ ...inputStyle, width: 200 }}
           />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <DataWindowBanner accountId={accountId} window="Engine windows: 1d / 3d / 7d  ·  Explorer rows: Last 7D" />
         </div>
 
         {/* Target ACOS matrix */}
