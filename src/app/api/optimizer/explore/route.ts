@@ -36,11 +36,14 @@ export async function GET(req: NextRequest) {
   const accountId = sp.get("accountId");
   const campaignId = sp.get("campaignId");
   const adGroupId  = sp.get("adGroupId");
+  // Caller picks the analytical window. Engine internals (optimizer-runner)
+  // are still 1d/3d/7d — this just drives the table + summary rollups.
+  const dateRange = sp.get("dateRange") ?? "Last 7D";
   if (!accountId) return Response.json({ error: "accountId required" }, { status: 400 });
 
-  if (adGroupId)  return Response.json(exploreAdGroup(accountId, adGroupId));
-  if (campaignId) return Response.json(exploreCampaign(accountId, campaignId));
-  return Response.json(exploreAccount(accountId));
+  if (adGroupId)  return Response.json(exploreAdGroup(accountId, adGroupId, dateRange));
+  if (campaignId) return Response.json(exploreCampaign(accountId, campaignId, dateRange));
+  return Response.json(exploreAccount(accountId, dateRange));
 }
 
 // ─── Per-level builders ─────────────────────────────────────────────────────
@@ -57,8 +60,8 @@ function bundle(spend: number, sales: number, orders: number, clicks: number, im
   };
 }
 
-function exploreAccount(accountId: string) {
-  const r7 = dateRangeFromPreset("Last 7D");
+function exploreAccount(accountId: string, dateRange: string) {
+  const r7 = dateRangeFromPreset(dateRange);
   const meta = readCampaignMeta(accountId);
   const rows = readCampaignMetrics(accountId, r7.startDate, r7.endDate);
 
@@ -110,8 +113,8 @@ function exploreAccount(accountId: string) {
   };
 }
 
-function exploreCampaign(accountId: string, campaignId: string) {
-  const r7 = dateRangeFromPreset("Last 7D");
+function exploreCampaign(accountId: string, campaignId: string, dateRange: string) {
+  const r7 = dateRangeFromPreset(dateRange);
   const campMeta = readCampaignMeta(accountId).find((m) => m.campaignId === campaignId);
   if (!campMeta) return { error: "Campaign not found" };
 
@@ -189,8 +192,8 @@ function exploreCampaign(accountId: string, campaignId: string) {
   };
 }
 
-function exploreAdGroup(accountId: string, adGroupId: string) {
-  const r7 = dateRangeFromPreset("Last 7D");
+function exploreAdGroup(accountId: string, adGroupId: string, dateRange: string) {
+  const r7 = dateRangeFromPreset(dateRange);
   const agMeta = readAdGroupMeta(accountId).find((m) => m.adGroupId === adGroupId);
   if (!agMeta) return { error: "Ad group not found" };
 

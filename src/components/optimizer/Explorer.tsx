@@ -69,9 +69,10 @@ interface Props {
   currency: string;
   reviewer: string;
   bucketFilter: Bucket | "ALL";
+  dataWindow: string;
 }
 
-export default function Explorer({ accountId, currency, reviewer, bucketFilter }: Props) {
+export default function Explorer({ accountId, currency, reviewer, bucketFilter, dataWindow }: Props) {
   const [level, setLevel] = useState<Level>({ type: "account" });
   const [data, setData] = useState<ExploreData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -83,13 +84,13 @@ export default function Explorer({ accountId, currency, reviewer, bucketFilter }
     if (!accountId) { setData(null); return; }
     setLoading(true);
     try {
-      let url = `/api/optimizer/explore?accountId=${accountId}`;
+      let url = `/api/optimizer/explore?accountId=${accountId}&dateRange=${encodeURIComponent(dataWindow)}`;
       if (level.type === "campaign") url += `&campaignId=${level.campaignId}`;
       if (level.type === "adgroup")  url += `&adGroupId=${level.adGroupId}`;
       const res = await fetch(url, { cache: "no-store" });
       setData(await res.json());
     } finally { setLoading(false); }
-  }, [accountId, level]);
+  }, [accountId, level, dataWindow]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -107,15 +108,15 @@ export default function Explorer({ accountId, currency, reviewer, bucketFilter }
       <Breadcrumb level={level} onNavigate={setLevel} />
 
       {level.type === "account"  && "campaigns" in data && (
-        <AccountView  data={data} accountId={accountId} bucketFilter={bucketFilter} currency={currency}
+        <AccountView  data={data} accountId={accountId} dataWindow={dataWindow} bucketFilter={bucketFilter} currency={currency}
                       reviewer={reviewer} onDrill={setLevel} onApplied={load} />
       )}
       {level.type === "campaign" && "adGroups" in data && (
-        <CampaignView data={data} accountId={accountId} level={level} bucketFilter={bucketFilter} currency={currency}
+        <CampaignView data={data} accountId={accountId} dataWindow={dataWindow} level={level} bucketFilter={bucketFilter} currency={currency}
                       reviewer={reviewer} onDrill={setLevel} onApplied={load} />
       )}
       {level.type === "adgroup"  && "targets" in data && (
-        <AdGroupView  data={data} accountId={accountId} bucketFilter={bucketFilter} currency={currency}
+        <AdGroupView  data={data} accountId={accountId} dataWindow={dataWindow} bucketFilter={bucketFilter} currency={currency}
                       reviewer={reviewer} onApplied={load} />
       )}
     </div>
@@ -162,9 +163,9 @@ function Breadcrumb({ level, onNavigate }: { level: Level; onNavigate: (l: Level
 
 // ─── Views ──────────────────────────────────────────────────────────────────
 
-function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDrill, onApplied }: {
+function AccountView({ data, accountId, dataWindow, bucketFilter, currency, reviewer, onDrill, onApplied }: {
   data: { portfolio: Metric; campaigns: CampaignNode[] };
-  accountId: string;
+  accountId: string; dataWindow: string;
   bucketFilter: Bucket | "ALL"; currency: string; reviewer: string;
   onDrill: (l: Level) => void; onApplied: () => void;
 }) {
@@ -179,7 +180,7 @@ function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDril
   return (
     <>
       <SummaryCard
-        title={`Portfolio (${data.campaigns.length} campaigns, last 7d)`}
+        title={`Portfolio (${data.campaigns.length} campaigns, ${dataWindow.toLowerCase()})`}
         metric={data.portfolio}
         currency={currency}
       />
@@ -209,9 +210,9 @@ function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDril
   );
 }
 
-function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer, onDrill, onApplied }: {
+function CampaignView({ data, accountId, dataWindow, level, bucketFilter, currency, reviewer, onDrill, onApplied }: {
   data: { campaign: CampaignNode; adGroups: AdGroupNode[] };
-  accountId: string;
+  accountId: string; dataWindow: string;
   level: Extract<Level, { type: "campaign" }>;
   bucketFilter: Bucket | "ALL"; currency: string; reviewer: string;
   onDrill: (l: Level) => void; onApplied: () => void;
@@ -227,7 +228,7 @@ function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer
   return (
     <>
       <SummaryCard
-        title={`${data.campaign.name ?? data.campaign.campaignId} (last 7d)`}
+        title={`${data.campaign.name ?? data.campaign.campaignId} (${dataWindow.toLowerCase()})`}
         subtitle={`Target ACOS: ${data.campaign.targetAcos != null ? `${data.campaign.targetAcos.toFixed(1)}%` : "default"} · ${displayProgram(data.campaign.programKey)} · ${data.campaign.intent}`}
         metric={data.campaign.m7d}
         currency={currency}
@@ -262,9 +263,9 @@ function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer
   );
 }
 
-function AdGroupView({ data, accountId, bucketFilter, currency, reviewer, onApplied }: {
+function AdGroupView({ data, accountId, dataWindow, bucketFilter, currency, reviewer, onApplied }: {
   data: { adGroup: AdGroupNode; targets: TargetNode[] };
-  accountId: string;
+  accountId: string; dataWindow: string;
   bucketFilter: Bucket | "ALL"; currency: string; reviewer: string;
   onApplied: () => void;
 }) {
@@ -278,7 +279,7 @@ function AdGroupView({ data, accountId, bucketFilter, currency, reviewer, onAppl
   return (
     <>
       <SummaryCard
-        title={`${data.adGroup.name ?? data.adGroup.adGroupId} (last 7d)`}
+        title={`${data.adGroup.name ?? data.adGroup.adGroupId} (${dataWindow.toLowerCase()})`}
         subtitle={`Default bid ${fmt(data.adGroup.defaultBid ?? 0, "currency", currency)} · ${data.adGroup.state ?? "—"}`}
         metric={data.adGroup.m7d}
         currency={currency}

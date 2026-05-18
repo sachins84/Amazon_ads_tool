@@ -43,6 +43,7 @@ export default function OptimizerPage() {
   const [maxPortfolioSalesLossPct,setMaxPortfolioSalesLossPct]= useState("15");
 
   const [bucketFilter, setBucketFilter] = useState<Bucket | "ALL">("ALL");
+  const [dataWindow,   setDataWindow]   = useState<string>("Last 7D");
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [running,    setRunning]    = useState(false);
@@ -122,7 +123,7 @@ export default function OptimizerPage() {
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <DataWindowBanner accountId={accountId} window="Engine windows: 1d / 3d / 7d  ·  Explorer rows: Last 7D" />
+          <DataWindowBanner accountId={accountId} window={`Engine windows: 1d / 3d / 7d  ·  Explorer rows: ${dataWindow}`} />
         </div>
 
         {/* Target ACOS matrix */}
@@ -174,6 +175,11 @@ export default function OptimizerPage() {
               {BUCKET_COLOR[b].label} {counts[b] != null ? `(${counts[b]})` : ""}
             </button>
           ))}
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Window:</span>
+          <select value={dataWindow} onChange={(e) => setDataWindow(e.target.value)} style={inputStyle}>
+            {["Last 7D","Last 14D","Last 30D","Last 60D"].map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
         </div>
 
         {/* Drill-down explorer (portfolio → campaigns → ad groups → keywords/targets) */}
@@ -182,6 +188,7 @@ export default function OptimizerPage() {
           currency={currency}
           reviewer={reviewer}
           bucketFilter={bucketFilter}
+          dataWindow={dataWindow}
         />
 
         {/* Outcomes — scored APPLIED suggestions */}
