@@ -40,17 +40,22 @@ interface CampaignNode {
   intent: string; state: string | null; dailyBudget: number | null;
   targetAcos: number | null; m7d: Metric; suggestion: SuggestionLite | null;
   childBuckets: BucketCounts;
+  notesCount: number;
 }
 interface AdGroupNode {
   adGroupId: string; name: string | null; campaignId: string; program: string;
   state: string | null; defaultBid: number | null; m7d: Metric; suggestion: SuggestionLite | null;
   childBuckets: BucketCounts;
+  notesCount: number;
 }
 interface TargetNode {
   targetId: string; adGroupId: string; campaignId: string; program: string;
   kind: string | null; matchType: string | null; display: string | null;
   state: string | null; bid: number | null; m7d: Metric; suggestion: SuggestionLite | null;
+  notesCount: number;
 }
+
+type NoteTargetType = "CAMPAIGN" | "AD_GROUP" | "KEYWORD" | "PRODUCT_TARGET";
 
 type ExploreData =
   | { portfolio: Metric; campaigns: CampaignNode[] }
@@ -101,15 +106,15 @@ export default function Explorer({ accountId, currency, reviewer, bucketFilter }
       <Breadcrumb level={level} onNavigate={setLevel} />
 
       {level.type === "account"  && "campaigns" in data && (
-        <AccountView  data={data} bucketFilter={bucketFilter} currency={currency}
+        <AccountView  data={data} accountId={accountId} bucketFilter={bucketFilter} currency={currency}
                       reviewer={reviewer} onDrill={setLevel} onApplied={load} />
       )}
       {level.type === "campaign" && "adGroups" in data && (
-        <CampaignView data={data} level={level} bucketFilter={bucketFilter} currency={currency}
+        <CampaignView data={data} accountId={accountId} level={level} bucketFilter={bucketFilter} currency={currency}
                       reviewer={reviewer} onDrill={setLevel} onApplied={load} />
       )}
       {level.type === "adgroup"  && "targets" in data && (
-        <AdGroupView  data={data} bucketFilter={bucketFilter} currency={currency}
+        <AdGroupView  data={data} accountId={accountId} bucketFilter={bucketFilter} currency={currency}
                       reviewer={reviewer} onApplied={load} />
       )}
     </div>
@@ -156,8 +161,9 @@ function Breadcrumb({ level, onNavigate }: { level: Level; onNavigate: (l: Level
 
 // ─── Views ──────────────────────────────────────────────────────────────────
 
-function AccountView({ data, bucketFilter, currency, reviewer, onDrill, onApplied }: {
+function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDrill, onApplied }: {
   data: { portfolio: Metric; campaigns: CampaignNode[] };
+  accountId: string;
   bucketFilter: Bucket | "ALL"; currency: string; reviewer: string;
   onDrill: (l: Level) => void; onApplied: () => void;
 }) {
@@ -184,8 +190,12 @@ function AccountView({ data, bucketFilter, currency, reviewer, onDrill, onApplie
           m7d: c.m7d,
           suggestion: c.suggestion,
           childBuckets: c.childBuckets,
+          notesCount: c.notesCount,
+          noteTargetType: "CAMPAIGN",
+          noteTargetId: c.campaignId,
           drill: () => onDrill({ type: "campaign", campaignId: c.campaignId, campaignName: c.name ?? c.campaignId }),
         }))}
+        accountId={accountId}
         currency={currency}
         reviewer={reviewer}
         onApplied={onApplied}
@@ -196,8 +206,9 @@ function AccountView({ data, bucketFilter, currency, reviewer, onDrill, onApplie
   );
 }
 
-function CampaignView({ data, level, bucketFilter, currency, reviewer, onDrill, onApplied }: {
+function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer, onDrill, onApplied }: {
   data: { campaign: CampaignNode; adGroups: AdGroupNode[] };
+  accountId: string;
   level: Extract<Level, { type: "campaign" }>;
   bucketFilter: Bucket | "ALL"; currency: string; reviewer: string;
   onDrill: (l: Level) => void; onApplied: () => void;
@@ -226,12 +237,16 @@ function CampaignView({ data, level, bucketFilter, currency, reviewer, onDrill, 
           m7d: a.m7d,
           suggestion: a.suggestion,
           childBuckets: a.childBuckets,
+          notesCount: a.notesCount,
+          noteTargetType: "AD_GROUP",
+          noteTargetId: a.adGroupId,
           drill: () => onDrill({
             type: "adgroup",
             campaignId: level.campaignId, campaignName: level.campaignName,
             adGroupId: a.adGroupId, adGroupName: a.name ?? a.adGroupId,
           }),
         }))}
+        accountId={accountId}
         currency={currency}
         reviewer={reviewer}
         onApplied={onApplied}
@@ -242,8 +257,9 @@ function CampaignView({ data, level, bucketFilter, currency, reviewer, onDrill, 
   );
 }
 
-function AdGroupView({ data, bucketFilter, currency, reviewer, onApplied }: {
+function AdGroupView({ data, accountId, bucketFilter, currency, reviewer, onApplied }: {
   data: { adGroup: AdGroupNode; targets: TargetNode[] };
+  accountId: string;
   bucketFilter: Bucket | "ALL"; currency: string; reviewer: string;
   onApplied: () => void;
 }) {
@@ -268,7 +284,11 @@ function AdGroupView({ data, bucketFilter, currency, reviewer, onApplied }: {
           targetAcos: null,
           m7d: t.m7d,
           suggestion: t.suggestion,
+          notesCount: t.notesCount,
+          noteTargetType: t.kind === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET",
+          noteTargetId: t.targetId,
         }))}
+        accountId={accountId}
         currency={currency}
         reviewer={reviewer}
         onApplied={onApplied}
@@ -331,11 +351,14 @@ interface RowItem {
   m7d: Metric;
   suggestion: SuggestionLite | null;
   childBuckets?: BucketCounts;
+  notesCount?: number;
+  noteTargetType?: NoteTargetType;
+  noteTargetId?: string;
   drill?: () => void;
 }
 
-function Table({ rows, currency, reviewer, onApplied, showDrill, rowLevelLabel }: {
-  rows: RowItem[]; currency: string; reviewer: string;
+function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowLevelLabel }: {
+  rows: RowItem[]; accountId: string; currency: string; reviewer: string;
   onApplied: () => void; showDrill?: boolean; rowLevelLabel: string;
 }) {
   if (rows.length === 0) {
@@ -359,7 +382,7 @@ function Table({ rows, currency, reviewer, onApplied, showDrill, rowLevelLabel }
           </thead>
           <tbody>
             {rows.map((r) => (
-              <ExplorerRow key={r.key} r={r} currency={currency} reviewer={reviewer}
+              <ExplorerRow key={r.key} r={r} accountId={accountId} currency={currency} reviewer={reviewer}
                            onApplied={onApplied} showDrill={!!showDrill} />
             ))}
           </tbody>
@@ -369,9 +392,10 @@ function Table({ rows, currency, reviewer, onApplied, showDrill, rowLevelLabel }
   );
 }
 
-function ExplorerRow({ r, currency, reviewer, onApplied, showDrill }: {
-  r: RowItem; currency: string; reviewer: string; onApplied: () => void; showDrill: boolean;
+function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }: {
+  r: RowItem; accountId: string; currency: string; reviewer: string; onApplied: () => void; showDrill: boolean;
 }) {
+  const [notesOpen, setNotesOpen] = useState(false);
   const sug = r.suggestion;
   const bucket = sug?.bucket ?? null;
   const acosOver = r.targetAcos != null && r.m7d.acos != null && r.m7d.acos > r.targetAcos;
@@ -379,6 +403,7 @@ function ExplorerRow({ r, currency, reviewer, onApplied, showDrill }: {
   const acosColor = acosOver ? "var(--c-danger-text)" : acosUnder ? "var(--c-success-text)" : "var(--text-primary)";
 
   return (
+    <>
     <tr style={{ borderBottom: "1px solid var(--bg-input)" }}>
       <td style={{ padding: "10px 8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -417,15 +442,143 @@ function ExplorerRow({ r, currency, reviewer, onApplied, showDrill }: {
         <ChildBucketBadges counts={r.childBuckets} />
       </td>
       <td style={{ ...tdR, whiteSpace: "nowrap" }}>
-        {sug && sug.status === "PENDING" ? (
-          <RowActions sug={sug} currency={currency} reviewer={reviewer} onApplied={onApplied} />
-        ) : (
-          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>—</span>
-        )}
+        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          {sug && sug.status === "PENDING" ? (
+            <RowActions sug={sug} currency={currency} reviewer={reviewer} onApplied={onApplied} />
+          ) : (
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>—</span>
+          )}
+          {r.noteTargetType && r.noteTargetId && (
+            <button onClick={() => setNotesOpen((v) => !v)} style={notesBtn} title="View / add notes">
+              💬 {r.notesCount && r.notesCount > 0 ? r.notesCount : ""}
+            </button>
+          )}
+        </div>
       </td>
     </tr>
+    {notesOpen && r.noteTargetType && r.noteTargetId && (
+      <tr>
+        <td colSpan={9} style={{ padding: 0, background: "var(--bg-card)" }}>
+          <NotesDrawer
+            accountId={accountId}
+            targetType={r.noteTargetType}
+            targetId={r.noteTargetId}
+            entityName={r.name}
+            reviewer={reviewer}
+            onClose={() => { setNotesOpen(false); onApplied(); }}
+          />
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
+
+// ─── Notes drawer ───────────────────────────────────────────────────────────
+
+interface NoteRow {
+  id: string; body: string; author: string | null; createdAt: string;
+}
+
+function NotesDrawer({ accountId, targetType, targetId, entityName, reviewer, onClose }: {
+  accountId: string; targetType: NoteTargetType; targetId: string;
+  entityName: string; reviewer: string;
+  onClose: () => void;
+}) {
+  const [notes, setNotes] = useState<NoteRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/notes?accountId=${accountId}&targetType=${targetType}&targetId=${targetId}`, { cache: "no-store" });
+      const j = await res.json();
+      setNotes(j.notes ?? []);
+    } finally { setLoading(false); }
+  }, [accountId, targetType, targetId]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function submit() {
+    if (!text.trim()) return;
+    setSubmitting(true);
+    try {
+      await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId, targetType, targetId,
+          body: text.trim(),
+          author: reviewer || null,
+        }),
+      });
+      setText("");
+      await load();
+    } finally { setSubmitting(false); }
+  }
+
+  return (
+    <div style={drawerWrap}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Notes</div>
+            <div style={{ fontSize: 12, color: "var(--text-primary)", maxWidth: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={entityName}>{entityName}</div>
+          </div>
+          <button onClick={onClose} style={{ ...notesBtn, padding: "4px 8px" }}>Close</button>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={reviewer ? `Add a note as ${reviewer}…` : "Add a note (set your name top-right for attribution)…"}
+            rows={2}
+            style={{
+              flex: 1, background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6,
+              color: "var(--text-primary)", padding: "6px 10px", fontSize: 12, resize: "vertical",
+            }}
+          />
+          <button
+            onClick={submit}
+            disabled={!text.trim() || submitting}
+            style={{
+              padding: "8px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: text.trim() ? "pointer" : "default",
+              background: text.trim() ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "var(--bg-input)",
+              color: text.trim() ? "#fff" : "var(--text-muted)",
+              border: "1px solid transparent", whiteSpace: "nowrap",
+            }}
+          >
+            {submitting ? "Saving…" : "Add note"}
+          </button>
+        </div>
+        {loading ? (
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Loading…</div>
+        ) : notes.length === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No notes yet. Be the first.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+            {notes.map((n) => (
+              <div key={n.id} style={{ background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px" }}>
+                <div style={{ fontSize: 11, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>{n.body}</div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3 }}>
+                  {n.author ?? "anonymous"} · {new Date(n.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+    </div>
+  );
+}
+
+const drawerWrap: React.CSSProperties = {
+  background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 8,
+  padding: 12, margin: "0 8px 8px 8px",
+};
+const notesBtn: React.CSSProperties = {
+  padding: "3px 7px", borderRadius: 4, fontSize: 10, fontWeight: 500, cursor: "pointer",
+  background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)",
+};
 
 function ChildBucketBadges({ counts }: { counts: BucketCounts | undefined }) {
   if (!counts) return null;

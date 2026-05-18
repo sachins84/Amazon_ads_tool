@@ -7,14 +7,18 @@ export const currencySymbol = (c: Currency | string | undefined) =>
   c === "USD" ? "$" : "₹";
 
 /** Indian (lakh/crore) comma grouping */
-function inrFormat(n: number): string {
+function inrFormat(n: number, digits = 0): string {
   const sign = n < 0 ? "-" : "";
   const abs = Math.abs(n);
-  const fixed = Math.round(abs).toString();
-  if (fixed.length <= 3) return sign + fixed;
-  const last3 = fixed.slice(-3);
-  const rest   = fixed.slice(0, -3);
-  return sign + rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3;
+  const [intPart, fracPart] = abs.toFixed(digits).split(".");
+  let grouped: string;
+  if (intPart.length <= 3) grouped = intPart;
+  else {
+    const last3 = intPart.slice(-3);
+    const rest  = intPart.slice(0, -3);
+    grouped = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3;
+  }
+  return sign + grouped + (fracPart ? "." + fracPart : "");
 }
 
 function usFormat(n: number, digits = 0): string {
@@ -33,7 +37,9 @@ export function fmt(
   const isInr = currency !== "USD";
 
   if (type === "currency") {
-    if (isInr) return `${sym}${inrFormat(n)}`;
+    // Bid-sized values (under 1000 of any currency) get 2 decimals so a ₹1.50
+    // bid doesn't display as ₹2. Larger spend totals stay integer for INR.
+    if (isInr) return `${sym}${inrFormat(n, Math.abs(n) < 1000 ? 2 : 0)}`;
     return `${sym}${usFormat(n, 2)}`;
   }
   if (type === "percent")    return `${n.toFixed(1)}%`;

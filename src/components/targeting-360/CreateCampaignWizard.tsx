@@ -33,7 +33,7 @@ interface WizardState {
     topOfSearchPct: number;
     productPagePct: number;
   };
-  adGroup:    { name: string; defaultBid: number };
+  adGroup:    { name: string; defaultBid: number; state: "ENABLED" | "PAUSED" };
   asins:      string[];
   keywords:   { text: string; matchType: MatchType; bid: number }[];
   asinTargets:{ asin: string; bid: number }[];
@@ -49,7 +49,7 @@ const initial = (): WizardState => ({
     strategy: "LEGACY_FOR_SALES",
     topOfSearchPct: 0, productPagePct: 0,
   },
-  adGroup: { name: "Ad group 1", defaultBid: 1.00 },
+  adGroup: { name: "Ad group 1", defaultBid: 1.00, state: "ENABLED" },
   asins: [],
   keywords: [],
   asinTargets: [],

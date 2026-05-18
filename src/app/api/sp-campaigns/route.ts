@@ -66,7 +66,10 @@ export async function POST(req: NextRequest) {
       name: body.adGroup.name,
       campaignId,
       defaultBid: body.adGroup.defaultBid,
-      state: body.adGroup.state,
+      // Amazon rejects null state — older wizard payloads that omit this
+      // would 400 on adGroups.1.member.state. Default to ENABLED so older
+      // clients keep working while the wizard now sends it explicitly.
+      state: body.adGroup.state ?? "ENABLED",
     }], body.accountId);
     const created = r.adGroups?.success?.[0];
     const failed  = r.adGroups?.error?.[0];

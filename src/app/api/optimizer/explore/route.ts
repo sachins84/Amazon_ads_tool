@@ -8,6 +8,7 @@ import {
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { inferIntent, type Intent } from "@/lib/amazon-api/intent";
 import { buildTargetResolver, type OptimizerProgram } from "@/lib/db/acos-targets-repo";
+import { countNotesByTarget } from "@/lib/db/notes-repo";
 
 type BucketCounts = Partial<Record<"SCALE_UP" | "SCALE_DOWN" | "PAUSE" | "BID_UP" | "BID_DOWN" | "HOLD", number>>;
 
@@ -72,6 +73,7 @@ function exploreAccount(accountId: string) {
   const resolveTarget = buildTargetResolver(accountId);
   const sug = latestSuggestionsByTarget(accountId, "CAMPAIGN");
   const childBuckets = childBucketsByCampaign(accountId);
+  const notes = countNotesByTarget(accountId);
 
   let pSpend = 0, pSales = 0, pOrders = 0, pClicks = 0, pImpressions = 0;
   const campaigns = meta.map((m) => {
@@ -92,6 +94,7 @@ function exploreAccount(accountId: string) {
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
       suggestion: sug.get(m.campaignId) ?? null,
       childBuckets: childBuckets.get(m.campaignId) ?? {},
+      notesCount: notes.get(`CAMPAIGN|${m.campaignId}`) ?? 0,
     };
   });
 
@@ -145,6 +148,7 @@ function exploreCampaign(accountId: string, campaignId: string) {
 
   const sug = latestSuggestionsByTarget(accountId, "AD_GROUP");
   const childBuckets = childBucketsByAdGroup(accountId, campaignId);
+  const notes = countNotesByTarget(accountId);
   const adGroups = adGroupMeta.map((m) => {
     const a = agAgg.get(m.adGroupId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
     return {
@@ -157,6 +161,7 @@ function exploreCampaign(accountId: string, campaignId: string) {
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
       suggestion: sug.get(m.adGroupId) ?? null,
       childBuckets: childBuckets.get(m.adGroupId) ?? {},
+      notesCount: notes.get(`AD_GROUP|${m.adGroupId}`) ?? 0,
     };
   });
 
@@ -212,12 +217,15 @@ function exploreAdGroup(accountId: string, adGroupId: string) {
     ...latestSuggestionsByTarget(accountId, "KEYWORD"),
     ...latestSuggestionsByTarget(accountId, "PRODUCT_TARGET"),
   ]);
+  const notes = countNotesByTarget(accountId);
   const targets = tgtMeta.map((m) => {
     const a = tgtAgg.get(m.targetId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    const noteKey = m.kind === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET";
     return {
       targetId: m.targetId,
       adGroupId: m.adGroupId,
       campaignId: m.campaignId,
+      notesCount: notes.get(`${noteKey}|${m.targetId}`) ?? 0,
       program: m.program,
       kind: m.kind,
       matchType: m.matchType,

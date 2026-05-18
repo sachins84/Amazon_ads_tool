@@ -161,6 +161,23 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_sugg_outcomes_captured ON suggestion_outcomes (captured_at);
 
+    -- ─── Entity notes ───────────────────────────────────────────────────
+    -- Free-form, append-only timestamped comments on any entity (campaign,
+    -- ad group, keyword, product target). Used when a reviewer wants to
+    -- annotate context that isn't tied to a specific AI/rule suggestion —
+    -- e.g. "paused manually because creative is being redone", "new ASIN
+    -- launched 2026-03-12, give it 14 days".
+    CREATE TABLE IF NOT EXISTS entity_notes (
+      id           TEXT PRIMARY KEY,
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      target_type  TEXT NOT NULL,    -- CAMPAIGN | AD_GROUP | KEYWORD | PRODUCT_TARGET
+      target_id    TEXT NOT NULL,
+      body         TEXT NOT NULL,
+      author       TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_entity_notes_target ON entity_notes (account_id, target_type, target_id, created_at DESC);
+
     -- ─── Suggestion runs (audit log) ─────────────────────────────────────
     CREATE TABLE IF NOT EXISTS suggestion_runs (
       id              TEXT PRIMARY KEY,
