@@ -9,6 +9,7 @@ import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { inferIntent, type Intent } from "@/lib/amazon-api/intent";
 import { buildTargetResolver, type OptimizerProgram } from "@/lib/db/acos-targets-repo";
 import { countNotesByTarget } from "@/lib/db/notes-repo";
+import { readPlacementMetrics } from "@/lib/db/metrics-store";
 
 type BucketCounts = Partial<Record<"SCALE_UP" | "SCALE_DOWN" | "PAUSE" | "BID_UP" | "BID_DOWN" | "HOLD", number>>;
 
@@ -75,6 +76,7 @@ function exploreAccount(accountId: string) {
   const childBuckets = childBucketsByCampaign(accountId);
   const notes = countNotesByTarget(accountId);
   const { ai: aiSug, manual: manualSug } = sug;
+  const topShare = topSpendShareByCampaign(accountId, r7);
 
   let pSpend = 0, pSales = 0, pOrders = 0, pClicks = 0, pImpressions = 0;
   const campaigns = meta.map((m) => {
@@ -93,6 +95,7 @@ function exploreAccount(accountId: string) {
       dailyBudget: m.dailyBudget,
       targetAcos: resolveTarget(programKey, intent),
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
+      topSpendShare7d:  topShare.get(m.campaignId) ?? null,
       aiSuggestion:     aiSug.get(m.campaignId) ?? null,
       manualSuggestion: manualSug.get(m.campaignId) ?? null,
       childBuckets: childBuckets.get(m.campaignId) ?? {},
@@ -395,4 +398,23 @@ function latestSuggestionsByTarget(accountId: string, targetType: string): Sugge
     });
   }
   return { ai, manual };
+}
+
+/** Per-campaign % of 7d spend that came from PLACEMENT_TOP, derived from
+ *  placement_metrics_daily. Campaigns with no placement data are absent. */
+function topSpendShareByCampaign(accountId: string, range: { startDate: string; endDate: string }): Map<string, number> {
+  const rows = readPlacementMetrics(accountId, range.startDate, range.endDate);
+  const total = new Map<string, number>();
+  const top   = new Map<string, number>();
+  for (const r of rows) {
+    total.set(r.campaignId, (total.get(r.campaignId) ?? 0) + r.cost);
+    if (r.placement === "PLACEMENT_TOP") {
+      top.set(r.campaignId, (top.get(r.campaignId) ?? 0) + r.cost);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [cid, t] of total) {
+    if (t > 0) out.set(cid, ((top.get(cid) ?? 0) / t) * 100);
+  }
+  return out;
 }

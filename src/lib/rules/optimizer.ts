@@ -66,6 +66,9 @@ export interface OptimizerEntity {
   m1d: WindowMetrics;
   m3d: WindowMetrics;
   m7d: WindowMetrics;
+  /** Share of 7d spend from PLACEMENT_TOP (0..100). Available only for SP
+   *  campaigns (placement_metrics_daily is SP-only). */
+  topSpendShare7d?: number | null;
   benchmark?: { avgCpc?: number };
 }
 
@@ -77,6 +80,11 @@ export interface OptimizerSignals {
   cpc7d: number;
   ctr7d: number;
   topOfSearchIS7d: number | null;
+  /** Share of 7d spend that came from PLACEMENT_TOP (0..100). Null when
+   *  placement breakdown isn't available for this entity. Used as a
+   *  saturation signal: high TOP share + bad ACOS = we've already won the
+   *  slot and it's still not paying. */
+  topSpendShare7d: number | null;
   zeroOrderDays: number;
   vsBenchmarkCpc: number | null;
   targetAcos: number;
@@ -97,7 +105,8 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
   const target = effectiveTarget(e, obj);
   const signals = computeSignals(e, target);
   const { acos7d, acos3d, ordersTrend7vs3, acosTrend7vs3,
-          zeroOrderDays, topOfSearchIS7d, vsBenchmarkCpc, cpc7d } = signals;
+          zeroOrderDays, topOfSearchIS7d, topSpendShare7d,
+          vsBenchmarkCpc, cpc7d } = signals;
 
   const spend7 = e.m7d.spend;
   const orders7 = e.m7d.orders;
@@ -137,31 +146,39 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
       && spend7 >= obj.minSpendThreshold * 2) {
     const cap = -Math.abs(obj.maxScaleDownPct);
     // Excess proportional to how much above target — bigger cut for worse offenders.
+    // "Saturated TOP" amplifier: if most of our spend is at TOP and we're still
+    // losing, the placement isn't going to fix this — cut harder.
+    const saturatedTop = topSpendShare7d != null && topSpendShare7d > 60;
     const excessPct = ((acos7d - target) / target) * 100;
-    const dropPct = Math.max(cap, -Math.min(Math.abs(cap), excessPct * 0.5));
+    const intensified = saturatedTop ? excessPct * 0.65 : excessPct * 0.5;
+    const dropPct = Math.max(cap, -Math.min(Math.abs(cap), intensified));
     const newVal = clampDelta(e.currentValue, dropPct);
+    const placementNote = saturatedTop ? ` ${topSpendShare7d!.toFixed(0)}% of spend already at TOP — no placement headroom.` : "";
     return {
       bucket: isBidLevel ? "BID_DOWN" : "SCALE_DOWN",
       actionType: isBidLevel ? "SET_BID" : "SET_BUDGET",
       actionValue: round2(newVal),
-      reason: `ACOS ${fmtPct(acos7d)} is ${fmtPct(excessPct)} above target ${fmtPct(target)} (7d). Cut ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)}.`,
-      confidence: 0.75, signals,
+      reason: `ACOS ${fmtPct(acos7d)} is ${fmtPct(excessPct)} above target ${fmtPct(target)} (7d).${placementNote} Cut ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)}.`,
+      confidence: saturatedTop ? 0.82 : 0.75, signals,
     };
   }
 
   // ── 5. Strong winner with headroom → SCALE_UP / BID_UP ──
   // ACOS ≤ 60% of target, trend not worsening, AND either impression-share has
-  // room OR orders are accelerating.
+  // room OR most spend is not at TOP yet (we can climb) OR orders accelerating.
   if (acos7d != null && acos7d <= target * 0.6 && acosTrend7vs3 !== "worsening") {
-    const hasIsHeadroom = topOfSearchIS7d != null && topOfSearchIS7d < 60;
-    const momentum      = ordersTrend7vs3 === "up";
-    if (hasIsHeadroom || momentum) {
+    const hasIsHeadroom    = topOfSearchIS7d != null && topOfSearchIS7d < 60;
+    const placementHeadroom = topSpendShare7d != null && topSpendShare7d < 40;
+    const momentum         = ordersTrend7vs3 === "up";
+    if (hasIsHeadroom || placementHeadroom || momentum) {
       const efficiencyPct = ((target - acos7d) / target) * 100; // positive = good
-      const aggressionPct = Math.min(obj.maxScaleUpPct, efficiencyPct * 0.4 + (momentum ? 5 : 0));
+      const placementBonus = placementHeadroom ? 4 : 0;
+      const aggressionPct = Math.min(obj.maxScaleUpPct, efficiencyPct * 0.4 + (momentum ? 5 : 0) + placementBonus);
       const newVal = clampDelta(e.currentValue, aggressionPct);
       const why = [
         `ACOS ${fmtPct(acos7d)} ≤ ${fmtPct(target * 0.6)} (target × 0.6)`,
         hasIsHeadroom ? `TOS impression-share ${topOfSearchIS7d!.toFixed(0)}% has headroom` : "",
+        placementHeadroom ? `only ${topSpendShare7d!.toFixed(0)}% of spend at TOP — room to climb` : "",
         momentum ? "orders trending up" : "",
       ].filter(Boolean).join("; ");
       return {
@@ -169,7 +186,7 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
         actionType: isBidLevel ? "SET_BID" : "SET_BUDGET",
         actionValue: round2(newVal),
         reason: `${why}. Lean in ${pctLabel(aggressionPct)}.`,
-        confidence: hasIsHeadroom && momentum ? 0.85 : 0.65,
+        confidence: hasIsHeadroom && momentum ? 0.85 : (placementHeadroom ? 0.7 : 0.65),
         signals,
       };
     }
@@ -243,6 +260,7 @@ function computeSignals(e: OptimizerEntity, target: number): OptimizerSignals {
     acosTrend7vs3:   classifyAcosTrend(acos3d, acosEarlier),
     cpc7d, ctr7d,
     topOfSearchIS7d: e.m7d.topOfSearchIS ?? null,
+    topSpendShare7d: e.topSpendShare7d ?? null,
     zeroOrderDays:   e.m1d.orders === 0 && e.m3d.orders === 0 && e.m7d.orders === 0 ? 7 :
                      e.m1d.orders === 0 && e.m3d.orders === 0 ? 3 :
                      e.m1d.orders === 0 ? 1 : 0,

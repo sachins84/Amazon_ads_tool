@@ -17,6 +17,7 @@ import {
   readCampaignMetrics, readCampaignMeta,
   readAdGroupMetrics,  readAdGroupMeta,
   readTargetingMetrics, readTargetingMeta,
+  readPlacementMetrics,
 } from "@/lib/db/metrics-store";
 import {
   evaluateEntity, effectiveTarget,
@@ -70,6 +71,12 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   // Account-wide CPC benchmark (used as a sanity check on individual entities)
   const acctAvgCpc = avgCpc(Array.from(camp7.values()));
 
+  // Placement-share per campaign (% of 7d spend that came from PLACEMENT_TOP).
+  // SP-only; null on campaigns/programs we don't have a breakdown for.
+  const placementShare = computeTopSpendShare(
+    readPlacementMetrics(input.accountId, r7.startDate, r7.endDate),
+  );
+
   // Cache campaign-level (program, intent) once — ad groups + targets inherit
   // these via campaignId join so we don't have to re-classify every keyword.
   const campContext = new Map<string, { programKey: OptimizerProgram; intent: Intent; targetAcos: number | null }>();
@@ -92,6 +99,7 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
       programKey: ctx.programKey,
       intent: ctx.intent,
       targetAcos: ctx.targetAcos ?? undefined,
+      topSpendShare7d: placementShare.get(m.campaignId) ?? null,
       state: m.state ?? "ARCHIVED",
       currentValue: m.dailyBudget ?? 0,
       m1d: camp1.get(m.campaignId) ?? zeroWindow(),
@@ -132,6 +140,7 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
       programKey: ctx?.programKey,
       intent: ctx?.intent,
       targetAcos: ctx?.targetAcos ?? undefined,
+      topSpendShare7d: m ? placementShare.get(m.campaignId) ?? null : null,
       campaignId: m?.campaignId,
       state: m?.state ?? "ARCHIVED",
       currentValue: m?.defaultBid ?? 0,
@@ -166,6 +175,7 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
       programKey: ctx?.programKey,
       intent: ctx?.intent,
       targetAcos: ctx?.targetAcos ?? undefined,
+      topSpendShare7d: m ? placementShare.get(m.campaignId) ?? null : null,
       campaignId: m?.campaignId,
       adGroupId:  m?.adGroupId,
       state: m?.state ?? "ARCHIVED",
@@ -554,5 +564,28 @@ function applyScaleGuardrail(
       } as unknown as OptimizerSuggestion["signals"],
     });
   }
+}
+
+/**
+ * Roll placement_metrics_daily rows up to a Map<campaignId, topSpendSharePct>.
+ * Returns the percent of 7d cost spent at PLACEMENT_TOP. Null entries
+ * (campaigns with no placement data) are simply absent from the map; the
+ * engine treats absence as "unknown, ignore the signal".
+ */
+function computeTopSpendShare(rows: { campaignId: string; placement: string; cost: number }[]): Map<string, number> {
+  const totalByCampaign = new Map<string, number>();
+  const topByCampaign   = new Map<string, number>();
+  for (const r of rows) {
+    totalByCampaign.set(r.campaignId, (totalByCampaign.get(r.campaignId) ?? 0) + r.cost);
+    if (r.placement === "PLACEMENT_TOP") {
+      topByCampaign.set(r.campaignId, (topByCampaign.get(r.campaignId) ?? 0) + r.cost);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [cid, total] of totalByCampaign) {
+    if (total <= 0) continue;
+    out.set(cid, ((topByCampaign.get(cid) ?? 0) / total) * 100);
+  }
+  return out;
 }
 

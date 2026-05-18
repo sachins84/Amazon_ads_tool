@@ -39,6 +39,7 @@ interface CampaignNode {
   campaignId: string; name: string | null; program: string; programKey: string;
   intent: string; state: string | null; dailyBudget: number | null;
   targetAcos: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
+  topSpendShare7d: number | null;
   childBuckets: BucketCounts;
   notesCount: number;
 }
@@ -186,7 +187,7 @@ function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDril
         rows={rows.map((c) => ({
           key: c.campaignId,
           name: c.name ?? c.campaignId,
-          subtitle: `${displayProgram(c.programKey)} · ${c.intent} · budget ${fmt(c.dailyBudget ?? 0, "currency", currency)}/d`,
+          subtitle: `${displayProgram(c.programKey)} · ${c.intent} · budget ${fmt(c.dailyBudget ?? 0, "currency", currency)}/d${c.topSpendShare7d != null ? ` · TOP placement ${c.topSpendShare7d.toFixed(0)}%` : ""}`,
           targetAcos: c.targetAcos,
           m7d: c.m7d,
           aiSuggestion:     c.aiSuggestion,

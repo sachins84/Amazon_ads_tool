@@ -55,6 +55,14 @@ export const SP_CAMPAIGN_COLUMNS = [
   "topOfSearchImpressionShare",
 ];
 
+/** Columns for the campaignPlacement-grouped SP report. `placementClassification`
+ *  values are e.g. PLACEMENT_TOP, PLACEMENT_PRODUCT_PAGE, PLACEMENT_REST_OF_SEARCH. */
+export const SP_PLACEMENT_COLUMNS = [
+  "date", "campaignId", "campaignName", "placementClassification",
+  "impressions", "clicks", "cost",
+  "purchases7d", "sales7d",
+];
+
 export const SB_CAMPAIGN_COLUMNS = [
   "date", "campaignId", "campaignName",
   "impressions", "clicks", "cost", "purchases", "sales",
@@ -188,6 +196,51 @@ function spCampaignReportBody(start: string, end: string): ReportRequest {
       format: "GZIP_JSON",
     },
   };
+}
+
+function spPlacementReportBody(start: string, end: string): ReportRequest {
+  return {
+    name: `SP placement ${start}..${end}`,
+    startDate: start, endDate: end,
+    configuration: {
+      adProduct: "SPONSORED_PRODUCTS",
+      groupBy: ["campaign", "campaignPlacement"],
+      columns: SP_PLACEMENT_COLUMNS,
+      reportTypeId: "spCampaigns",
+      timeUnit: "DAILY",
+      format: "GZIP_JSON",
+    },
+  };
+}
+
+export interface PlacementRow {
+  date: string;
+  campaignId: string;
+  placement: string;            // PLACEMENT_TOP / PLACEMENT_PRODUCT_PAGE / PLACEMENT_REST_OF_SEARCH / OTHER
+  impressions: number;
+  clicks: number;
+  cost: number;
+  orders: number;
+  sales: number;
+}
+
+export async function fetchSPPlacementReport(
+  profileId: string, startDate: string, endDate: string, accountId?: string,
+): Promise<PlacementRow[]> {
+  const reportId = await createReport(profileId, spPlacementReportBody(startDate, endDate), accountId);
+  const rows = await waitForReport<Record<string, unknown>>(profileId, reportId, accountId);
+  return rows
+    .filter((r) => r.campaignId && r.date)
+    .map((r) => ({
+      date:        String(r.date),
+      campaignId:  String(r.campaignId),
+      placement:   String(r.placementClassification ?? "OTHER"),
+      impressions: Number(r.impressions ?? 0),
+      clicks:      Number(r.clicks ?? 0),
+      cost:        Number(r.cost ?? 0),
+      orders:      Number(r.purchases7d ?? 0),
+      sales:       Number(r.sales7d ?? 0),
+    }));
 }
 
 function sbCampaignReportBody(start: string, end: string): ReportRequest {

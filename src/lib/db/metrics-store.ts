@@ -73,6 +73,56 @@ export function upsertCampaignMetrics(rows: CampaignDailyRow[]): number {
   return rows.length;
 }
 
+// ─── Placement daily (SP only) ────────────────────────────────────────────
+
+export interface PlacementDailyRow {
+  accountId: string;
+  campaignId: string;
+  date: string;
+  placement: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  orders: number;
+  sales: number;
+}
+
+export function upsertPlacementMetrics(rows: PlacementDailyRow[]): number {
+  if (rows.length === 0) return 0;
+  const stmt = getDb().prepare(`
+    INSERT INTO placement_metrics_daily
+      (account_id, campaign_id, date, placement, impressions, clicks, cost, orders, sales, updated_at)
+    VALUES (@accountId, @campaignId, @date, @placement, @impressions, @clicks, @cost, @orders, @sales, datetime('now'))
+    ON CONFLICT(account_id, campaign_id, date, placement) DO UPDATE SET
+      impressions = excluded.impressions,
+      clicks      = excluded.clicks,
+      cost        = excluded.cost,
+      orders      = excluded.orders,
+      sales       = excluded.sales,
+      updated_at  = excluded.updated_at
+  `);
+  const tx = getDb().transaction((items: typeof rows) => {
+    for (const r of items) stmt.run(r);
+  });
+  tx(rows);
+  return rows.length;
+}
+
+interface RawPlacementRow {
+  campaign_id: string; date: string; placement: string;
+  impressions: number; clicks: number; cost: number; orders: number; sales: number;
+}
+
+export function readPlacementMetrics(accountId: string, startDate: string, endDate: string): PlacementDailyRow[] {
+  return (getDb()
+    .prepare("SELECT campaign_id, date, placement, impressions, clicks, cost, orders, sales FROM placement_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?")
+    .all(accountId, startDate, endDate) as RawPlacementRow[])
+    .map((r) => ({
+      accountId, campaignId: r.campaign_id, date: r.date, placement: r.placement,
+      impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+    }));
+}
+
 export function upsertAdGroupMetrics(rows: AdGroupDailyRow[]): number {
   if (rows.length === 0) return 0;
   const stmt = getDb().prepare(`

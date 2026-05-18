@@ -213,6 +213,27 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_cmd_account_date ON campaign_metrics_daily (account_id, date);
 
+    -- ─── Per-placement breakdown (SP only) ──────────────────────────────
+    -- Stored as one row per (account, campaign, date, placement). Lets the
+    -- optimizer reason about "% spend from top-of-search" — share of TRAFFIC,
+    -- distinct from topOfSearchImpressionShare (share of VOICE) already on
+    -- campaign_metrics_daily.
+    CREATE TABLE IF NOT EXISTS placement_metrics_daily (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      campaign_id  TEXT NOT NULL,
+      date         TEXT NOT NULL,
+      placement    TEXT NOT NULL,   -- PLACEMENT_TOP / PLACEMENT_PRODUCT_PAGE / PLACEMENT_REST_OF_SEARCH / OTHER
+      impressions  INTEGER NOT NULL DEFAULT 0,
+      clicks       INTEGER NOT NULL DEFAULT 0,
+      cost         REAL    NOT NULL DEFAULT 0,
+      orders       INTEGER NOT NULL DEFAULT 0,
+      sales        REAL    NOT NULL DEFAULT 0,
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, campaign_id, date, placement)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pmd_account_date ON placement_metrics_daily (account_id, date);
+    CREATE INDEX IF NOT EXISTS idx_pmd_account_campaign ON placement_metrics_daily (account_id, campaign_id);
+
     CREATE TABLE IF NOT EXISTS adgroup_metrics_daily (
       account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
       campaign_id  TEXT NOT NULL,

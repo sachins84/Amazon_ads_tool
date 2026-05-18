@@ -9,16 +9,19 @@ import { getAccount } from "@/lib/db/accounts";
 import {
   upsertCampaignMetrics, upsertAdGroupMetrics, upsertTargetingMetrics,
   upsertCampaignMeta,    upsertAdGroupMeta,    upsertTargetingMeta,
+  upsertPlacementMetrics,
   setRefreshState,
   type CampaignDailyRow, type AdGroupDailyRow, type TargetingDailyRow,
   type CampaignMetaRow,  type AdGroupMetaRow,  type TargetingMetaRow,
+  type PlacementDailyRow,
 } from "@/lib/db/metrics-store";
 import { listAllCampaigns }      from "./campaigns";
 import { listAllAdGroups }       from "./adgroups";
 import { listSPKeywords, listSPProductTargets } from "./targeting";
 import {
   fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
-  type Program,
+  fetchSPPlacementReport,
+  type Program, type PlacementRow,
 } from "./reports";
 import { captureOutcomesForAccount } from "@/lib/rules/outcome-capture";
 
@@ -38,7 +41,7 @@ export interface RefreshResult {
 }
 
 type RefreshPhase =
-  | "campaigns" | "adgroups" | "targeting"
+  | "campaigns" | "adgroups" | "targeting" | "placement"
   | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets";
 
 export async function refreshAccountRecent(accountId: string, days = 21): Promise<RefreshResult> {
@@ -52,7 +55,7 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
 
   // ─── 1. Fetch everything in parallel ───────────────────────────────────
   const [campaignsResult, adGroupsResult, keywordsResult, productTargetsResult,
-         campaignReports, adGroupReports, targetingReport] = await Promise.all([
+         campaignReports, adGroupReports, targetingReport, placementReport] = await Promise.all([
     listAllCampaigns(acct.adsProfileId, accountId).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "list_campaigns" });
       return { campaigns: [], errors: [] };
@@ -95,6 +98,16 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     ).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "targeting" });
       return [] as Record<string, unknown>[];
+    }),
+    // SP placement breakdown — only SP exposes this. Same chunking story.
+    // Non-fatal if it 400s on accounts that don't have placement data yet.
+    chunkedFetch(windowStart, windowEnd, (s, e) =>
+      fetchSPPlacementReport(acct.adsProfileId, s, e, accountId),
+      (a, b) => [...a, ...b],
+      [] as PlacementRow[],
+    ).catch((e) => {
+      errors.push({ program: "SP", error: String(e), phase: "placement" });
+      return [] as PlacementRow[];
     }),
   ]);
 
@@ -196,12 +209,26 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
       };
     });
 
+  const placementDaily: PlacementDailyRow[] = placementReport.map((r) => ({
+    accountId,
+    campaignId: r.campaignId,
+    date: r.date,
+    placement: r.placement,
+    impressions: r.impressions,
+    clicks: r.clicks,
+    cost: r.cost,
+    orders: r.orders,
+    sales: r.sales,
+  }));
+
   const campaignMetaUpserted  = upsertCampaignMeta(campaignMeta);
   const campaignRowsUpserted  = upsertCampaignMetrics(campaignDaily);
   const adGroupMetaUpserted   = upsertAdGroupMeta(adGroupMeta);
   const adGroupRowsUpserted   = upsertAdGroupMetrics(adGroupDaily);
   const targetingMetaUpserted = upsertTargetingMeta(targetingMeta);
   const targetingRowsUpserted = upsertTargetingMetrics(targetingDaily);
+  const placementRowsUpserted = upsertPlacementMetrics(placementDaily);
+  void placementRowsUpserted;  // surfaced via refresh state error column when zero, not in RefreshResult
 
   const durationMs = Date.now() - start;
   const lastRefreshAt = new Date().toISOString();
