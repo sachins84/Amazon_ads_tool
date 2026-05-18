@@ -130,7 +130,7 @@ export async function waitForReport<T>(
   accountId?: string,
   opts: { maxWaitMs?: number; pollIntervalMs?: number } = {},
 ): Promise<T[]> {
-  const maxWaitMs = opts.maxWaitMs ?? 20 * 60 * 1000; // 20 min — India queue can be slow
+  const maxWaitMs = opts.maxWaitMs ?? 35 * 60 * 1000; // 35 min — India queue can be very slow; 20 min has been insufficient on heavy days
   const pollMs   = opts.pollIntervalMs ?? 8_000;
   const deadline = Date.now() + maxWaitMs;
 
