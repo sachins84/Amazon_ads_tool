@@ -97,15 +97,17 @@ export default function SegmentsPage() {
               currency={currency}
             />
 
-            {data.byAsin.length > 0 ? (
+            {(data.byAsin?.length ?? 0) > 0 ? (
               <SegmentTable
-                title={`By ASIN (top ${Math.min(50, data.byAsin.length)} by spend)`}
+                title={`By ASIN (top ${Math.min(50, data.byAsin.length)} by spend, ${data.byAsin.length} total)`}
                 rows={data.byAsin.slice(0, 50)}
                 currency={currency}
               />
             ) : (
               <div style={{ ...card, padding: 14, marginTop: 12, fontSize: 11, color: "var(--text-muted)" }}>
                 ASIN-level rows will populate once the next /api/admin/refresh successfully completes — the spAdvertisedProduct report is now part of the daily pull.
+                {" "}
+                <span style={{ color: "var(--text-secondary)" }}>(API returned {data.byAsin?.length ?? "no"} byAsin rows for this brand × window)</span>
               </div>
             )}
           </>
