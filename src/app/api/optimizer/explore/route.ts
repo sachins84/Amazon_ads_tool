@@ -9,6 +9,8 @@ import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { inferIntent, type Intent } from "@/lib/amazon-api/intent";
 import { buildTargetResolver, type OptimizerProgram } from "@/lib/db/acos-targets-repo";
 
+type BucketCounts = Partial<Record<"SCALE_UP" | "SCALE_DOWN" | "PAUSE" | "BID_UP" | "BID_DOWN" | "HOLD", number>>;
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -69,6 +71,7 @@ function exploreAccount(accountId: string) {
 
   const resolveTarget = buildTargetResolver(accountId);
   const sug = latestSuggestionsByTarget(accountId, "CAMPAIGN");
+  const childBuckets = childBucketsByCampaign(accountId);
 
   let pSpend = 0, pSales = 0, pOrders = 0, pClicks = 0, pImpressions = 0;
   const campaigns = meta.map((m) => {
@@ -88,6 +91,7 @@ function exploreAccount(accountId: string) {
       targetAcos: resolveTarget(programKey, intent),
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
       suggestion: sug.get(m.campaignId) ?? null,
+      childBuckets: childBuckets.get(m.campaignId) ?? {},
     };
   });
 
@@ -140,6 +144,7 @@ function exploreCampaign(accountId: string, campaignId: string) {
   }
 
   const sug = latestSuggestionsByTarget(accountId, "AD_GROUP");
+  const childBuckets = childBucketsByAdGroup(accountId, campaignId);
   const adGroups = adGroupMeta.map((m) => {
     const a = agAgg.get(m.adGroupId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
     return {
@@ -151,6 +156,7 @@ function exploreCampaign(accountId: string, campaignId: string) {
       defaultBid: m.defaultBid,
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
       suggestion: sug.get(m.adGroupId) ?? null,
+      childBuckets: childBuckets.get(m.adGroupId) ?? {},
     };
   });
 
@@ -253,6 +259,73 @@ interface SuggestionLite {
   reviewer: string | null;
   createdAt: string;
   appliedAt: string | null;
+}
+
+/**
+ * For every campaign on the account, count PENDING-suggestion buckets nested
+ * inside it (across ad-groups, keywords, product targets — using the
+ * suggestion rows' target_type + a join up through ad-group/target metadata
+ * back to campaign_id). Lets the UI badge a campaign with "+5 BID_DOWN
+ * inside" even when the campaign-level suggestion is HOLD/null, so filtering
+ * by BID_UP/BID_DOWN doesn't return an empty list at the top level.
+ */
+function childBucketsByCampaign(accountId: string): Map<string, BucketCounts> {
+  const rows = getDb().prepare(`
+    SELECT campaign_id, bucket, n FROM (
+      -- Direct ad-group suggestions
+      SELECT ag.campaign_id, s.bucket, COUNT(*) AS n
+      FROM suggestions s
+      JOIN adgroup_meta ag ON ag.account_id = s.account_id AND ag.adgroup_id = s.target_id
+      WHERE s.account_id = ?
+        AND s.status = 'PENDING'
+        AND s.target_type = 'AD_GROUP'
+        AND s.bucket IS NOT NULL
+      GROUP BY ag.campaign_id, s.bucket
+
+      UNION ALL
+
+      -- Keyword + product-target suggestions, joined to campaign via targeting_meta
+      SELECT tm.campaign_id, s.bucket, COUNT(*) AS n
+      FROM suggestions s
+      JOIN targeting_meta tm ON tm.account_id = s.account_id AND tm.target_id = s.target_id
+      WHERE s.account_id = ?
+        AND s.status = 'PENDING'
+        AND s.target_type IN ('KEYWORD','PRODUCT_TARGET')
+        AND s.bucket IS NOT NULL
+      GROUP BY tm.campaign_id, s.bucket
+    )
+  `).all(accountId, accountId) as Array<{ campaign_id: string; bucket: string; n: number }>;
+
+  const out = new Map<string, BucketCounts>();
+  for (const r of rows) {
+    const cur = out.get(r.campaign_id) ?? {};
+    cur[r.bucket as keyof BucketCounts] = (cur[r.bucket as keyof BucketCounts] ?? 0) + r.n;
+    out.set(r.campaign_id, cur);
+  }
+  return out;
+}
+
+/** Same idea, scoped to a single campaign — rolls KW/target buckets up to ad-group. */
+function childBucketsByAdGroup(accountId: string, campaignId: string): Map<string, BucketCounts> {
+  const rows = getDb().prepare(`
+    SELECT tm.adgroup_id, s.bucket, COUNT(*) AS n
+    FROM suggestions s
+    JOIN targeting_meta tm ON tm.account_id = s.account_id AND tm.target_id = s.target_id
+    WHERE s.account_id = ?
+      AND tm.campaign_id = ?
+      AND s.status = 'PENDING'
+      AND s.target_type IN ('KEYWORD','PRODUCT_TARGET')
+      AND s.bucket IS NOT NULL
+    GROUP BY tm.adgroup_id, s.bucket
+  `).all(accountId, campaignId) as Array<{ adgroup_id: string; bucket: string; n: number }>;
+
+  const out = new Map<string, BucketCounts>();
+  for (const r of rows) {
+    const cur = out.get(r.adgroup_id) ?? {};
+    cur[r.bucket as keyof BucketCounts] = (cur[r.bucket as keyof BucketCounts] ?? 0) + r.n;
+    out.set(r.adgroup_id, cur);
+  }
+  return out;
 }
 
 function latestSuggestionsByTarget(accountId: string, targetType: string): Map<string, SuggestionLite> {

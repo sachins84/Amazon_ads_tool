@@ -33,14 +33,18 @@ interface SuggestionLite {
   reason: string; status: string; confidence: number | null; reviewer: string | null;
   createdAt: string; appliedAt: string | null;
 }
+type BucketCounts = Partial<Record<Bucket, number>>;
+
 interface CampaignNode {
   campaignId: string; name: string | null; program: string; programKey: string;
   intent: string; state: string | null; dailyBudget: number | null;
   targetAcos: number | null; m7d: Metric; suggestion: SuggestionLite | null;
+  childBuckets: BucketCounts;
 }
 interface AdGroupNode {
   adGroupId: string; name: string | null; campaignId: string; program: string;
   state: string | null; defaultBid: number | null; m7d: Metric; suggestion: SuggestionLite | null;
+  childBuckets: BucketCounts;
 }
 interface TargetNode {
   targetId: string; adGroupId: string; campaignId: string; program: string;
@@ -159,7 +163,9 @@ function AccountView({ data, bucketFilter, currency, reviewer, onDrill, onApplie
 }) {
   const rows = useMemo(() =>
     data.campaigns.filter((c) =>
-      bucketFilter === "ALL" || c.suggestion?.bucket === bucketFilter
+      bucketFilter === "ALL"
+        || c.suggestion?.bucket === bucketFilter
+        || (c.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.campaigns, bucketFilter]);
   return (
@@ -177,6 +183,7 @@ function AccountView({ data, bucketFilter, currency, reviewer, onDrill, onApplie
           targetAcos: c.targetAcos,
           m7d: c.m7d,
           suggestion: c.suggestion,
+          childBuckets: c.childBuckets,
           drill: () => onDrill({ type: "campaign", campaignId: c.campaignId, campaignName: c.name ?? c.campaignId }),
         }))}
         currency={currency}
@@ -197,7 +204,9 @@ function CampaignView({ data, level, bucketFilter, currency, reviewer, onDrill, 
 }) {
   const rows = useMemo(() =>
     data.adGroups.filter((a) =>
-      bucketFilter === "ALL" || a.suggestion?.bucket === bucketFilter
+      bucketFilter === "ALL"
+        || a.suggestion?.bucket === bucketFilter
+        || (a.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.adGroups, bucketFilter]);
   return (
@@ -216,6 +225,7 @@ function CampaignView({ data, level, bucketFilter, currency, reviewer, onDrill, 
           targetAcos: data.campaign.targetAcos,
           m7d: a.m7d,
           suggestion: a.suggestion,
+          childBuckets: a.childBuckets,
           drill: () => onDrill({
             type: "adgroup",
             campaignId: level.campaignId, campaignName: level.campaignName,
@@ -320,6 +330,7 @@ interface RowItem {
   targetAcos: number | null;
   m7d: Metric;
   suggestion: SuggestionLite | null;
+  childBuckets?: BucketCounts;
   drill?: () => void;
 }
 
@@ -403,6 +414,7 @@ function ExplorerRow({ r, currency, reviewer, onApplied, showDrill }: {
         ) : (
           <span style={{ color: "var(--text-muted)", fontSize: 11 }}>No recent recommendation</span>
         )}
+        <ChildBucketBadges counts={r.childBuckets} />
       </td>
       <td style={{ ...tdR, whiteSpace: "nowrap" }}>
         {sug && sug.status === "PENDING" ? (
@@ -412,6 +424,27 @@ function ExplorerRow({ r, currency, reviewer, onApplied, showDrill }: {
         )}
       </td>
     </tr>
+  );
+}
+
+function ChildBucketBadges({ counts }: { counts: BucketCounts | undefined }) {
+  if (!counts) return null;
+  const entries = (Object.entries(counts) as [Bucket, number][])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return null;
+  return (
+    <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {entries.map(([b, n]) => (
+        <span key={b} style={{
+          padding: "1px 6px", borderRadius: 3, fontSize: 9, fontWeight: 600,
+          background: BUCKET_COLOR[b].bg, color: BUCKET_COLOR[b].fg,
+          opacity: 0.85,
+        }} title={`${n} ${BUCKET_COLOR[b].label} suggestion${n>1?"s":""} inside — drill in to act on them`}>
+          +{n} {BUCKET_COLOR[b].label}
+        </span>
+      ))}
+    </div>
   );
 }
 
