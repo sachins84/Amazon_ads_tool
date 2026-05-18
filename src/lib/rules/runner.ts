@@ -11,8 +11,12 @@
 import { listRules, createSuggestions, recordSuggestionRun, updateRule } from "@/lib/db/rules-repo";
 import { getOverviewForAccount } from "@/lib/amazon-api/overview-service";
 import { getAdGroupsForCampaign } from "@/lib/amazon-api/hierarchy-service";
+import { readTargetingMetrics, readTargetingMeta } from "@/lib/db/metrics-store";
+import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { evaluateRule } from "./engine";
 import type { Rule, MetricRow, Program } from "./types";
+
+const TOP_TARGETS_FOR_RULES = 500;
 
 export interface RunResult {
   accountId: string;
@@ -34,9 +38,8 @@ export async function runRulesForAccount(
   // We only fetch what's actually needed. Group rules by appliesTo.
   const needCampaigns = allRules.some((r) => r.appliesTo === "CAMPAIGN");
   const needAdGroups  = allRules.some((r) => r.appliesTo === "AD_GROUP");
-  // KEYWORD / PRODUCT_TARGET are scoped per-ad-group → too heavy to do without a
-  // user-chosen scope. Suggestion run for those targets must specify a campaign
-  // (skipped from the auto-run for now).
+  const needKeywords  = allRules.some((r) => r.appliesTo === "KEYWORD");
+  const needPATs      = allRules.some((r) => r.appliesTo === "PRODUCT_TARGET");
 
   const overview = (needCampaigns || needAdGroups)
     ? await getOverviewForAccount(accountId, datePreset)
@@ -79,12 +82,58 @@ export async function runRulesForAccount(
     }
   }
 
+  // ─── Keyword + product-target rows ─────────────────────────────────────
+  // Pull from the existing daily metrics store (already refreshed by the
+  // 8 AM cron) rather than re-fetching from Amazon. Top-N by spend so a
+  // single account-wide rules run stays fast.
+  let keywordRows: MetricRow[] = [];
+  let patRows:     MetricRow[] = [];
+  if (needKeywords || needPATs) {
+    const range = dateRangeFromPreset(datePreset);
+    const meta = readTargetingMeta(accountId);
+    const metaById = new Map(meta.map((m) => [m.targetId, m]));
+    const daily = readTargetingMetrics(accountId, range.startDate, range.endDate);
+
+    const agg = new Map<string, { cost: number; sales: number; orders: number; clicks: number; impressions: number }>();
+    for (const r of daily) {
+      const cur = agg.get(r.targetId) ?? { cost: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+      cur.cost += r.cost; cur.sales += r.sales; cur.orders += r.orders;
+      cur.clicks += r.clicks; cur.impressions += r.impressions;
+      agg.set(r.targetId, cur);
+    }
+    const ranked = [...agg.entries()]
+      .sort((a, b) => b[1].cost - a[1].cost)
+      .slice(0, TOP_TARGETS_FOR_RULES);
+
+    for (const [id, m] of ranked) {
+      const md = metaById.get(id);
+      if (!md) continue;
+      const ctr = m.impressions > 0 ? (m.clicks / m.impressions) * 100 : 0;
+      const cpc = m.clicks > 0 ? m.cost / m.clicks : 0;
+      const cvr = m.clicks > 0 ? (m.orders / m.clicks) * 100 : 0;
+      const acos = m.sales > 0 ? (m.cost / m.sales) * 100 : 0;
+      const roas = m.cost > 0 ? m.sales / m.cost : 0;
+      const row: MetricRow = {
+        id, name: md.display ?? `id ${id}`, program: md.program as Program,
+        campaignId: md.campaignId, adGroupId: md.adGroupId,
+        currentValue: md.bid ?? 0,
+        spend: m.cost, sales: m.sales, orders: m.orders,
+        impressions: m.impressions, clicks: m.clicks,
+        ctr, cpc, cvr, acos, roas,
+      };
+      // KEYWORD rows feed KEYWORD rules; PRODUCT_TARGET (including AUTO
+      // expressions) feed PRODUCT_TARGET rules. The meta.kind tells us which.
+      if (md.kind === "KEYWORD") keywordRows.push(row);
+      else                       patRows.push(row);
+    }
+  }
+
   const byRule: RunResult["byRule"] = [];
   let totalCreated = 0;
 
   for (const rule of allRules) {
     try {
-      const dataset = pickDataset(rule, { campaignRows, adGroupRows });
+      const dataset = pickDataset(rule, { campaignRows, adGroupRows, keywordRows, patRows });
       const evaluated = evaluateRule(rule, dataset);
 
       const toInsert = evaluated.map((e) => ({
@@ -119,10 +168,11 @@ export async function runRulesForAccount(
 
 function pickDataset(
   rule: Rule,
-  rows: { campaignRows: MetricRow[]; adGroupRows: MetricRow[] },
+  rows: { campaignRows: MetricRow[]; adGroupRows: MetricRow[]; keywordRows: MetricRow[]; patRows: MetricRow[] },
 ): MetricRow[] {
-  if (rule.appliesTo === "CAMPAIGN")  return rows.campaignRows;
-  if (rule.appliesTo === "AD_GROUP")  return rows.adGroupRows;
-  // KEYWORD / PRODUCT_TARGET not in account-wide auto-run yet.
+  if (rule.appliesTo === "CAMPAIGN")       return rows.campaignRows;
+  if (rule.appliesTo === "AD_GROUP")       return rows.adGroupRows;
+  if (rule.appliesTo === "KEYWORD")        return rows.keywordRows;
+  if (rule.appliesTo === "PRODUCT_TARGET") return rows.patRows;
   return [];
 }
