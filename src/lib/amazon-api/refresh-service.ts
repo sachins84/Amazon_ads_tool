@@ -69,15 +69,30 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
       errors.push({ program: "SP", error: String(e), phase: "list_targets" });
       return [];
     }),
-    fetchAllProgramReports(acct.adsProfileId, windowStart, windowEnd, accountId).catch((e) => {
+    // Reports API caps each request at ~31 days. For larger windows we
+    // chunk into ≤30-day slices and run them serially per report type
+    // (the three TYPES still parallelise across types).
+    chunkedFetch(windowStart, windowEnd, (s, e) =>
+      fetchAllProgramReports(acct.adsProfileId, s, e, accountId),
+      (a, b) => ({ rows: [...a.rows, ...b.rows], errors: [...a.errors, ...b.errors] }),
+      { rows: [], errors: [] },
+    ).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "campaigns" });
       return { rows: [], errors: [] };
     }),
-    fetchAllAdGroupReports(acct.adsProfileId, windowStart, windowEnd, accountId).catch((e) => {
+    chunkedFetch(windowStart, windowEnd, (s, e) =>
+      fetchAllAdGroupReports(acct.adsProfileId, s, e, accountId),
+      (a, b) => ({ rows: [...a.rows, ...b.rows], errors: [...a.errors, ...b.errors] }),
+      { rows: [], errors: [] },
+    ).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "adgroups" });
       return { rows: [], errors: [] };
     }),
-    fetchTargetingReport(acct.adsProfileId, windowStart, windowEnd, accountId).catch((e) => {
+    chunkedFetch(windowStart, windowEnd, (s, e) =>
+      fetchTargetingReport(acct.adsProfileId, s, e, accountId),
+      (a, b) => [...a, ...b],
+      [] as Record<string, unknown>[],
+    ).catch((e) => {
       errors.push({ program: "SP", error: String(e), phase: "targeting" });
       return [] as Record<string, unknown>[];
     }),
@@ -271,4 +286,47 @@ function daysAgoUTC(n: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
+}
+
+// ─── Chunked report fetching ────────────────────────────────────────────────
+
+/** Amazon Reports v3 caps each request at 31 days; we use 30 to leave slack. */
+const MAX_REPORT_DAYS = 30;
+
+/** Split [start, end] into <=MAX_REPORT_DAYS day chunks (UTC, inclusive). */
+function chunkDateRange(startDate: string, endDate: string): Array<{ s: string; e: string }> {
+  const out: Array<{ s: string; e: string }> = [];
+  const last = new Date(endDate + "T00:00:00Z");
+  let cur = new Date(startDate + "T00:00:00Z");
+  while (cur <= last) {
+    const chunkEnd = new Date(cur);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + MAX_REPORT_DAYS - 1);
+    if (chunkEnd > last) chunkEnd.setTime(last.getTime());
+    out.push({ s: cur.toISOString().slice(0, 10), e: chunkEnd.toISOString().slice(0, 10) });
+    cur = new Date(chunkEnd);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
+}
+
+/**
+ * Run `fetcher(s, e)` once per <=30-day chunk of [startDate, endDate], then
+ * concatenate using `merge`. Chunks run serially to avoid the Amazon
+ * report-creation rate limit. A single-chunk window (≤30 days) is a passthrough.
+ */
+async function chunkedFetch<T>(
+  startDate: string,
+  endDate: string,
+  fetcher: (s: string, e: string) => Promise<T>,
+  merge: (a: T, b: T) => T,
+  zero: T,
+): Promise<T> {
+  const chunks = chunkDateRange(startDate, endDate);
+  if (chunks.length === 1) return fetcher(chunks[0].s, chunks[0].e);
+  let acc = zero;
+  for (const c of chunks) {
+    const part = await fetcher(c.s, c.e);
+    acc = merge(acc, part);
+  }
+  return acc;
 }
