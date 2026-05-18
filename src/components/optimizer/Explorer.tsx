@@ -172,7 +172,7 @@ function AccountView({ data, accountId, bucketFilter, currency, reviewer, onDril
     data.campaigns.filter((c) =>
       bucketFilter === "ALL"
         || c.aiSuggestion?.bucket === bucketFilter
-        || c.manualSuggestion?.bucket === bucketFilter
+        || (c.manualSuggestion && (c.manualSuggestion.bucket ?? inferBucketFromAction(c.manualSuggestion)) === bucketFilter)
         || (c.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.campaigns, bucketFilter]);
@@ -220,7 +220,7 @@ function CampaignView({ data, accountId, level, bucketFilter, currency, reviewer
     data.adGroups.filter((a) =>
       bucketFilter === "ALL"
         || a.aiSuggestion?.bucket === bucketFilter
-        || a.manualSuggestion?.bucket === bucketFilter
+        || (a.manualSuggestion && (a.manualSuggestion.bucket ?? inferBucketFromAction(a.manualSuggestion)) === bucketFilter)
         || (a.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.adGroups, bucketFilter]);
@@ -272,7 +272,7 @@ function AdGroupView({ data, accountId, bucketFilter, currency, reviewer, onAppl
     data.targets.filter((t) =>
       bucketFilter === "ALL"
         || t.aiSuggestion?.bucket === bucketFilter
-        || t.manualSuggestion?.bucket === bucketFilter
+        || (t.manualSuggestion && (t.manualSuggestion.bucket ?? inferBucketFromAction(t.manualSuggestion)) === bucketFilter)
     ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.targets, bucketFilter]);
   return (
@@ -596,8 +596,12 @@ const sourceTag: React.CSSProperties = {
 };
 
 function SuggestionBlock({ label, sug }: { label: "AI" | "Manual"; sug: SuggestionLite | null }) {
-  if (!sug || !sug.bucket) return null;
-  const bucket = sug.bucket;
+  if (!sug) return null;
+  // Manual-rule suggestions skip the bucket column (the optimizer engine
+  // is the only writer). Infer a bucket from the action so they still
+  // render with a coloured pill alongside AI suggestions.
+  const bucket = sug.bucket ?? inferBucketFromAction(sug);
+  if (!bucket) return null;
   return (
     <div style={{ marginBottom: 6 }}>
       <span style={sourceTag}>{label}</span>
@@ -615,6 +619,28 @@ function SuggestionBlock({ label, sug }: { label: "AI" | "Manual"; sug: Suggesti
       <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-secondary)", maxWidth: 380 }}>{sug.reason}</div>
     </div>
   );
+}
+
+function inferBucketFromAction(sug: SuggestionLite): Bucket | null {
+  const at = sug.actionType;
+  if (at === "PAUSE")        return "PAUSE";
+  if (at === "ENABLE")       return "HOLD";
+  if (at === "ADD_NEGATIVE") return "HOLD";
+  // For SET_* compare new vs current; for *_PCT the actionValue is the delta %.
+  if (at === "SET_BID" || at === "SET_BUDGET") {
+    if (sug.actionValue == null || sug.currentValue == null) return "HOLD";
+    const isBidLevel = at === "SET_BID";
+    const dir = sug.actionValue >= sug.currentValue ? "UP" : "DOWN";
+    return isBidLevel ? (dir === "UP" ? "BID_UP" : "BID_DOWN")
+                      : (dir === "UP" ? "SCALE_UP" : "SCALE_DOWN");
+  }
+  if (at === "BID_PCT") {
+    return (sug.actionValue ?? 0) >= 0 ? "BID_UP" : "BID_DOWN";
+  }
+  if (at === "BUDGET_PCT") {
+    return (sug.actionValue ?? 0) >= 0 ? "SCALE_UP" : "SCALE_DOWN";
+  }
+  return null;
 }
 
 function ChildBucketBadges({ counts }: { counts: BucketCounts | undefined }) {
