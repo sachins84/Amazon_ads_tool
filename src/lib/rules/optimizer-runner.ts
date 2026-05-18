@@ -397,7 +397,7 @@ function ensureOptimizerRule() {
     name: RULE_NAME, accountId: null, objectiveId: null,
     appliesTo: "CAMPAIGN", programs: null,
     conditions: { op: "AND", clauses: [] },
-    actions: [], mode: "SUGGEST", enabled: true,
+    actions: [], mode: "SUGGEST", enabled: true, window: "Last 7D",
   });
   _optimizerRuleCache = fresh;
   return fresh;

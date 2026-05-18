@@ -57,6 +57,10 @@ export interface Rule {
   actions: Action[];
   mode: RuleMode;
   enabled: boolean;
+  /** Data window the rule's conditions evaluate against. Drives which days
+   *  of metrics are aggregated for SPEND/SALES/ORDERS/etc. Defaults to
+   *  "Last 7D" for backward compat with older rules. */
+  window: string;
   lastRunAt: string | null;
   createdAt: string;
   updatedAt: string;

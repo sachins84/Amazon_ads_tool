@@ -116,6 +116,7 @@ function ensureManualRule(): Rule {
     actions:     [],
     mode:        "SUGGEST",
     enabled:     true,
+    window:      "Last 7D",
   });
   _manualRuleCache = fresh;
   return fresh;

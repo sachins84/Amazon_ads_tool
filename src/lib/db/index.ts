@@ -107,6 +107,7 @@ function migrate(db: Database.Database) {
       actions         TEXT NOT NULL,       -- JSON: [{type, value, etc}]
       mode            TEXT NOT NULL DEFAULT 'SUGGEST',  -- 'SUGGEST' | 'AUTO_APPLY'
       enabled         INTEGER NOT NULL DEFAULT 1,
+      window          TEXT NOT NULL DEFAULT 'Last 7D',  -- 'Last 1D'|'Last 3D'|'Last 7D'|'Last 14D'|'Last 30D'|'Last 60D'
       last_run_at     TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -393,6 +394,7 @@ function migrate(db: Database.Database) {
   addColumnIfMissing(db, "suggestions",           "confidence",                   "REAL");
   addColumnIfMissing(db, "campaign_metrics_daily","top_of_search_is",             "REAL");
   addColumnIfMissing(db, "campaign_meta",          "format",                       "TEXT NOT NULL DEFAULT 'STANDARD'");
+  addColumnIfMissing(db, "rules",                  "window",                       "TEXT NOT NULL DEFAULT 'Last 7D'");
 }
 
 interface ColumnInfo { name: string }

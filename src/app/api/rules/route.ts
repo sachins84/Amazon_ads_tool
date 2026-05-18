@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       actions:     body.actions    as Action[],
       mode:        (body.mode as RuleMode) ?? "SUGGEST",
       enabled:     body.enabled !== false,
+      window:      typeof body.window === "string" ? body.window : "Last 7D",
     });
     return Response.json({ rule }, { status: 201 });
   } catch (err) {

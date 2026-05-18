@@ -75,7 +75,7 @@ interface RuleRow {
   id: string; name: string; account_id: string | null; objective_id: string | null;
   applies_to: string; programs: string | null;
   conditions: string; actions: string;
-  mode: string; enabled: number; last_run_at: string | null;
+  mode: string; enabled: number; window: string | null; last_run_at: string | null;
   created_at: string; updated_at: string;
 }
 function rowToRule(r: RuleRow): Rule {
@@ -87,6 +87,7 @@ function rowToRule(r: RuleRow): Rule {
     actions:    JSON.parse(r.actions)    as Action[],
     mode: r.mode as RuleMode,
     enabled: r.enabled === 1,
+    window: r.window ?? "Last 7D",
     lastRunAt: r.last_run_at,
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
@@ -112,8 +113,8 @@ export function getRule(id: string): Rule | null {
 export function createRule(input: Omit<Rule, "id" | "createdAt" | "updatedAt" | "lastRunAt">): Rule {
   const id = uuidv4();
   getDb().prepare(`
-    INSERT INTO rules (id, name, account_id, objective_id, applies_to, programs, conditions, actions, mode, enabled)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO rules (id, name, account_id, objective_id, applies_to, programs, conditions, actions, mode, enabled, window)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     id, input.name, input.accountId, input.objectiveId,
     input.appliesTo,
@@ -122,6 +123,7 @@ export function createRule(input: Omit<Rule, "id" | "createdAt" | "updatedAt" | 
     JSON.stringify(input.actions),
     input.mode,
     input.enabled ? 1 : 0,
+    input.window ?? "Last 7D",
   );
   return getRule(id)!;
 }
@@ -140,6 +142,7 @@ export function updateRule(id: string, patch: Partial<Omit<Rule, "id" | "created
   if (patch.actions     !== undefined) { fields.push("actions = @actions");          params.actions = JSON.stringify(patch.actions); }
   if (patch.mode        !== undefined) { fields.push("mode = @mode");                params.mode = patch.mode; }
   if (patch.enabled     !== undefined) { fields.push("enabled = @enabled");          params.enabled = patch.enabled ? 1 : 0; }
+  if (patch.window      !== undefined) { fields.push("window = @window");             params.window = patch.window; }
   if (patch.lastRunAt   !== undefined) { fields.push("last_run_at = @lastRunAt");    params.lastRunAt = patch.lastRunAt; }
   getDb().prepare(`UPDATE rules SET ${fields.join(", ")} WHERE id = @id`).run(params);
   return getRule(id);

@@ -122,7 +122,7 @@ function RuleCard({ rule, onToggle, onDelete }: { rule: Rule; onToggle: () => vo
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{rule.name}</div>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-            applies to <strong>{rule.appliesTo}</strong> · {rule.programs?.join(", ") ?? "all programs"} · mode <strong>{rule.mode}</strong> · last run {rule.lastRunAt ?? "never"}
+            applies to <strong>{rule.appliesTo}</strong> · {rule.programs?.join(", ") ?? "all programs"} · window <strong>{rule.window || "Last 7D"}</strong> · mode <strong>{rule.mode}</strong> · last run {rule.lastRunAt ?? "never"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -171,6 +171,7 @@ function RuleEditor({ accountId, onSave, onCancel }: {
   const [conditionOp, setConditionOp] = useState<"AND" | "OR">("AND");
   const [actions, setActions] = useState<Action[]>([{ type: "PAUSE" }]);
   const [mode, setMode] = useState<"SUGGEST" | "AUTO_APPLY">("SUGGEST");
+  const [window, setWindow] = useState<string>("Last 7D");
 
   const addClause   = () => setConditions((c) => [...c, { metric: "ORDERS", op: "EQ", value: 0 }]);
   const removeClause = (i: number) => setConditions((c) => c.filter((_, idx) => idx !== i));
@@ -197,6 +198,7 @@ function RuleEditor({ accountId, onSave, onCancel }: {
       actions,
       mode,
       enabled: true,
+      window,
     });
   };
 
@@ -211,6 +213,14 @@ function RuleEditor({ accountId, onSave, onCancel }: {
       <Field label="Applies to">
         <select value={appliesTo} onChange={(e) => setAppliesTo(e.target.value as AppliesTo)} style={inputStyle}>
           {APPLIES.map((a) => <option key={a} value={a}>{a.replace("_", " ")}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Data window (every condition reads this range)">
+        <select value={window} onChange={(e) => setWindow(e.target.value)} style={inputStyle}>
+          {["Last 1D","Last 3D","Last 7D","Last 14D","Last 30D","Last 60D"].map((w) =>
+            <option key={w} value={w}>{w}</option>
+          )}
         </select>
       </Field>
 
