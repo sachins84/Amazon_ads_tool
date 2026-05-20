@@ -256,6 +256,7 @@ function AccountsPageInner() {
                 onTest={() => testConnection(a.id)}
                 onDelete={() => setDeleteConfirm(a.id)}
                 testing={testing === a.id}
+                onRtoChanged={loadAccounts}
               />
             ))}
           </div>
@@ -317,13 +318,37 @@ function AccountsPageInner() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function AccountCard({ account, onEdit, onTest, onDelete, testing }: {
+function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged }: {
   account: SafeAccount;
   onEdit: () => void;
   onTest: () => void;
   onDelete: () => void;
   testing: boolean;
+  onRtoChanged: () => void;
 }) {
+  // RTO is stored as 0..1 on the account; display as a percent 0..100.
+  const initialRto = Math.round((account.rtoFactor ?? 0) * 100);
+  const [rtoPct, setRtoPct] = useState<string>(String(initialRto));
+  const [rtoSaving, setRtoSaving] = useState(false);
+  const [rtoSavedAt, setRtoSavedAt] = useState<number | null>(null);
+
+  async function commitRto() {
+    const n = parseFloat(rtoPct);
+    const clamped = Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
+    if (clamped === initialRto) return;
+    setRtoSaving(true);
+    try {
+      await fetch(`/api/accounts/${account.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rtoFactor: clamped / 100 }),
+      });
+      setRtoSavedAt(Date.now());
+      setTimeout(() => setRtoSavedAt(null), 2000);
+      onRtoChanged();
+    } finally { setRtoSaving(false); }
+  }
+
   return (
     <div style={{
       background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10,
@@ -355,6 +380,29 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing }: {
           Profile: {account.adsProfileId} · {account.adsMarketplace}
           {account.lastSyncedAt && <span> · Last verified: {new Date(account.lastSyncedAt).toLocaleDateString()}</span>}
         </div>
+      </div>
+
+      {/* RTO factor — applies to every sales/ACOS/ROAS read for this account */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>RTO</span>
+          <input
+            type="number" min="0" max="100" step="1"
+            value={rtoPct}
+            onChange={(e) => setRtoPct(e.target.value)}
+            onBlur={commitRto}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            style={{
+              width: 50,
+              background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 4,
+              color: "var(--text-primary)", padding: "3px 6px", fontSize: 11, textAlign: "right",
+            }}
+          />
+          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>%</span>
+        </div>
+        <span style={{ fontSize: 9, color: rtoSavedAt ? "var(--c-success-text)" : "var(--text-muted)", height: 11 }}>
+          {rtoSaving ? "Saving…" : rtoSavedAt ? "Saved" : ""}
+        </span>
       </div>
 
       {/* Actions */}

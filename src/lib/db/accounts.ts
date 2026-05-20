@@ -22,6 +22,8 @@ export interface Account {
   spRefreshToken:  string | null; // decrypted
   spMarketplaceId: string | null;
   spEndpoint:      string | null;
+  // RTO discount applied at metrics-store read layer
+  rtoFactor:       number;        // 0..1
   // Status
   connected:       boolean;
   lastSyncedAt:    string | null;
@@ -40,6 +42,7 @@ export interface AccountInput {
   spRefreshToken?:  string | null;
   spMarketplaceId?: string | null;
   spEndpoint?:      string | null;
+  rtoFactor?:       number;
 }
 
 // ─── Row mapper ───────────────────────────────────────────────────────────────
@@ -49,6 +52,7 @@ type DbRow = {
   ads_client_id: string; ads_client_secret: string; ads_refresh_token: string;
   ads_endpoint: string; ads_profile_id: string; ads_marketplace: string;
   sp_refresh_token: string | null; sp_marketplace_id: string | null; sp_endpoint: string | null;
+  rto_factor: number | null;
   connected: number; last_synced_at: string | null; created_at: string;
 };
 
@@ -66,6 +70,7 @@ function rowToAccount(row: DbRow): Account {
     spRefreshToken:  row.sp_refresh_token  ? decrypt(row.sp_refresh_token)  : null,
     spMarketplaceId: row.sp_marketplace_id ?? null,
     spEndpoint:      row.sp_endpoint       ?? null,
+    rtoFactor:       row.rto_factor ?? 0,
     connected:       row.connected === 1,
     lastSyncedAt:    row.last_synced_at,
     createdAt:       row.created_at,
@@ -147,6 +152,7 @@ export function updateAccount(id: string, input: Partial<AccountInput>): SafeAcc
   if (input.adsMarketplace)  { fields.push("ads_marketplace = @adsMarketplace");    params.adsMarketplace = input.adsMarketplace; }
   if (input.spRefreshToken  !== undefined) { fields.push("sp_refresh_token = @spRefreshToken");   params.spRefreshToken  = input.spRefreshToken ? encrypt(input.spRefreshToken) : null; }
   if (input.spMarketplaceId !== undefined) { fields.push("sp_marketplace_id = @spMarketplaceId"); params.spMarketplaceId = input.spMarketplaceId; }
+  if (input.rtoFactor       !== undefined) { fields.push("rto_factor = @rtoFactor");              params.rtoFactor = Math.max(0, Math.min(1, input.rtoFactor)); }
 
   db.prepare(`UPDATE accounts SET ${fields.join(", ")} WHERE id = @id`).run(params);
   return toSafe(getAccount(id)!);
@@ -156,6 +162,28 @@ export function deleteAccount(id: string): boolean {
   const db     = getDb();
   const result = db.prepare("DELETE FROM accounts WHERE id = ?").run(id);
   return result.changes > 0;
+}
+
+/**
+ * Cheap RTO-factor lookup used by metrics-store reads. Hot path — called
+ * once per metrics read, so we skip the full account hydrate + decrypt
+ * and just pull the one column.
+ */
+const _rtoCache = new Map<string, { value: number; expires: number }>();
+const RTO_CACHE_TTL_MS = 30_000;
+
+export function getAccountRtoFactor(accountId: string): number {
+  const hit = _rtoCache.get(accountId);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const row = getDb().prepare("SELECT rto_factor FROM accounts WHERE id = ?").get(accountId) as { rto_factor: number | null } | undefined;
+  const value = Math.max(0, Math.min(1, row?.rto_factor ?? 0));
+  _rtoCache.set(accountId, { value, expires: Date.now() + RTO_CACHE_TTL_MS });
+  return value;
+}
+
+export function invalidateRtoCache(accountId?: string): void {
+  if (accountId) _rtoCache.delete(accountId);
+  else _rtoCache.clear();
 }
 
 export function setAccountConnected(id: string, connected: boolean): void {

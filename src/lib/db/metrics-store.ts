@@ -5,7 +5,14 @@
  * Read path: overview-service + hierarchy-service query this table.
  */
 import { getDb } from "./index";
+import { getAccountRtoFactor } from "./accounts";
 import type { Program } from "@/lib/amazon-api/reports";
+
+// Applied at every read of attributed metrics. Returned sales/orders are
+// post-RTO (effective). Raw rows in the DB stay untouched.
+function rtoMultiplier(accountId: string): number {
+  return 1 - getAccountRtoFactor(accountId);
+}
 
 export interface CampaignDailyRow {
   accountId:  string;
@@ -114,12 +121,14 @@ interface RawPlacementRow {
 }
 
 export function readPlacementMetrics(accountId: string, startDate: string, endDate: string): PlacementDailyRow[] {
+  const m = rtoMultiplier(accountId);
   return (getDb()
     .prepare("SELECT campaign_id, date, placement, impressions, clicks, cost, orders, sales FROM placement_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?")
     .all(accountId, startDate, endDate) as RawPlacementRow[])
     .map((r) => ({
       accountId, campaignId: r.campaign_id, date: r.date, placement: r.placement,
-      impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+      impressions: r.impressions, clicks: r.clicks, cost: r.cost,
+      orders: r.orders * m, sales: r.sales * m,
     }));
 }
 
@@ -165,6 +174,7 @@ interface RawAdvertisedProductRow {
 }
 
 export function readAdvertisedProductMetrics(accountId: string, startDate: string, endDate: string): AdvertisedProductDailyRow[] {
+  const m = rtoMultiplier(accountId);
   return (getDb()
     .prepare("SELECT campaign_id, adgroup_id, asin, date, impressions, clicks, cost, orders, sales FROM advertised_product_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?")
     .all(accountId, startDate, endDate) as RawAdvertisedProductRow[])
@@ -172,7 +182,7 @@ export function readAdvertisedProductMetrics(accountId: string, startDate: strin
       accountId, campaignId: r.campaign_id, adGroupId: r.adgroup_id,
       asin: r.asin, date: r.date,
       impressions: r.impressions, clicks: r.clicks, cost: r.cost,
-      orders: r.orders, sales: r.sales,
+      orders: r.orders * m, sales: r.sales * m,
     }));
 }
 
@@ -254,12 +264,14 @@ interface RawCampaignDailyRow {
 }
 
 export function readCampaignMetrics(accountId: string, startDate: string, endDate: string): CampaignDailyRow[] {
+  const m = rtoMultiplier(accountId);
   return (getDb()
     .prepare("SELECT campaign_id, date, program, impressions, clicks, cost, orders, sales, top_of_search_is FROM campaign_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?")
     .all(accountId, startDate, endDate) as RawCampaignDailyRow[])
     .map((r) => ({
       accountId, campaignId: r.campaign_id, date: r.date, program: r.program as Program,
-      impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+      impressions: r.impressions, clicks: r.clicks, cost: r.cost,
+      orders: r.orders * m, sales: r.sales * m,
       topOfSearchIS: r.top_of_search_is ?? null,
     }));
 }
@@ -271,6 +283,7 @@ interface RawAdGroupDailyRow {
 }
 
 export function readAdGroupMetrics(accountId: string, startDate: string, endDate: string, campaignId?: string): AdGroupDailyRow[] {
+  const m = rtoMultiplier(accountId);
   const sql = campaignId
     ? "SELECT campaign_id, adgroup_id, adgroup_name, date, program, impressions, clicks, cost, orders, sales FROM adgroup_metrics_daily WHERE account_id = ? AND campaign_id = ? AND date BETWEEN ? AND ?"
     : "SELECT campaign_id, adgroup_id, adgroup_name, date, program, impressions, clicks, cost, orders, sales FROM adgroup_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?";
@@ -279,7 +292,8 @@ export function readAdGroupMetrics(accountId: string, startDate: string, endDate
     .map((r) => ({
       accountId, campaignId: r.campaign_id, adGroupId: r.adgroup_id, adGroupName: r.adgroup_name,
       date: r.date, program: r.program as Program,
-      impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+      impressions: r.impressions, clicks: r.clicks, cost: r.cost,
+      orders: r.orders * m, sales: r.sales * m,
     }));
 }
 
@@ -411,6 +425,7 @@ interface RawTargetingDailyRow {
 }
 
 export function readTargetingMetrics(accountId: string, startDate: string, endDate: string, opts: { adGroupId?: string; campaignId?: string } = {}): TargetingDailyRow[] {
+  const m = rtoMultiplier(accountId);
   let sql = "SELECT campaign_id, adgroup_id, target_id, date, program, kind, match_type, display, impressions, clicks, cost, orders, sales FROM targeting_metrics_daily WHERE account_id = ? AND date BETWEEN ? AND ?";
   const args: unknown[] = [accountId, startDate, endDate];
   if (opts.adGroupId)  { sql += " AND adgroup_id = ?"; args.push(opts.adGroupId); }
@@ -422,7 +437,8 @@ export function readTargetingMetrics(accountId: string, startDate: string, endDa
       kind: r.kind as TargetingDailyRow["kind"],
       matchType: r.match_type as TargetingDailyRow["matchType"],
       display: r.display,
-      impressions: r.impressions, clicks: r.clicks, cost: r.cost, orders: r.orders, sales: r.sales,
+      impressions: r.impressions, clicks: r.clicks, cost: r.cost,
+      orders: r.orders * m, sales: r.sales * m,
     }));
 }
 

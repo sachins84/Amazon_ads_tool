@@ -45,6 +45,12 @@ function migrate(db: Database.Database) {
       sp_marketplace_id   TEXT,
       sp_endpoint         TEXT DEFAULT 'https://sellingpartnerapi-na.amazon.com',
 
+      -- RTO discount applied to attributed sales + orders at read time.
+      -- 0..1 (0.25 = 25% of attributed sales/orders return undelivered).
+      -- Effective sales = gross_sales × (1 - rto_factor); ACOS/ROAS recompute
+      -- automatically downstream.
+      rto_factor          REAL NOT NULL DEFAULT 0,
+
       -- Status
       connected           INTEGER NOT NULL DEFAULT 0,
       last_synced_at      TEXT,
@@ -395,6 +401,7 @@ function migrate(db: Database.Database) {
   addColumnIfMissing(db, "campaign_metrics_daily","top_of_search_is",             "REAL");
   addColumnIfMissing(db, "campaign_meta",          "format",                       "TEXT NOT NULL DEFAULT 'STANDARD'");
   addColumnIfMissing(db, "rules",                  "window",                       "TEXT NOT NULL DEFAULT 'Last 7D'");
+  addColumnIfMissing(db, "accounts",                "rto_factor",                   "REAL NOT NULL DEFAULT 0");
 }
 
 interface ColumnInfo { name: string }

@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { getAccount, updateAccount, deleteAccount, toSafe, type AccountInput } from "@/lib/db/accounts";
+import { getAccount, updateAccount, deleteAccount, toSafe, invalidateRtoCache, type AccountInput } from "@/lib/db/accounts";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -15,6 +15,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const body     = await req.json() as Partial<AccountInput>;
   const updated  = updateAccount(id, body);
   if (!updated) return Response.json({ error: "Account not found" }, { status: 404 });
+  // Bust the RTO cache so the change reflects in metric reads immediately
+  // (default cache TTL is 30s; without this it'd take up to that long).
+  if (body.rtoFactor !== undefined) invalidateRtoCache(id);
   return Response.json({ account: updated });
 }
 
