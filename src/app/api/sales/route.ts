@@ -9,7 +9,7 @@ import { fetchSalesTrafficReport } from "@/lib/sp-api/sales-report";
 import { withCache } from "@/lib/cache";
 import { SpConfigError } from "@/lib/sp-api/client";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
-import { getAccount } from "@/lib/db/accounts";
+import { getAccount, getAccountRtoFactor } from "@/lib/db/accounts";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -68,7 +68,24 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    return Response.json({ ...data, _source: "live" });
+    // Mirror metrics-store: apply the account's RTO factor to gross SP-API
+    // sales so Master Overview's "Total sales" matches the post-RTO scale
+    // of "Paid sales", and TACoS uses a consistent denominator. Builds
+    // fresh objects (don't mutate `data` — it's the cached reference).
+    const rto = accountId ? getAccountRtoFactor(accountId) : 0;
+    const m = 1 - rto;
+    const summary = m === 1 ? data.summary : {
+      totalRevenue: data.summary.totalRevenue * m,
+      totalOrders:  data.summary.totalOrders  * m,
+      totalUnits:   data.summary.totalUnits   * m,
+    };
+    const dailySeries = m === 1 ? data.dailySeries : data.dailySeries.map((d) => ({
+      ...d,
+      totalRevenue: d.totalRevenue * m,
+      totalOrders:  d.totalOrders  * m,
+      totalUnits:   d.totalUnits   * m,
+    }));
+    return Response.json({ summary, dailySeries, _source: "live", _rtoApplied: rto });
   } catch (err) {
     if (err instanceof SpConfigError) {
       return Response.json({ error: err.message, code: "CONFIG_MISSING" }, { status: 200 });

@@ -227,12 +227,13 @@ function SingleBrandView({
 
       {/* Business sales: Total / Organic / TACoS. Only shown when SP-API
           marketplace is configured for this brand (else CONFIG_MISSING
-          comes back and businessSales stays null). */}
+          comes back and businessSales stays null). RTO factor is applied
+          at /api/sales so total / organic are post-RTO, matching paid. */}
       {!loading && businessSales && totalRev != null && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 }}>
-          <KpiCard label="Total sales (all orders)" metric={{ value: totalRev, delta: 0, positive: true }} format="currency" currency={currency} />
-          <KpiCard label={`Organic sales (= total − paid)`} metric={{ value: organic ?? 0, delta: 0, positive: true }} format="currency" currency={currency} />
-          <KpiCard label="TACoS (spend / total sales)" metric={{ value: tacos ?? 0, delta: 0, positive: false }} format="percent" currency={currency} />
+          <KpiCard label="Total sales (post-RTO)" metric={{ value: totalRev, delta: 0, positive: true }} format="currency" currency={currency} />
+          <KpiCard label="Organic sales (= total − paid)" metric={{ value: organic ?? 0, delta: 0, positive: true }} format="currency" currency={currency} />
+          <KpiCard label="TACoS (spend / total)" metric={{ value: tacos ?? 0, delta: 0, positive: false }} format="percent" currency={currency} />
         </div>
       )}
       {!loading && !businessSales && (
