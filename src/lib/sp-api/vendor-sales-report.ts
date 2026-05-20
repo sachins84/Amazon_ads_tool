@@ -46,8 +46,16 @@ export async function createVendorSalesReport(
   marketplaceId: string,
   startDate: string,
   endDate: string,
-  vendorCode: string,
+  vendorCode: string | null,
 ): Promise<string> {
+  const reportOptions: Record<string, string> = {
+    reportPeriod:    "DAY",
+    distributorView: "MANUFACTURING",
+    sellingProgram:  "RETAIL",
+  };
+  // Omit vendorCode entirely (NOT empty string) when discovering codes so
+  // Amazon returns data across every vendor code the auth has access to.
+  if (vendorCode) reportOptions.vendorCode = vendorCode;
   const res = await spRequest<CreateReportResponse>("/reports/2021-06-30/reports", {
     method: "POST",
     body: {
@@ -55,15 +63,29 @@ export async function createVendorSalesReport(
       marketplaceIds: [marketplaceId],
       dataStartTime:  `${startDate}T00:00:00Z`,
       dataEndTime:    `${endDate}T23:59:59Z`,
-      reportOptions:  {
-        reportPeriod:    "DAY",
-        distributorView: "MANUFACTURING",
-        sellingProgram:  "RETAIL",
-        vendorCode,
-      },
+      reportOptions,
     },
   });
   return res.reportId;
+}
+
+/** Discovery helper: runs the report unfiltered for a 1-day window and
+ *  returns the unique vendor codes found in salesByAsin rows. */
+export async function discoverVendorCodes(
+  marketplaceId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ vendorCodes: string[]; sample: { vendorCode: string | undefined; asin: string | undefined }[] }> {
+  const reportId = await createVendorSalesReport(marketplaceId, startDate, endDate, null);
+  const rows = await waitForVendorSalesReport(reportId);
+  const codes = new Set<string>();
+  const sample: { vendorCode: string | undefined; asin: string | undefined }[] = [];
+  for (const r of rows as Array<RawAsinRow & { vendorCode?: string; sellingVendorCode?: string }>) {
+    const vc = r.vendorCode ?? r.sellingVendorCode;
+    if (vc) codes.add(vc);
+    if (sample.length < 5) sample.push({ vendorCode: vc, asin: r.asin });
+  }
+  return { vendorCodes: [...codes], sample };
 }
 
 export async function waitForVendorSalesReport(reportId: string): Promise<RawAsinRow[]> {
