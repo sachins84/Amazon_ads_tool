@@ -332,6 +332,12 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged 
   const [rtoSaving, setRtoSaving] = useState(false);
   const [rtoSavedAt, setRtoSavedAt] = useState<number | null>(null);
 
+  // Vendor/Seller + vendor code — drives which SP-API report /api/sales pulls.
+  const [salesSource, setSalesSource] = useState<"seller" | "vendor">(account.salesSource ?? "seller");
+  const [vendorCode,  setVendorCode]  = useState<string>(account.vendorCode ?? "");
+  const [vendorSaving, setVendorSaving] = useState(false);
+  const [vendorSavedAt, setVendorSavedAt] = useState<number | null>(null);
+
   async function commitRto() {
     const n = parseFloat(rtoPct);
     const clamped = Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
@@ -347,6 +353,21 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged 
       setTimeout(() => setRtoSavedAt(null), 2000);
       onRtoChanged();
     } finally { setRtoSaving(false); }
+  }
+
+  async function commitVendorConfig() {
+    if (salesSource === (account.salesSource ?? "seller") && vendorCode === (account.vendorCode ?? "")) return;
+    setVendorSaving(true);
+    try {
+      await fetch(`/api/accounts/${account.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ salesSource, vendorCode: vendorCode.trim() || null }),
+      });
+      setVendorSavedAt(Date.now());
+      setTimeout(() => setVendorSavedAt(null), 2000);
+      onRtoChanged();
+    } finally { setVendorSaving(false); }
   }
 
   return (
@@ -380,6 +401,42 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged 
           Profile: {account.adsProfileId} · {account.adsMarketplace}
           {account.lastSyncedAt && <span> · Last verified: {new Date(account.lastSyncedAt).toLocaleDateString()}</span>}
         </div>
+      </div>
+
+      {/* Sales source + vendor code (drives /api/sales report selection) */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <select
+            value={salesSource}
+            onChange={(e) => setSalesSource(e.target.value as "seller" | "vendor")}
+            onBlur={commitVendorConfig}
+            style={{
+              background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 4,
+              color: "var(--text-primary)", padding: "3px 6px", fontSize: 10,
+            }}
+          >
+            <option value="seller">Seller</option>
+            <option value="vendor">Vendor</option>
+          </select>
+          <input
+            type="text" placeholder="vendor_code"
+            value={vendorCode}
+            onChange={(e) => setVendorCode(e.target.value)}
+            onBlur={commitVendorConfig}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            disabled={salesSource !== "vendor"}
+            style={{
+              width: 90,
+              background: salesSource === "vendor" ? "var(--bg-input)" : "var(--bg-base)",
+              border: "1px solid var(--border)", borderRadius: 4,
+              color: salesSource === "vendor" ? "var(--text-primary)" : "var(--text-muted)",
+              padding: "3px 6px", fontSize: 10,
+            }}
+          />
+        </div>
+        <span style={{ fontSize: 9, color: vendorSavedAt ? "var(--c-success-text)" : "var(--text-muted)", height: 11 }}>
+          {vendorSaving ? "Saving…" : vendorSavedAt ? "Saved" : ""}
+        </span>
       </div>
 
       {/* RTO factor — applies to every sales/ACOS/ROAS read for this account */}

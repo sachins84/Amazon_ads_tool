@@ -6,6 +6,7 @@
 import { type NextRequest } from "next/server";
 import { fetchSalesSummary, fetchDailySales } from "@/lib/sp-api/orders";
 import { fetchSalesTrafficReport } from "@/lib/sp-api/sales-report";
+import { fetchVendorSalesReport } from "@/lib/sp-api/vendor-sales-report";
 import { withCache } from "@/lib/cache";
 import { SpConfigError } from "@/lib/sp-api/client";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
@@ -17,30 +18,59 @@ export async function GET(req: NextRequest) {
   const datePreset    = searchParams.get("dateRange") ?? "Last 30D";
   const source        = searchParams.get("source") ?? "report"; // "orders" | "report"
 
-  // Resolve marketplaceId from DB account or env var
+  // Resolve marketplaceId + salesSource + vendorCode from the DB account.
   let marketplaceId = searchParams.get("marketplaceId") ?? process.env.SP_API_MARKETPLACE_ID ?? "";
+  let salesSource: "seller" | "vendor" = "seller";
+  let vendorCode: string | null = null;
   if (accountId) {
     const acct = getAccount(accountId);
     if (acct?.spMarketplaceId) marketplaceId = acct.spMarketplaceId;
+    if (acct?.salesSource === "vendor") salesSource = "vendor";
+    if (acct?.vendorCode) vendorCode = acct.vendorCode;
   }
 
   if (!marketplaceId) {
     return Response.json(
-      { error: "No SP-API marketplace configured. Set SP_API_MARKETPLACE_ID in .env.local.", code: "CONFIG_MISSING" },
+      { error: "No SP-API marketplace configured. Set SP_API_MARKETPLACE_ID in .env.local or on /accounts.", code: "CONFIG_MISSING" },
+      { status: 200 }
+    );
+  }
+  if (salesSource === "vendor" && !vendorCode) {
+    return Response.json(
+      { error: "Vendor accounts need vendor_code set on /accounts to scope the Vendor Sales Report.", code: "CONFIG_MISSING" },
       { status: 200 }
     );
   }
 
-  const cacheKey = `sales:${marketplaceId}:${datePreset}:${source}`;
+  // Cache key must include salesSource + vendorCode so different brands on
+  // the same marketplace don't share a cached response.
+  const cacheKey = `sales:${marketplaceId}:${salesSource}:${vendorCode ?? "-"}:${datePreset}:${source}`;
 
   try {
     const data = await withCache(cacheKey, async () => {
       const { startDate, endDate } = dateRangeFromPreset(datePreset);
 
-      if (source === "report") {
-        // Sales & Traffic report — richer data, takes ~30s to generate
-        const rows = await fetchSalesTrafficReport(marketplaceId, startDate, endDate);
+      if (salesSource === "vendor") {
+        // Vendor Sales Report scoped by vendorCode — Mosaic's India SP-API
+        // auth sees multiple vendor codes; we filter per-brand.
+        const rows = await fetchVendorSalesReport(marketplaceId, startDate, endDate, vendorCode!);
+        const summary = rows.reduce(
+          (acc, r) => ({
+            totalRevenue: Math.round((acc.totalRevenue + r.totalRevenue) * 100) / 100,
+            totalOrders:  acc.totalOrders + r.totalOrders,
+            totalUnits:   acc.totalUnits  + r.totalUnits,
+          }),
+          { totalRevenue: 0, totalOrders: 0, totalUnits: 0 },
+        );
+        const dailySeries = rows.map((r) => ({
+          date: r.date, totalRevenue: r.totalRevenue, totalOrders: r.totalOrders, totalUnits: r.totalUnits,
+        }));
+        return { summary, dailySeries };
+      }
 
+      if (source === "report") {
+        // Sales & Traffic report — Seller Central, takes ~30s to generate
+        const rows = await fetchSalesTrafficReport(marketplaceId, startDate, endDate);
         const summary = rows.reduce(
           (acc, row) => ({
             totalRevenue: Math.round((acc.totalRevenue + (row.orderedProductSales?.amount ?? 0)) * 100) / 100,
@@ -49,23 +79,21 @@ export async function GET(req: NextRequest) {
           }),
           { totalRevenue: 0, totalOrders: 0, totalUnits: 0 }
         );
-
         const dailySeries = rows.map((row) => ({
           date:         row.date,
           totalRevenue: row.orderedProductSales?.amount ?? 0,
           totalOrders:  row.totalOrderItems ?? 0,
           totalUnits:   row.unitsOrdered ?? 0,
         }));
-
-        return { summary, dailySeries };
-      } else {
-        // Orders API — faster, near real-time
-        const [summary, dailySeries] = await Promise.all([
-          fetchSalesSummary(marketplaceId, startDate, endDate),
-          fetchDailySales(marketplaceId, startDate, endDate),
-        ]);
         return { summary, dailySeries };
       }
+
+      // Orders API — faster, near real-time
+      const [sumRes, dailyRes] = await Promise.all([
+        fetchSalesSummary(marketplaceId, startDate, endDate),
+        fetchDailySales(marketplaceId, startDate, endDate),
+      ]);
+      return { summary: sumRes, dailySeries: dailyRes };
     });
 
     // Mirror metrics-store: apply the account's RTO factor to gross SP-API

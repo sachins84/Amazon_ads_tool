@@ -24,6 +24,13 @@ export interface Account {
   spEndpoint:      string | null;
   // RTO discount applied at metrics-store read layer
   rtoFactor:       number;        // 0..1
+  // Whether business sales come from Vendor or Seller Central reports.
+  // Drives which SP-API report /api/sales pulls.
+  salesSource:     "seller" | "vendor";
+  // Vendor Central code for this brand — only meaningful when salesSource = vendor.
+  // Mosaic's India SP-API auth sees multiple vendor codes; we filter the
+  // Vendor Sales Report to just this brand's code.
+  vendorCode:      string | null;
   // Status
   connected:       boolean;
   lastSyncedAt:    string | null;
@@ -43,6 +50,8 @@ export interface AccountInput {
   spMarketplaceId?: string | null;
   spEndpoint?:      string | null;
   rtoFactor?:       number;
+  salesSource?:     "seller" | "vendor";
+  vendorCode?:      string | null;
 }
 
 // ─── Row mapper ───────────────────────────────────────────────────────────────
@@ -53,6 +62,8 @@ type DbRow = {
   ads_endpoint: string; ads_profile_id: string; ads_marketplace: string;
   sp_refresh_token: string | null; sp_marketplace_id: string | null; sp_endpoint: string | null;
   rto_factor: number | null;
+  sales_source: string | null;
+  vendor_code: string | null;
   connected: number; last_synced_at: string | null; created_at: string;
 };
 
@@ -71,6 +82,8 @@ function rowToAccount(row: DbRow): Account {
     spMarketplaceId: row.sp_marketplace_id ?? null,
     spEndpoint:      row.sp_endpoint       ?? null,
     rtoFactor:       row.rto_factor ?? 0,
+    salesSource:     row.sales_source === "vendor" ? "vendor" : "seller",
+    vendorCode:      row.vendor_code ?? null,
     connected:       row.connected === 1,
     lastSyncedAt:    row.last_synced_at,
     createdAt:       row.created_at,
@@ -153,6 +166,8 @@ export function updateAccount(id: string, input: Partial<AccountInput>): SafeAcc
   if (input.spRefreshToken  !== undefined) { fields.push("sp_refresh_token = @spRefreshToken");   params.spRefreshToken  = input.spRefreshToken ? encrypt(input.spRefreshToken) : null; }
   if (input.spMarketplaceId !== undefined) { fields.push("sp_marketplace_id = @spMarketplaceId"); params.spMarketplaceId = input.spMarketplaceId; }
   if (input.rtoFactor       !== undefined) { fields.push("rto_factor = @rtoFactor");              params.rtoFactor = Math.max(0, Math.min(1, input.rtoFactor)); }
+  if (input.salesSource     !== undefined) { fields.push("sales_source = @salesSource");          params.salesSource = input.salesSource === "vendor" ? "vendor" : "seller"; }
+  if (input.vendorCode      !== undefined) { fields.push("vendor_code = @vendorCode");            params.vendorCode = input.vendorCode || null; }
 
   db.prepare(`UPDATE accounts SET ${fields.join(", ")} WHERE id = @id`).run(params);
   return toSafe(getAccount(id)!);

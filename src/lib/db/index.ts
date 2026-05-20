@@ -402,6 +402,8 @@ function migrate(db: Database.Database) {
   addColumnIfMissing(db, "campaign_meta",          "format",                       "TEXT NOT NULL DEFAULT 'STANDARD'");
   addColumnIfMissing(db, "rules",                  "window",                       "TEXT NOT NULL DEFAULT 'Last 7D'");
   addColumnIfMissing(db, "accounts",                "rto_factor",                   "REAL NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "accounts",                "sales_source",                 "TEXT NOT NULL DEFAULT 'seller'");
+  addColumnIfMissing(db, "accounts",                "vendor_code",                  "TEXT");
 }
 
 interface ColumnInfo { name: string }
