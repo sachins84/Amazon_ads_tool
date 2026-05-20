@@ -8,7 +8,7 @@ import { fetchSalesSummary, fetchDailySales } from "@/lib/sp-api/orders";
 import { fetchSalesTrafficReport } from "@/lib/sp-api/sales-report";
 import { fetchVendorSalesReport } from "@/lib/sp-api/vendor-sales-report";
 import { withCache } from "@/lib/cache";
-import { SpConfigError } from "@/lib/sp-api/client";
+import { SpConfigError, getSpMarketplaceId } from "@/lib/sp-api/client";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { getAccount, getAccountRtoFactor } from "@/lib/db/accounts";
 
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const source        = searchParams.get("source") ?? "report"; // "orders" | "report"
 
   // Resolve marketplaceId + salesSource + vendorCode from the DB account.
-  let marketplaceId = searchParams.get("marketplaceId") ?? process.env.SP_API_MARKETPLACE_ID ?? "";
+  let marketplaceId = searchParams.get("marketplaceId") ?? getSpMarketplaceId() ?? "";
   let salesSource: "seller" | "vendor" = "seller";
   let vendorCode: string | null = null;
   if (accountId) {

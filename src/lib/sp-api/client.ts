@@ -15,13 +15,18 @@ export async function getSpAccessToken(): Promise<string> {
   const now = Date.now();
   if (cache && cache.expiresAt - 60_000 > now) return cache.accessToken;
 
-  const clientId     = process.env.SP_API_CLIENT_ID     ?? process.env.AMAZON_CLIENT_ID;
-  const clientSecret = process.env.SP_API_CLIENT_SECRET ?? process.env.AMAZON_CLIENT_SECRET;
-  const refreshToken = process.env.SP_API_REFRESH_TOKEN;
+  // DB settings (set via /accounts UI) take priority; .env.local is the
+  // legacy fallback. Lazy-import settings-repo to keep this file usable
+  // from contexts that haven't initialised the DB yet (rare, but the
+  // ads-api client uses similar pattern).
+  const { getSetting } = await import("@/lib/db/settings-repo");
+  const clientId     = getSetting("sp_api.client_id")     || process.env.SP_API_CLIENT_ID     || process.env.AMAZON_CLIENT_ID;
+  const clientSecret = getSetting("sp_api.client_secret") || process.env.SP_API_CLIENT_SECRET || process.env.AMAZON_CLIENT_SECRET;
+  const refreshToken = getSetting("sp_api.refresh_token") || process.env.SP_API_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new SpConfigError(
-      "Missing SP-API credentials. Set SP_API_CLIENT_ID, SP_API_CLIENT_SECRET, SP_API_REFRESH_TOKEN in .env.local"
+      "Missing SP-API credentials. Set them on the /accounts page (SP-API setup section) or in .env.local"
     );
   }
 
@@ -53,7 +58,28 @@ const SP_ENDPOINTS: Record<string, string> = {
 };
 
 function getSpEndpoint(): string {
+  // Same priority: settings table → env → NA default
+  try {
+    const { getSetting } = require("@/lib/db/settings-repo") as typeof import("@/lib/db/settings-repo");
+    const s = getSetting("sp_api.endpoint");
+    if (s) return s;
+  } catch { /* DB not initialised */ }
   return process.env.SP_API_ENDPOINT ?? SP_ENDPOINTS.NA;
+}
+
+/** Resolves the marketplace ID used when /api/sales caller doesn't pass one. */
+export function getSpMarketplaceId(): string | null {
+  try {
+    const { getSetting } = require("@/lib/db/settings-repo") as typeof import("@/lib/db/settings-repo");
+    const s = getSetting("sp_api.marketplace_id");
+    if (s) return s;
+  } catch { /* DB not initialised */ }
+  return process.env.SP_API_MARKETPLACE_ID ?? null;
+}
+
+/** Invalidates the in-memory token cache — call after credentials change. */
+export function resetSpAccessTokenCache(): void {
+  cache = null;
 }
 
 export async function spRequest<T>(

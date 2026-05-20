@@ -241,6 +241,9 @@ function AccountsPageInner() {
           </button>
         </div>
 
+        {/* SP-API app credentials — applies across all brands */}
+        <SpApiSettingsCard />
+
         {/* Account list */}
         {loading ? (
           <div style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading accounts…</div>
@@ -620,6 +623,157 @@ function AccountForm({ form, setForm, editId, saving, showAdvanced, setShowAdvan
       </div>
     </div>
   );
+}
+
+// ─── SP-API app credentials card ─────────────────────────────────────────
+
+interface SettingsResp { settings: Record<string, { hasValue: boolean; value: string | null }> }
+
+function SpApiSettingsCard() {
+  const [loaded, setLoaded] = useState(false);
+  const [clientId, setClientId]     = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
+  const [marketplaceId, setMarketplaceId] = useState("A21TJRUUN4KGV"); // India default
+  const [endpoint, setEndpoint] = useState("https://sellingpartnerapi-eu.amazon.com");
+  const [hasClientId, setHasClientId]         = useState(false);
+  const [hasClientSecret, setHasClientSecret] = useState(false);
+  const [hasRefreshToken, setHasRefreshToken] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/settings", { cache: "no-store" }).then((r) => r.json()).then((d: SettingsResp) => {
+      setHasClientId(d.settings["sp_api.client_id"]?.hasValue ?? false);
+      setHasClientSecret(d.settings["sp_api.client_secret"]?.hasValue ?? false);
+      setHasRefreshToken(d.settings["sp_api.refresh_token"]?.hasValue ?? false);
+      setClientId(d.settings["sp_api.client_id"]?.value ?? "");
+      const mp = d.settings["sp_api.marketplace_id"]?.value;
+      if (mp) setMarketplaceId(mp);
+      const ep = d.settings["sp_api.endpoint"]?.value;
+      if (ep) setEndpoint(ep);
+      setLoaded(true);
+      // Auto-expand the card on first run if anything's missing
+      if (!d.settings["sp_api.client_id"]?.hasValue ||
+          !d.settings["sp_api.client_secret"]?.hasValue ||
+          !d.settings["sp_api.refresh_token"]?.hasValue) {
+        setExpanded(true);
+      }
+    });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setTestResult(null);
+    const body: Record<string, string | null> = {
+      "sp_api.marketplace_id": marketplaceId.trim() || null,
+      "sp_api.endpoint":       endpoint.trim() || null,
+    };
+    if (clientId.trim())     body["sp_api.client_id"]     = clientId.trim();
+    if (clientSecret.trim()) body["sp_api.client_secret"] = clientSecret.trim();
+    if (refreshToken.trim()) body["sp_api.refresh_token"] = refreshToken.trim();
+    try {
+      const r = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = (await r.json()) as SettingsResp;
+      setHasClientId(j.settings["sp_api.client_id"]?.hasValue ?? false);
+      setHasClientSecret(j.settings["sp_api.client_secret"]?.hasValue ?? false);
+      setHasRefreshToken(j.settings["sp_api.refresh_token"]?.hasValue ?? false);
+      setClientSecret(""); setRefreshToken("");  // clear secret fields after save
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2500);
+    } finally { setSaving(false); }
+  }
+
+  async function testConn() {
+    setTesting(true); setTestResult(null);
+    try {
+      const r = await fetch("/api/settings", { method: "POST" });
+      const j = await r.json() as { ok: boolean; error?: string; marketplaceId?: string };
+      setTestResult(j.ok ? `✓ Token refresh succeeded. Marketplace=${j.marketplaceId ?? "(default)"}.` : `✗ ${j.error}`);
+    } finally { setTesting(false); }
+  }
+
+  const allSet = hasClientId && hasClientSecret && hasRefreshToken;
+
+  return (
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>SP-API app credentials</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            Shared across all brands. Per-brand vendor codes live on each brand card below.
+            <span style={{ marginLeft: 8, color: allSet ? "var(--c-success-text)" : "var(--c-warning-text)" }}>
+              {loaded ? (allSet ? "● All set" : "○ Missing credentials") : ""}
+            </span>
+          </div>
+        </div>
+        <button onClick={() => setExpanded((v) => !v)} style={{ ...btnSecondaryLocal }}>
+          {expanded ? "Collapse" : "Edit"}
+        </button>
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <FieldLocal label="Client ID (Amazon app)" value={clientId} onChange={setClientId}
+                      placeholder={hasClientId ? "(set — paste to replace)" : "amzn1.application-oa2-client.…"} />
+          <FieldLocal label="Marketplace ID" value={marketplaceId} onChange={setMarketplaceId}
+                      placeholder="A21TJRUUN4KGV" />
+          <FieldLocal label="Client Secret" value={clientSecret} onChange={setClientSecret}
+                      placeholder={hasClientSecret ? "(set — paste to replace)" : "amzn1.oa2-cs.v1.…"} secret />
+          <FieldLocal label="Endpoint" value={endpoint} onChange={setEndpoint}
+                      placeholder="https://sellingpartnerapi-eu.amazon.com" />
+          <FieldLocal label="Refresh Token" value={refreshToken} onChange={setRefreshToken}
+                      placeholder={hasRefreshToken ? "(set — paste to replace)" : "Atzr|…"} secret colSpan2 />
+
+          <div style={{ gridColumn: "1 / span 2", display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+            <button onClick={save} disabled={saving} style={btnPrimaryLocal(saving)}>{saving ? "Saving…" : "Save"}</button>
+            <button onClick={testConn} disabled={!allSet || testing} style={btnSecondaryLocal}>{testing ? "Testing…" : "Test connection"}</button>
+            {savedAt && <span style={{ fontSize: 11, color: "var(--c-success-text)" }}>Saved.</span>}
+            {testResult && <span style={{ fontSize: 11, color: testResult.startsWith("✓") ? "var(--c-success-text)" : "var(--c-danger-text)" }}>{testResult}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldLocal({ label, value, onChange, placeholder, secret, colSpan2 }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; secret?: boolean; colSpan2?: boolean;
+}) {
+  return (
+    <div style={{ gridColumn: colSpan2 ? "1 / span 2" : undefined }}>
+      <div style={{ fontSize: 10, color: "var(--text-secondary)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <input
+        type={secret ? "password" : "text"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: "100%",
+          background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 6,
+          color: "var(--text-primary)", padding: "7px 10px", fontSize: 11, fontFamily: "ui-monospace, monospace",
+        }}
+      />
+    </div>
+  );
+}
+
+const btnSecondaryLocal: React.CSSProperties = {
+  padding: "6px 12px", borderRadius: 6, background: "var(--bg-input)",
+  border: "1px solid var(--border)", color: "var(--text-secondary)",
+  fontSize: 12, cursor: "pointer",
+};
+function btnPrimaryLocal(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "6px 14px", borderRadius: 6,
+    background: disabled ? "var(--bg-input)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+    border: "1px solid", borderColor: disabled ? "var(--border)" : "transparent",
+    color: disabled ? "var(--text-muted)" : "#fff",
+    fontSize: 12, fontWeight: 600, cursor: disabled ? "default" : "pointer",
+  };
 }
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {

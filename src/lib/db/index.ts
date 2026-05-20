@@ -58,6 +58,18 @@ function migrate(db: Database.Database) {
       updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- ─── App-wide settings (key/value) ─────────────────────────────────
+    -- Used to store SP-API app credentials (client_id, client_secret,
+    -- refresh_token) so they can be set via the dashboard instead of
+    -- prod env vars. Secrets get the same AES-256-GCM encryption as
+    -- account tokens.
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      encrypted  INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS account_tokens (
       account_id          TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
       token_type          TEXT NOT NULL,        -- 'ads' | 'sp'
