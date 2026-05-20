@@ -9,10 +9,18 @@ import { fetchOverview, fetchAllBrands, refreshAccountMetrics, type OverviewData
 import { fmt, currencySymbol } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
 
+interface BusinessSales {
+  summary: { totalRevenue: number; totalOrders: number; totalUnits: number };
+  dailySeries: { date: string; totalRevenue: number; totalOrders: number; totalUnits: number }[];
+  error?: string;
+  code?: string;
+}
+
 export default function MasterOverviewPage() {
   const [dateRange, setDateRange] = useState("Last 7D");
   const [overview, setOverview]   = useState<OverviewData | null>(null);
   const [allBrands, setAllBrands] = useState<AllBrandsResponse | null>(null);
+  const [businessSales, setBusinessSales] = useState<BusinessSales | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -27,10 +35,17 @@ export default function MasterOverviewPage() {
     try {
       if (isAllBrands) {
         const data = await fetchAllBrands({ dateRange });
-        setAllBrands(data); setOverview(null);
+        setAllBrands(data); setOverview(null); setBusinessSales(null);
       } else {
-        const data = await fetchOverview({ accountId, dateRange });
-        setOverview(data); setAllBrands(null);
+        // Pull ad overview + SP-API business sales in parallel. The sales
+        // endpoint can fail or return CONFIG_MISSING (no SP token configured
+        // for the brand) — that's non-fatal.
+        const [overviewData, salesRes] = await Promise.all([
+          fetchOverview({ accountId, dateRange }),
+          fetch(`/api/sales?accountId=${accountId}&dateRange=${encodeURIComponent(dateRange)}&source=report`).then((r) => r.json()).catch(() => null),
+        ]);
+        setOverview(overviewData); setAllBrands(null);
+        setBusinessSales(salesRes && !salesRes.code ? salesRes : null);
       }
     } catch (e) {
       setError(String(e));
@@ -150,7 +165,7 @@ export default function MasterOverviewPage() {
         {isAllBrands ? (
           <AllBrandsView data={allBrands} loading={loading} />
         ) : (
-          <SingleBrandView data={overview} loading={loading} currency={currency} chartData={chartData} topCampaigns={topCampaigns} />
+          <SingleBrandView data={overview} businessSales={businessSales} loading={loading} currency={currency} chartData={chartData} topCampaigns={topCampaigns} />
         )}
       </main>
 
@@ -162,9 +177,10 @@ export default function MasterOverviewPage() {
 // ─── Single-brand view ───────────────────────────────────────────────────────
 
 function SingleBrandView({
-  data, loading, currency, chartData, topCampaigns,
+  data, businessSales, loading, currency, chartData, topCampaigns,
 }: {
   data: OverviewData | null;
+  businessSales: BusinessSales | null;
   loading: boolean;
   currency: string;
   chartData: { date: string; spend: number; sales: number }[];
@@ -187,18 +203,43 @@ function SingleBrandView({
   const impr   = (k?.impressions as M) ?? fallback(true);
   const clicks = (k?.clicks as M) ?? fallback(true);
 
+  // Three-way sales split when SP-API total sales is available.
+  // total = SP-API gross orders; paid = ad-attributed sales (post-RTO);
+  // organic = total - paid (so organic also nets out RTO via paid being lower).
+  // TACoS = ad spend / total sales — the canonical "ads as % of business" metric.
+  const totalRev = businessSales?.summary.totalRevenue ?? null;
+  const paidRev  = sales.value;
+  const organic  = totalRev != null ? Math.max(0, totalRev - paidRev) : null;
+  const tacos    = totalRev && totalRev > 0 ? (spend.value / totalRev) * 100 : null;
+
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
         {loading ? Array.from({ length: 4 }).map((_, i) => <KpiCardSkeleton key={i} />) : (
           <>
-            <KpiCard label="Spend"  metric={spend}  format="currency"   currency={currency} />
-            <KpiCard label="Sales"  metric={sales}  format="currency"   currency={currency} />
-            <KpiCard label="Orders" metric={orders} format="number"     currency={currency} />
-            <KpiCard label="ROAS"   metric={roas}   format="multiplier" currency={currency} />
+            <KpiCard label="Spend"         metric={spend}  format="currency"   currency={currency} />
+            <KpiCard label="Paid sales"    metric={sales}  format="currency"   currency={currency} />
+            <KpiCard label="Orders (paid)" metric={orders} format="number"     currency={currency} />
+            <KpiCard label="ROAS"          metric={roas}   format="multiplier" currency={currency} />
           </>
         )}
       </div>
+
+      {/* Business sales: Total / Organic / TACoS. Only shown when SP-API
+          marketplace is configured for this brand (else CONFIG_MISSING
+          comes back and businessSales stays null). */}
+      {!loading && businessSales && totalRev != null && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 }}>
+          <KpiCard label="Total sales (all orders)" metric={{ value: totalRev, delta: 0, positive: true }} format="currency" currency={currency} />
+          <KpiCard label={`Organic sales (= total − paid)`} metric={{ value: organic ?? 0, delta: 0, positive: true }} format="currency" currency={currency} />
+          <KpiCard label="TACoS (spend / total sales)" metric={{ value: tacos ?? 0, delta: 0, positive: false }} format="percent" currency={currency} />
+        </div>
+      )}
+      {!loading && !businessSales && (
+        <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 11, color: "var(--text-muted)" }}>
+          Total / organic sales not available for this brand — needs SP-API marketplace ID configured on /accounts. Currently showing ad-attributed (paid) sales only.
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 16 }}>
         {loading ? Array.from({ length: 6 }).map((_, i) => <KpiCardSkeleton key={i} small />) : (
