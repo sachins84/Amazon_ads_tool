@@ -45,7 +45,15 @@ export default function MasterOverviewPage() {
           fetch(`/api/sales?accountId=${accountId}&dateRange=${encodeURIComponent(dateRange)}&source=report`).then((r) => r.json()).catch(() => null),
         ]);
         setOverview(overviewData); setAllBrands(null);
-        setBusinessSales(salesRes && !salesRes.code ? salesRes : null);
+        // Belt-and-braces: only accept the response if it has the expected
+        // shape. Any error / code / missing summary → render the hint card,
+        // not garbage that crashes downstream.
+        const validSales = salesRes
+          && !salesRes.code
+          && !salesRes.error
+          && salesRes.summary
+          && typeof salesRes.summary.totalRevenue === "number";
+        setBusinessSales(validSales ? salesRes : null);
       }
     } catch (e) {
       setError(String(e));

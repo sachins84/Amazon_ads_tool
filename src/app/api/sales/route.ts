@@ -118,7 +118,11 @@ export async function GET(req: NextRequest) {
     if (err instanceof SpConfigError) {
       return Response.json({ error: err.message, code: "CONFIG_MISSING" }, { status: 200 });
     }
+    // Any other failure (401 from SP token refresh, 4xx/5xx report fetch,
+    // network) returns 200 with a code field so the dashboard's
+    // graceful-degradation check (!code) treats it like CONFIG_MISSING
+    // and shows the hint card instead of crashing the whole React tree.
     console.error("[sales] Error:", err);
-    return Response.json({ error: String(err) }, { status: 500 });
+    return Response.json({ error: String(err), code: "SP_API_ERROR" }, { status: 200 });
   }
 }
