@@ -63,7 +63,11 @@ async function fetchCatalogBatch(
   if (!asins.length) return result;
 
   const identifiers = asins.join(",");
-  const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifiers)}&identifiersType=ASIN&marketplaceIds=${marketplaceId}&includedData=summaries`;
+  // Explicit pageSize: Amazon's default for this endpoint silently caps the
+  // response at 10 even when 20 identifiers are passed, leaving the other
+  // 10 with "no catalog data". Set pageSize to batch length so every
+  // requested ASIN comes back.
+  const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifiers)}&identifiersType=ASIN&marketplaceIds=${marketplaceId}&includedData=summaries&pageSize=${asins.length}`;
 
   const res = await spReq<CatalogResponse>(accountId, path);
   for (const item of res.items ?? []) {
@@ -126,6 +130,22 @@ export async function lookupAsins(
     for (const [asin, info] of batchResult) {
       result.set(asin, info);
       cacheSet(`asin:${asin}`, info, 86_400_000); // 24h cache
+    }
+    // Defensive: if Amazon's batch response is missing any ASIN we asked
+    // for (we've seen this happen even with pageSize set), retry those
+    // individually. Slower path but means we don't leave revenue unmapped.
+    const missing = batch.filter((a) => !batchResult.has(a));
+    for (const asin of missing) {
+      await new Promise((r) => setTimeout(r, 600));
+      try {
+        const one = await fetchCatalogBatch([asin], marketplaceId, accountId);
+        for (const [a, info] of one) {
+          result.set(a, info);
+          cacheSet(`asin:${a}`, info, 86_400_000);
+        }
+      } catch (e) {
+        console.warn(`[catalog] per-ASIN retry failed for ${asin}: ${String(e).slice(0, 80)}`);
+      }
     }
     if (i + 20 < uncached.length) {
       await new Promise((r) => setTimeout(r, 600));
