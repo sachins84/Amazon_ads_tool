@@ -92,17 +92,31 @@ export default function PnlPage() {
 
         {!accountId ? (
           <div style={empty}>Pick a brand from the top-right dropdown.</div>
-        ) : loading && !data ? (
-          <div style={empty}>Loading…</div>
-        ) : data?.code === "BRAND_KEY_UNKNOWN" ? (
-          <div style={{ ...empty, color: "var(--c-warning-text)" }}>{data.error}</div>
-        ) : data?.code === "CONFIG_MISSING" ? (
-          <div style={{ ...empty, color: "var(--c-warning-text)" }}>{data.error}</div>
-        ) : data?.error ? (
-          <div style={{ ...empty, color: "var(--c-danger-text)" }}>{data.error}</div>
-        ) : data ? (
-          <WaterfallView w={data.waterfall} currency={currency} />
-        ) : null}
+        ) : (
+          <div style={{ position: "relative", opacity: loading ? 0.5 : 1, transition: "opacity 0.15s" }}>
+            {loading && (
+              <div style={{
+                position: "absolute", top: 8, right: 8, zIndex: 1,
+                background: "var(--bg-card)", border: "1px solid var(--border)",
+                borderRadius: 6, padding: "4px 10px", fontSize: 11,
+                color: "var(--text-secondary)",
+              }}>
+                Loading {preset}…
+              </div>
+            )}
+            {loading && !data ? (
+              <div style={empty}>Loading…</div>
+            ) : data?.code === "BRAND_KEY_UNKNOWN" ? (
+              <div style={{ ...empty, color: "var(--c-warning-text)" }}>{data.error}</div>
+            ) : data?.code === "CONFIG_MISSING" ? (
+              <div style={{ ...empty, color: "var(--c-warning-text)" }}>{data.error}</div>
+            ) : data?.error ? (
+              <div style={{ ...empty, color: "var(--c-danger-text)" }}>{data.error}</div>
+            ) : data ? (
+              <WaterfallView w={data.waterfall} currency={currency} />
+            ) : null}
+          </div>
+        )}
 
         {data?.feeDiagnostics && (
           <div style={{ ...card, padding: 12, marginTop: 12, fontSize: 11 }}>
