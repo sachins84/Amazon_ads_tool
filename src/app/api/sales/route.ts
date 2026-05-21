@@ -7,6 +7,7 @@ import { type NextRequest } from "next/server";
 import { fetchSalesSummary, fetchDailySales } from "@/lib/sp-api/orders";
 import { fetchSalesTrafficReport } from "@/lib/sp-api/sales-report";
 import { fetchVendorSalesReport } from "@/lib/sp-api/vendor-sales-report";
+import { fetchBrandSplitSales, brandKeyFromAccountName } from "@/lib/sp-api/brand-split-sales";
 import { withCache } from "@/lib/cache";
 import { SpConfigError, getSpMarketplaceId } from "@/lib/sp-api/client";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
@@ -22,11 +23,13 @@ export async function GET(req: NextRequest) {
   let marketplaceId = searchParams.get("marketplaceId") ?? getSpMarketplaceId() ?? "";
   let salesSource: "seller" | "vendor" = "seller";
   let vendorCode: string | null = null;
+  let brandKey:   ReturnType<typeof brandKeyFromAccountName> = null;
   if (accountId) {
     const acct = getAccount(accountId);
     if (acct?.spMarketplaceId) marketplaceId = acct.spMarketplaceId;
     if (acct?.salesSource === "vendor") salesSource = "vendor";
     if (acct?.vendorCode) vendorCode = acct.vendorCode;
+    if (acct?.name) brandKey = brandKeyFromAccountName(acct.name);
   }
 
   if (!marketplaceId) {
@@ -42,9 +45,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Cache key must include salesSource + vendorCode so different brands on
-  // the same marketplace don't share a cached response.
-  const cacheKey = `sales:${marketplaceId}:${salesSource}:${vendorCode ?? "-"}:${datePreset}:${source}`;
+  // Cache key must include salesSource + vendorCode + brandKey so different
+  // brands on the same marketplace don't share a cached response.
+  const cacheKey = `sales:${marketplaceId}:${salesSource}:${vendorCode ?? "-"}:${brandKey ?? "-"}:${datePreset}:${source}`;
 
   try {
     const data = await withCache(cacheKey, async () => {
@@ -69,7 +72,14 @@ export async function GET(req: NextRequest) {
       }
 
       if (source === "report") {
-        // Sales & Traffic report — Seller Central, takes ~30s to generate
+        // Sales & Traffic report — Seller Central. If we can derive a brand
+        // key from the account name, pull at asinGranularity=CHILD + filter
+        // by inferred brand so multi-brand sellers (Mosaic) get per-brand
+        // totals instead of the whole-marketplace aggregate.
+        if (brandKey) {
+          const split = await fetchBrandSplitSales(marketplaceId, startDate, endDate, brandKey, accountId);
+          return { summary: split.summary, dailySeries: split.dailySeries, _diagnostics: split.diagnostics };
+        }
         const rows = await fetchSalesTrafficReport(marketplaceId, startDate, endDate);
         const summary = rows.reduce(
           (acc, row) => ({

@@ -38,12 +38,38 @@ interface RawReportRow {
   };
 }
 
+// Per-ASIN rollup block of the same report — present when asinGranularity
+// is supplied. Period totals only (no per-day split per ASIN).
+interface RawAsinRow {
+  parentAsin?: string;
+  childAsin?: string;
+  sku?: string;
+  salesByAsin?: {
+    orderedProductSales?: { amount: number; currencyCode: string };
+    totalOrderedUnits?: number;
+    unitsOrdered?: number;
+  };
+  trafficByAsin?: {
+    sessions?: number;
+    pageViews?: number;
+  };
+}
+
+export interface SalesTrafficAsinRow {
+  asin: string;          // childAsin if present, else parentAsin
+  parentAsin: string;
+  sku: string;
+  orderedProductSales: number;
+  unitsOrdered: number;
+}
+
 // ─── Create report ─────────────────────────────────────────────────────────────
 
 export async function createSalesReport(
   marketplaceId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  asinGranularity: "PARENT" | "CHILD" = "PARENT",
 ): Promise<string> {
   const res = await spRequest<CreateReportResponse>("/reports/2021-06-30/reports", {
     method: "POST",
@@ -52,7 +78,7 @@ export async function createSalesReport(
       marketplaceIds: [marketplaceId],
       dataStartTime:  `${startDate}T00:00:00Z`,
       dataEndTime:    `${endDate}T23:59:59Z`,
-      reportOptions:  { dateGranularity: "DAY", asinGranularity: "PARENT" },
+      reportOptions:  { dateGranularity: "DAY", asinGranularity },
     },
   });
   return res.reportId;
@@ -60,7 +86,12 @@ export async function createSalesReport(
 
 // ─── Poll + download ───────────────────────────────────────────────────────────
 
-export async function waitForSalesReport(reportId: string): Promise<SalesTrafficRow[]> {
+interface SalesTrafficFull {
+  byDate: SalesTrafficRow[];
+  byAsin: SalesTrafficAsinRow[];
+}
+
+export async function waitForSalesReport(reportId: string): Promise<SalesTrafficFull> {
   const MAX_POLLS = 20;
 
   for (let i = 0; i < MAX_POLLS; i++) {
@@ -79,7 +110,7 @@ export async function waitForSalesReport(reportId: string): Promise<SalesTraffic
   throw new Error(`SP-API sales report ${reportId} timed out`);
 }
 
-async function downloadSalesReport(documentId: string): Promise<SalesTrafficRow[]> {
+async function downloadSalesReport(documentId: string): Promise<SalesTrafficFull> {
   const doc = await spRequest<ReportDocResponse>(`/reports/2021-06-30/documents/${documentId}`);
 
   const res = await fetch(doc.url);
@@ -94,11 +125,12 @@ async function downloadSalesReport(documentId: string): Promise<SalesTrafficRow[
     text = await res.text();
   }
 
-  const json = JSON.parse(text) as { salesAndTrafficByDate: RawReportRow[] };
-  const rows = json.salesAndTrafficByDate ?? [];
+  const json = JSON.parse(text) as {
+    salesAndTrafficByDate?: RawReportRow[];
+    salesAndTrafficByAsin?: RawAsinRow[];
+  };
 
-  // Normalise nested salesByDate / trafficByDate into flat SalesTrafficRow
-  return rows.map((row) => ({
+  const byDate = (json.salesAndTrafficByDate ?? []).map((row) => ({
     date:                  row.date,
     orderedProductSales:   row.salesByDate?.orderedProductSales ?? { amount: 0, currencyCode: "INR" },
     totalOrderItems:       row.salesByDate?.totalOrderItems ?? 0,
@@ -107,6 +139,16 @@ async function downloadSalesReport(documentId: string): Promise<SalesTrafficRow[
     browserSessions:       row.trafficByDate?.browserSessions ?? 0,
     unitSessionPercentage: row.trafficByDate?.unitSessionPercentage ?? 0,
   }));
+
+  const byAsin = (json.salesAndTrafficByAsin ?? []).map((row) => ({
+    asin:                row.childAsin || row.parentAsin || "",
+    parentAsin:          row.parentAsin || "",
+    sku:                 row.sku || "",
+    orderedProductSales: row.salesByAsin?.orderedProductSales?.amount ?? 0,
+    unitsOrdered:        row.salesByAsin?.unitsOrdered ?? row.salesByAsin?.totalOrderedUnits ?? 0,
+  })).filter((r) => r.asin);
+
+  return { byDate, byAsin };
 }
 
 // ─── Convenience ──────────────────────────────────────────────────────────────
@@ -117,5 +159,16 @@ export async function fetchSalesTrafficReport(
   endDate: string
 ): Promise<SalesTrafficRow[]> {
   const reportId = await createSalesReport(marketplaceId, startDate, endDate);
+  return (await waitForSalesReport(reportId)).byDate;
+}
+
+/** Same report, but returns the full payload (by-date + by-ASIN blocks).
+ *  Used by the brand-split path which needs per-ASIN totals to filter on. */
+export async function fetchSalesTrafficReportFull(
+  marketplaceId: string,
+  startDate: string,
+  endDate: string,
+): Promise<SalesTrafficFull> {
+  const reportId = await createSalesReport(marketplaceId, startDate, endDate, "CHILD");
   return waitForSalesReport(reportId);
 }
