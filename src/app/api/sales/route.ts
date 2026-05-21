@@ -123,7 +123,8 @@ export async function GET(req: NextRequest) {
       totalOrders:  d.totalOrders  * m,
       totalUnits:   d.totalUnits   * m,
     }));
-    return Response.json({ summary, dailySeries, _source: "live", _rtoApplied: rto });
+    const diagnostics = (data as { _diagnostics?: unknown })._diagnostics;
+    return Response.json({ summary, dailySeries, _source: "live", _rtoApplied: rto, _diagnostics: diagnostics });
   } catch (err) {
     if (err instanceof SpConfigError) {
       return Response.json({ error: err.message, code: "CONFIG_MISSING" }, { status: 200 });

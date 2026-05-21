@@ -64,21 +64,13 @@ async function fetchCatalogBatch(
   const identifiers = asins.join(",");
   const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifiers)}&identifiersType=ASIN&marketplaceIds=${marketplaceId}&includedData=summaries`;
 
-  try {
-    const res = await spReq<CatalogResponse>(accountId, path);
-    if (res.items?.[0]) {
-      console.log("[catalog] Sample item keys:", JSON.stringify(res.items[0]).slice(0, 500));
-    }
-    for (const item of res.items ?? []) {
-      const summary = item.summaries?.[0];
-      const title = summary?.itemName ?? "";
-      const brand = summary?.brandName ?? inferBrand(title);
-      result.set(item.asin, { title, brand });
-    }
-  } catch (err) {
-    console.error("[catalog] Error fetching ASIN info:", err);
+  const res = await spReq<CatalogResponse>(accountId, path);
+  for (const item of res.items ?? []) {
+    const summary = item.summaries?.[0];
+    const title = summary?.itemName ?? "";
+    const brand = summary?.brandName ?? inferBrand(title);
+    result.set(item.asin, { title, brand });
   }
-
   return result;
 }
 
@@ -106,17 +98,35 @@ export async function lookupAsins(
 
   if (!uncached.length) return result;
 
-  // Fetch in batches of 20 (SP-API limit)
+  // Fetch in batches of 20 (SP-API limit). Catalog Items API documented
+  // rate limit is 2 req/sec — wait 600ms between batches to stay under.
+  // Per-batch retry on 429 with exponential backoff.
   for (let i = 0; i < uncached.length; i += 20) {
     const batch = uncached.slice(i, i + 20);
-    const batchResult = await fetchCatalogBatch(batch, marketplaceId, accountId);
+    let attempt = 0;
+    let batchResult: Map<string, AsinInfo> = new Map();
+    while (attempt < 4) {
+      try {
+        batchResult = await fetchCatalogBatch(batch, marketplaceId, accountId);
+        break;
+      } catch (err) {
+        const msg = String(err);
+        if (/429|rate limit/i.test(msg) && attempt < 3) {
+          const backoffMs = 1500 * Math.pow(2, attempt);
+          console.warn(`[catalog] 429 — backing off ${backoffMs}ms (attempt ${attempt + 1})`);
+          await new Promise((r) => setTimeout(r, backoffMs));
+          attempt++;
+          continue;
+        }
+        throw err;
+      }
+    }
     for (const [asin, info] of batchResult) {
       result.set(asin, info);
       cacheSet(`asin:${asin}`, info, 86_400_000); // 24h cache
     }
-    // Rate limit between batches
     if (i + 20 < uncached.length) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 600));
     }
   }
 
