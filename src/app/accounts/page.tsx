@@ -341,6 +341,32 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged 
   const [vendorSaving, setVendorSaving] = useState(false);
   const [vendorSavedAt, setVendorSavedAt] = useState<number | null>(null);
 
+  // Additional P&L factors (stored 0..1, displayed as percent)
+  const pctOf = (f: number | undefined) => String(Math.round(((f ?? 0) * 100) * 100) / 100);
+  const [gstPct, setGstPct]               = useState(pctOf(account.gstPct));
+  const [reviewsPct, setReviewsPct]       = useState(pctOf(account.reviewsPct));
+  const [commissionPct, setCommissionPct] = useState(pctOf(account.commissionPct));
+  const [logisticsPct, setLogisticsPct]   = useState(pctOf(account.logisticsPct));
+  const [cogsPct, setCogsPct]             = useState(pctOf(account.cogsPct));
+  const [pnlSaving, setPnlSaving] = useState(false);
+  const [pnlSavedAt, setPnlSavedAt] = useState<number | null>(null);
+
+  async function commitPnlFactor(field: "gstPct" | "reviewsPct" | "commissionPct" | "logisticsPct" | "cogsPct", value: string) {
+    const n = parseFloat(value);
+    const clamped = Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
+    setPnlSaving(true);
+    try {
+      await fetch(`/api/accounts/${account.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: clamped / 100 }),
+      });
+      setPnlSavedAt(Date.now());
+      setTimeout(() => setPnlSavedAt(null), 1500);
+      onRtoChanged();
+    } finally { setPnlSaving(false); }
+  }
+
   async function commitRto() {
     const n = parseFloat(rtoPct);
     const clamped = Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
@@ -376,8 +402,10 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged 
   return (
     <div style={{
       background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10,
-      padding: "16px 20px", display: "flex", alignItems: "center", gap: 16,
+      padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12,
     }}>
+    {/* Row 1: brand info + Vendor/Seller + RTO + actions */}
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       {/* Color dot */}
       <div style={{ width: 38, height: 38, borderRadius: 9, background: account.color, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff" }}>
         {account.name.charAt(0).toUpperCase()}
@@ -474,6 +502,43 @@ function AccountCard({ account, onEdit, onTest, onDelete, testing, onRtoChanged 
         <IconBtn title="Remove" onClick={onDelete} danger>✕</IconBtn>
       </div>
     </div>
+
+    {/* Row 2: P&L factors — drive /pnl waterfall */}
+    <div style={{ borderTop: "1px solid var(--bg-input)", paddingTop: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>P&L factors</span>
+      <PnlFactor label="GST"        value={gstPct}        onChange={setGstPct}        onCommit={(v) => commitPnlFactor("gstPct", v)} />
+      <PnlFactor label="Reviews"    value={reviewsPct}    onChange={setReviewsPct}    onCommit={(v) => commitPnlFactor("reviewsPct", v)} />
+      <PnlFactor label="Commission" value={commissionPct} onChange={setCommissionPct} onCommit={(v) => commitPnlFactor("commissionPct", v)} />
+      <PnlFactor label="Logistics"  value={logisticsPct}  onChange={setLogisticsPct}  onCommit={(v) => commitPnlFactor("logisticsPct", v)} />
+      <PnlFactor label="COGS"       value={cogsPct}       onChange={setCogsPct}       onCommit={(v) => commitPnlFactor("cogsPct", v)} />
+      <span style={{ fontSize: 9, color: pnlSavedAt ? "var(--c-success-text)" : "var(--text-muted)", height: 11 }}>
+        {pnlSaving ? "Saving…" : pnlSavedAt ? "Saved" : ""}
+      </span>
+    </div>
+    </div>
+  );
+}
+
+function PnlFactor({ label, value, onChange, onCommit }: {
+  label: string; value: string; onChange: (v: string) => void; onCommit: (v: string) => void;
+}) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>{label}</span>
+      <input
+        type="number" min="0" max="100" step="0.1"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onCommit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        style={{
+          width: 56,
+          background: "var(--bg-input)", border: "1px solid var(--border)", borderRadius: 4,
+          color: "var(--text-primary)", padding: "3px 6px", fontSize: 11, textAlign: "right",
+        }}
+      />
+      <span style={{ fontSize: 10, color: "var(--text-muted)" }}>%</span>
+    </span>
   );
 }
 

@@ -416,6 +416,13 @@ function migrate(db: Database.Database) {
   addColumnIfMissing(db, "accounts",                "rto_factor",                   "REAL NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "accounts",                "sales_source",                 "TEXT NOT NULL DEFAULT 'seller'");
   addColumnIfMissing(db, "accounts",                "vendor_code",                  "TEXT");
+  // Per-brand P&L factors (all as fractions 0..1). Surfaced on /accounts
+  // as percentages; drive the brand-wise P&L waterfall on /pnl.
+  addColumnIfMissing(db, "accounts",                "gst_pct",                      "REAL NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "accounts",                "reviews_pct",                  "REAL NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "accounts",                "commission_pct",               "REAL NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "accounts",                "logistics_pct",                "REAL NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "accounts",                "cogs_pct",                     "REAL NOT NULL DEFAULT 0");
 }
 
 interface ColumnInfo { name: string }

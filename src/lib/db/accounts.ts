@@ -24,6 +24,12 @@ export interface Account {
   spEndpoint:      string | null;
   // RTO discount applied at metrics-store read layer
   rtoFactor:       number;        // 0..1
+  // P&L factors (all 0..1 fractions). Drive the /pnl waterfall.
+  gstPct:          number;        // GST burden on sales
+  reviewsPct:      number;        // reviewer / influencer cost as % of sales
+  commissionPct:   number;        // Amazon commission
+  logisticsPct:    number;        // pick/pack/ship + warehousing
+  cogsPct:         number;        // cost of goods sold
   // Whether business sales come from Vendor or Seller Central reports.
   // Drives which SP-API report /api/sales pulls.
   salesSource:     "seller" | "vendor";
@@ -50,6 +56,11 @@ export interface AccountInput {
   spMarketplaceId?: string | null;
   spEndpoint?:      string | null;
   rtoFactor?:       number;
+  gstPct?:          number;
+  reviewsPct?:      number;
+  commissionPct?:   number;
+  logisticsPct?:    number;
+  cogsPct?:         number;
   salesSource?:     "seller" | "vendor";
   vendorCode?:      string | null;
 }
@@ -62,6 +73,11 @@ type DbRow = {
   ads_endpoint: string; ads_profile_id: string; ads_marketplace: string;
   sp_refresh_token: string | null; sp_marketplace_id: string | null; sp_endpoint: string | null;
   rto_factor: number | null;
+  gst_pct: number | null;
+  reviews_pct: number | null;
+  commission_pct: number | null;
+  logistics_pct: number | null;
+  cogs_pct: number | null;
   sales_source: string | null;
   vendor_code: string | null;
   connected: number; last_synced_at: string | null; created_at: string;
@@ -82,6 +98,11 @@ function rowToAccount(row: DbRow): Account {
     spMarketplaceId: row.sp_marketplace_id ?? null,
     spEndpoint:      row.sp_endpoint       ?? null,
     rtoFactor:       row.rto_factor ?? 0,
+    gstPct:          row.gst_pct ?? 0,
+    reviewsPct:      row.reviews_pct ?? 0,
+    commissionPct:   row.commission_pct ?? 0,
+    logisticsPct:    row.logistics_pct ?? 0,
+    cogsPct:         row.cogs_pct ?? 0,
     salesSource:     row.sales_source === "vendor" ? "vendor" : "seller",
     vendorCode:      row.vendor_code ?? null,
     connected:       row.connected === 1,
@@ -166,6 +187,11 @@ export function updateAccount(id: string, input: Partial<AccountInput>): SafeAcc
   if (input.spRefreshToken  !== undefined) { fields.push("sp_refresh_token = @spRefreshToken");   params.spRefreshToken  = input.spRefreshToken ? encrypt(input.spRefreshToken) : null; }
   if (input.spMarketplaceId !== undefined) { fields.push("sp_marketplace_id = @spMarketplaceId"); params.spMarketplaceId = input.spMarketplaceId; }
   if (input.rtoFactor       !== undefined) { fields.push("rto_factor = @rtoFactor");              params.rtoFactor = Math.max(0, Math.min(1, input.rtoFactor)); }
+  if (input.gstPct          !== undefined) { fields.push("gst_pct = @gstPct");                    params.gstPct        = Math.max(0, Math.min(1, input.gstPct)); }
+  if (input.reviewsPct      !== undefined) { fields.push("reviews_pct = @reviewsPct");            params.reviewsPct    = Math.max(0, Math.min(1, input.reviewsPct)); }
+  if (input.commissionPct   !== undefined) { fields.push("commission_pct = @commissionPct");      params.commissionPct = Math.max(0, Math.min(1, input.commissionPct)); }
+  if (input.logisticsPct    !== undefined) { fields.push("logistics_pct = @logisticsPct");        params.logisticsPct  = Math.max(0, Math.min(1, input.logisticsPct)); }
+  if (input.cogsPct         !== undefined) { fields.push("cogs_pct = @cogsPct");                  params.cogsPct       = Math.max(0, Math.min(1, input.cogsPct)); }
   if (input.salesSource     !== undefined) { fields.push("sales_source = @salesSource");          params.salesSource = input.salesSource === "vendor" ? "vendor" : "seller"; }
   if (input.vendorCode      !== undefined) { fields.push("vendor_code = @vendorCode");            params.vendorCode = input.vendorCode || null; }
 
