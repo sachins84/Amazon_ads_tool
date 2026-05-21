@@ -10,7 +10,7 @@
  *
  * Docs: https://developer-docs.amazon.com/sp-api/docs/finances-api-v0-reference
  */
-import { spRequest } from "./client";
+import { spRequest, SpApiError } from "./client";
 import { withCache } from "@/lib/cache";
 
 interface MoneyAmount { CurrencyAmount: number; CurrencyCode: string }
@@ -127,6 +127,11 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
     ? new Date(Date.now() - 3 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z")
     : `${endDate}T23:59:59Z`;
 
+  // /finances/v0/financialEvents quota is 0.5 req/sec sustained (burst 30).
+  // Stay under by waiting ~2.1s between pages; retry 429s with backoff.
+  const PAGE_INTERVAL_MS = 2100;
+  const MAX_RETRIES = 5;
+
   do {
     const params: Record<string, string> = {
       PostedAfter:       `${startDate}T00:00:00Z`,
@@ -134,10 +139,32 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
       MaxResultsPerPage: "100",
     };
     if (nextToken) params.NextToken = nextToken;
-    const res = await spRequest<FinancialEventsResponse>("/finances/v0/financialEvents", { params });
+
+    let attempt = 0;
+    let res: FinancialEventsResponse | null = null;
+    while (attempt < MAX_RETRIES) {
+      try {
+        res = await spRequest<FinancialEventsResponse>("/finances/v0/financialEvents", { params });
+        break;
+      } catch (e) {
+        if (e instanceof SpApiError && e.status === 429 && attempt < MAX_RETRIES - 1) {
+          const backoff = Math.min(30_000, 2_500 * Math.pow(2, attempt));
+          console.warn(`[finances] 429 — backing off ${backoff}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise((r) => setTimeout(r, backoff));
+          attempt++;
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (!res) throw new SpApiError("SP-API rate limit exceeded after retries", 429);
+
     tallyEvents(res.payload.FinancialEvents, bySku, totals);
     nextToken = res.payload.NextToken;
     pages++;
+    if (nextToken && pages < MAX_PAGES) {
+      await new Promise((r) => setTimeout(r, PAGE_INTERVAL_MS));
+    }
   } while (nextToken && pages < MAX_PAGES);
   return { bySku, ...totals };
 }
