@@ -74,6 +74,7 @@ export interface BrandSplitSales {
     asinsMatched: number;
     asinsUnknown: number;
     brandSharePct: number;     // brand's share of total ordered revenue, 0..100
+    topUnmapped: { asin: string; title: string; revenue: number; units: number }[];
   };
 }
 
@@ -101,6 +102,7 @@ export async function fetchBrandSplitSales(
   let totalUnits   = 0;
   let matched      = 0;
   let unknown      = 0;
+  const unmapped: { asin: string; title: string; revenue: number; units: number }[] = [];
   for (const r of full.byAsin) {
     totalRevenue += r.orderedProductSales;
     totalUnits   += r.unitsOrdered;
@@ -112,8 +114,10 @@ export async function fetchBrandSplitSales(
       matched++;
     } else if (inferred === "other") {
       unknown++;
+      unmapped.push({ asin: r.asin, title, revenue: r.orderedProductSales, units: r.unitsOrdered });
     }
   }
+  const topUnmapped = unmapped.sort((a, b) => b.revenue - a.revenue).slice(0, 30);
 
   // 3) Pro-rate daily totals by the brand's share of overall revenue.
   // (Each day's salesByDate is whole-marketplace; we don't have per-ASIN-
@@ -145,6 +149,7 @@ export async function fetchBrandSplitSales(
       asinsMatched: matched,
       asinsUnknown: unknown,
       brandSharePct: Math.round(brandShare * 10000) / 100,
+      topUnmapped,
     },
   };
 }
