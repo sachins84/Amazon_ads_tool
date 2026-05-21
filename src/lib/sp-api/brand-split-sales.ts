@@ -11,6 +11,20 @@
  */
 import { fetchSalesTrafficReportFull } from "./sales-report";
 import { lookupAsins } from "./catalog";
+import { withCache } from "@/lib/cache";
+
+// In-flight de-duplication: when multiple brand-views fire at once they all
+// need the same underlying SP report — share the single in-flight promise.
+const inflight = new Map<string, Promise<Awaited<ReturnType<typeof fetchSalesTrafficReportFull>>>>();
+async function getCachedReportFull(marketplaceId: string, startDate: string, endDate: string) {
+  const key = `sp-report-full:${marketplaceId}:${startDate}:${endDate}`;
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const p = withCache(key, () => fetchSalesTrafficReportFull(marketplaceId, startDate, endDate), 10 * 60 * 1000)
+    .finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
 
 export type BrandKey = "manmatters" | "bebodywise" | "littlejoys" | "other";
 
@@ -50,7 +64,9 @@ export async function fetchBrandSplitSales(
   endDate: string,
   brandKey: BrandKey,
 ): Promise<BrandSplitSales> {
-  const full = await fetchSalesTrafficReportFull(marketplaceId, startDate, endDate);
+  // Cached + de-duped so 4 brand calls share ONE SP report instead of
+  // racking up rate limits with 4 identical reports.
+  const full = await getCachedReportFull(marketplaceId, startDate, endDate);
 
   // 1) Look up titles for every ASIN in the report. Use the GLOBAL SP-API
   // client (no accountId) — credentials live in app_settings, not per-account
