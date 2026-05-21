@@ -10,7 +10,8 @@ interface CatalogItem {
   asin: string;
   summaries?: {
     marketplaceId: string;
-    brandName?: string;
+    brand?: string;        // actual field name returned by Amazon
+    brandName?: string;    // some marketplaces return this instead — accept both
     itemName?: string;
   }[];
 }
@@ -68,7 +69,8 @@ async function fetchCatalogBatch(
   for (const item of res.items ?? []) {
     const summary = item.summaries?.[0];
     const title = summary?.itemName ?? "";
-    const brand = summary?.brandName ?? inferBrand(title);
+    // Read both possible field names; Indian marketplace returns `brand`.
+    const brand = summary?.brand ?? summary?.brandName ?? inferBrand(title);
     result.set(item.asin, { title, brand });
   }
   return result;

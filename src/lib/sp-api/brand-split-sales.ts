@@ -106,15 +106,20 @@ export async function fetchBrandSplitSales(
   for (const r of full.byAsin) {
     totalRevenue += r.orderedProductSales;
     totalUnits   += r.unitsOrdered;
-    const title = info.get(r.asin)?.title ?? "";
-    const inferred = inferBrandFromTitle(title);
+    const ci = info.get(r.asin);
+    const title = ci?.title ?? "";
+    // Prefer Amazon's explicit brand field; only fall back to title regex
+    // if catalog didn't give us a brand string.
+    const inferred = matchBrand(ci?.brand ?? "") ?? inferBrandFromTitle(title);
     if (inferred === brandKey) {
       brandRevenue += r.orderedProductSales;
       brandUnits   += r.unitsOrdered;
       matched++;
     } else if (inferred === "other") {
       unknown++;
-      unmapped.push({ asin: r.asin, title, revenue: r.orderedProductSales, units: r.unitsOrdered });
+      // Show title + brand field so the unmapped list is actually readable.
+      const display = title || ci?.brand || `(no catalog data)`;
+      unmapped.push({ asin: r.asin, title: display, revenue: r.orderedProductSales, units: r.unitsOrdered });
     }
   }
   const topUnmapped = unmapped.sort((a, b) => b.revenue - a.revenue).slice(0, 30);
