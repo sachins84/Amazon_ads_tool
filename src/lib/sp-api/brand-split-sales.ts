@@ -28,22 +28,41 @@ async function getCachedReportFull(marketplaceId: string, startDate: string, end
 
 export type BrandKey = "manmatters" | "bebodywise" | "littlejoys" | "other";
 
+/** Patterns are lowercase substrings. Title/name is lowercased then checked
+ *  against each. First match wins, evaluated in BRAND_PATTERNS order. */
+const BRAND_PATTERNS: Array<{ key: BrandKey; patterns: string[] }> = [
+  { key: "manmatters", patterns: [
+    "man matters", "manmatters",
+    "man matter",  "manmatter",   // singular variants
+  ]},
+  { key: "bebodywise", patterns: [
+    "be bodywise", "bebodywise",
+    "be body wise", "body wise", "bodywise",
+  ]},
+  { key: "littlejoys", patterns: [
+    "little joys", "littlejoys",
+    "little joy",  "littlejoy",   // singular variants
+  ]},
+];
+
+function matchBrand(text: string): BrandKey | null {
+  const t = (text || "").toLowerCase();
+  for (const { key, patterns } of BRAND_PATTERNS) {
+    for (const p of patterns) {
+      if (t.includes(p)) return key;
+    }
+  }
+  return null;
+}
+
 export function inferBrandFromTitle(title: string): BrandKey {
-  const t = (title || "").toLowerCase();
-  if (t.includes("man matters") || t.includes("manmatters")) return "manmatters";
-  if (t.includes("be bodywise") || t.includes("bebodywise") || t.includes("bodywise")) return "bebodywise";
-  if (t.includes("little joys") || t.includes("littlejoys")) return "littlejoys";
-  return "other";
+  return matchBrand(title) ?? "other";
 }
 
 /** Derive a brand key from an account name. Returns null when no known
  *  brand token is in the name — caller should fall back to whole-marketplace. */
 export function brandKeyFromAccountName(name: string): BrandKey | null {
-  const n = (name || "").toLowerCase();
-  if (n.includes("manmatters") || n.includes("man matters")) return "manmatters";
-  if (n.includes("bebodywise") || n.includes("be bodywise") || n.includes("bodywise")) return "bebodywise";
-  if (n.includes("littlejoys") || n.includes("little joys")) return "littlejoys";
-  return null;
+  return matchBrand(name);
 }
 
 export interface BrandSplitSales {
