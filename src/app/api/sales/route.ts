@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
         // by inferred brand so multi-brand sellers (Mosaic) get per-brand
         // totals instead of the whole-marketplace aggregate.
         if (brandKey) {
-          const split = await fetchBrandSplitSales(marketplaceId, startDate, endDate, brandKey, accountId);
+          const split = await fetchBrandSplitSales(marketplaceId, startDate, endDate, brandKey);
           return { summary: split.summary, dailySeries: split.dailySeries, _diagnostics: split.diagnostics };
         }
         const rows = await fetchSalesTrafficReport(marketplaceId, startDate, endDate);

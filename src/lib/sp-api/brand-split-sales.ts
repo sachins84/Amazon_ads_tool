@@ -49,13 +49,15 @@ export async function fetchBrandSplitSales(
   startDate: string,
   endDate: string,
   brandKey: BrandKey,
-  accountIdForCatalog?: string,
 ): Promise<BrandSplitSales> {
   const full = await fetchSalesTrafficReportFull(marketplaceId, startDate, endDate);
 
-  // 1) Look up titles for every ASIN in the report (catalog is cached).
+  // 1) Look up titles for every ASIN in the report. Use the GLOBAL SP-API
+  // client (no accountId) — credentials live in app_settings, not per-account
+  // refresh tokens, so accountSpRequest would fail with
+  // "no SP-API refresh token configured".
   const asins = [...new Set(full.byAsin.map((r) => r.asin))].filter(Boolean);
-  const info = await lookupAsins(asins, marketplaceId, accountIdForCatalog);
+  const info = await lookupAsins(asins, marketplaceId);
 
   // 2) Split per-ASIN totals by inferred brand.
   let brandRevenue = 0;
