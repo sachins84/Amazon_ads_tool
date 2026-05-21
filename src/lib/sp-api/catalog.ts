@@ -81,6 +81,68 @@ async function fetchCatalogBatch(
 }
 
 /**
+ * SKU-keyed variant of fetchCatalogBatch. Catalog Items API accepts
+ * identifiersType=SKU; the response items still come back with `.asin`
+ * so the caller can map SKU → ASIN if needed.
+ */
+async function fetchCatalogBySkuBatch(
+  skus: string[],
+  marketplaceId: string,
+): Promise<Map<string, AsinInfo & { asin: string }>> {
+  const result = new Map<string, AsinInfo & { asin: string }>();
+  if (!skus.length) return result;
+  const identifiers = skus.join(",");
+  const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifiers)}&identifiersType=SKU&marketplaceIds=${marketplaceId}&includedData=summaries&pageSize=${skus.length}`;
+  // Note: catalog API by-SKU returns items in the SAME ORDER as identifiers,
+  // so we zip them. Items missing from response are skipped (caller retries).
+  interface CatalogItemWithAsin extends CatalogItem { asin: string }
+  const res = await spRequest<{ items: CatalogItemWithAsin[] }>(path);
+  res.items?.forEach((item, idx) => {
+    const sku = skus[idx];
+    const summary = item.summaries?.[0];
+    const title = summary?.itemName ?? "";
+    const brand = summary?.brand ?? summary?.brandName ?? inferBrand(title);
+    result.set(sku, { title, brand, asin: item.asin });
+  });
+  return result;
+}
+
+/** SKU-keyed catalog lookup with cache + per-batch retry on rate limit. */
+export async function lookupSkus(skus: string[], marketplaceId: string): Promise<Map<string, AsinInfo & { asin: string }>> {
+  const result = new Map<string, AsinInfo & { asin: string }>();
+  const uncached: string[] = [];
+  for (const sku of skus) {
+    const hit = cacheGet<AsinInfo & { asin: string }>(`sku:${sku}`);
+    if (hit) result.set(sku, hit);
+    else uncached.push(sku);
+  }
+  if (!uncached.length) return result;
+
+  for (let i = 0; i < uncached.length; i += 20) {
+    const batch = uncached.slice(i, i + 20);
+    let attempt = 0;
+    let batchResult: Map<string, AsinInfo & { asin: string }> = new Map();
+    while (attempt < 4) {
+      try { batchResult = await fetchCatalogBySkuBatch(batch, marketplaceId); break; }
+      catch (e) {
+        const msg = String(e);
+        if (/429|rate limit/i.test(msg) && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1500 * Math.pow(2, attempt)));
+          attempt++; continue;
+        }
+        throw e;
+      }
+    }
+    for (const [sku, info] of batchResult) {
+      result.set(sku, info);
+      cacheSet(`sku:${sku}`, info, 86_400_000);
+    }
+    if (i + 20 < uncached.length) await new Promise((r) => setTimeout(r, 600));
+  }
+  return result;
+}
+
+/**
  * Enrich a list of ASINs with product titles and brand names.
  * Results are cached for 24 hours.
  */

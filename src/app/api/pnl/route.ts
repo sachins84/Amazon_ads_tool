@@ -3,6 +3,7 @@ import { getAccount } from "@/lib/db/accounts";
 import { getDb } from "@/lib/db";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { fetchBrandSplitSales, brandKeyFromAccountName } from "@/lib/sp-api/brand-split-sales";
+import { brandFeeTotals } from "@/lib/sp-api/brand-fees";
 import { getSpMarketplaceId } from "@/lib/sp-api/client";
 
 export const dynamic = "force-dynamic";
@@ -70,14 +71,30 @@ export async function GET(req: NextRequest) {
   `).get(accountId, range.startDate, range.endDate) as { spend: number };
   const adSpend = adSpendRow?.spend ?? 0;
 
-  // 3) Apply factors to build the waterfall
+  // 3) Actuals for commission + logistics from settlements (per-SKU → brand).
+  // Falls back to factor-based estimates when SKU lookup or finances events
+  // are unavailable / empty. `reason` is surfaced to the UI when we fall back.
+  const feeResult = await brandFeeTotals(marketplaceId, range.startDate, range.endDate, brandKey);
+  const feeActuals = feeResult.data;
+  const feeReason  = feeResult.reason;
+
+  // 4) Apply factors to build the waterfall
   const rto         = grossSales * acct.rtoFactor;
   const postRtoSales = grossSales - rto;
   const gst         = postRtoSales * acct.gstPct;
   const reviews     = postRtoSales * acct.reviewsPct;
-  const commission  = postRtoSales * acct.commissionPct;
+
+  const commissionEstimate = postRtoSales * acct.commissionPct;
+  const commissionActual   = feeActuals?.commission ?? null;
+  const commission         = commissionActual ?? commissionEstimate;
+  const commissionSource: "actual" | "estimate" = commissionActual !== null ? "actual" : "estimate";
+
+  const logisticsEstimate  = postRtoSales * acct.logisticsPct;
+  const logisticsActual    = feeActuals?.logistics ?? null;
+  const logistics          = logisticsActual ?? logisticsEstimate;
+  const logisticsSource: "actual" | "estimate" = logisticsActual !== null ? "actual" : "estimate";
+
   const netRevenue  = postRtoSales - gst - reviews - commission;
-  const logistics   = postRtoSales * acct.logisticsPct;
   const cogs        = postRtoSales * acct.cogsPct;
   const cm2         = netRevenue - logistics - adSpend - cogs;
   const cm2Pct      = grossSales > 0 ? (cm2 / grossSales) * 100 : 0;
@@ -94,13 +111,34 @@ export async function GET(req: NextRequest) {
       postRtoSales,
       gst:        { factor: acct.gstPct,          amount: gst },
       reviews:    { factor: acct.reviewsPct,      amount: reviews },
-      commission: { factor: acct.commissionPct,   amount: commission },
+      commission: {
+        factor: acct.commissionPct,
+        amount: commission,
+        source: commissionSource,
+        estimate: commissionEstimate,
+        reason: commissionSource === "estimate" ? feeReason : undefined,
+      },
       netRevenue,
-      logistics:  { factor: acct.logisticsPct,    amount: logistics },
+      logistics:  {
+        factor: acct.logisticsPct,
+        amount: logistics,
+        source: logisticsSource,
+        estimate: logisticsEstimate,
+        reason: logisticsSource === "estimate" ? feeReason : undefined,
+      },
       adSpend,
       cogs:       { factor: acct.cogsPct,         amount: cogs },
       cm2,
       cm2Pct,
+    },
+    feeDiagnostics: {
+      source:       feeActuals ? "actual" : "estimate",
+      reason:       feeReason,
+      skusSeen:     feeResult.diagnostics.skusSeen,
+      skusMatched:  feeResult.diagnostics.skusMatched,
+      skusForBrand: feeResult.diagnostics.skusForBrand,
+      refunds:      feeActuals?.refunds ?? 0,
+      error:        feeResult.diagnostics.error,
     },
     salesError,
     salesDiagnostics,

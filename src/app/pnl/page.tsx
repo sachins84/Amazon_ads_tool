@@ -14,6 +14,7 @@ import { useAccount } from "@/lib/account-context";
 import { fmt } from "@/lib/utils";
 
 interface Factor { factor: number; amount: number }
+interface FeeFactor extends Factor { source: "actual" | "estimate"; estimate: number; reason?: string }
 interface PnlResp {
   accountId: string;
   accountName: string;
@@ -26,20 +27,29 @@ interface PnlResp {
     postRtoSales: number;
     gst:        Factor;
     reviews:    Factor;
-    commission: Factor;
+    commission: FeeFactor;
     netRevenue: number;
-    logistics:  Factor;
+    logistics:  FeeFactor;
     adSpend:    number;
     cogs:       Factor;
     cm2:        number;
     cm2Pct:     number;
   };
+  feeDiagnostics: {
+    source: "actual" | "estimate";
+    reason: string;
+    skusSeen: number;
+    skusMatched: number;
+    skusForBrand: number;
+    refunds: number;
+    error?: string;
+  } | null;
   salesError: string | null;
   error?: string;
   code?: string;
 }
 
-const PRESETS = ["Last 7D", "Last 14D", "Last 30D", "Last 60D"];
+const PRESETS = ["Yesterday", "Last 7D", "Last 14D", "Last 30D", "Last 60D"];
 
 export default function PnlPage() {
   const { activeAccount } = useAccount();
@@ -94,6 +104,30 @@ export default function PnlPage() {
           <WaterfallView w={data.waterfall} currency={currency} />
         ) : null}
 
+        {data?.feeDiagnostics && (
+          <div style={{ ...card, padding: 12, marginTop: 12, fontSize: 11 }}>
+            <div style={{ fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+              Settlements (Finances API) · {data.feeDiagnostics.source === "actual" ? "wired" : "fell back to estimate"}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, color: "var(--text-secondary)" }}>
+              <Stat label="SKUs in events" value={String(data.feeDiagnostics.skusSeen)} />
+              <Stat label="SKUs matched to brand" value={String(data.feeDiagnostics.skusMatched)} />
+              <Stat label="SKUs for this brand" value={String(data.feeDiagnostics.skusForBrand)} />
+              <Stat label="Refunds (all brands)" value={fmt(data.feeDiagnostics.refunds, "currency", currency)} />
+            </div>
+            {data.feeDiagnostics.source === "estimate" && (
+              <div style={{ marginTop: 8, color: "var(--c-warning-text)", fontSize: 11 }}>
+                Why estimate? {data.feeDiagnostics.reason}
+              </div>
+            )}
+            {data.feeDiagnostics.error && (
+              <div style={{ marginTop: 4, color: "var(--c-danger-text)", fontSize: 10, fontFamily: "var(--font-mono, monospace)" }}>
+                {data.feeDiagnostics.error}
+              </div>
+            )}
+          </div>
+        )}
+
         {data?.salesError && (
           <div style={{ ...card, padding: 12, marginTop: 12, fontSize: 11, color: "var(--c-danger-text)" }}>
             SP-API sales error: {data.salesError}
@@ -114,9 +148,9 @@ function WaterfallView({ w, currency }: { w: PnlResp["waterfall"]; currency: str
       <SumCard    label="Post-RTO Sales" value={w.postRtoSales} currency={currency} accent="muted" />
       <DeductCard label="GST"        factor={w.gst}        currency={currency} sublabel="goods & services tax" />
       <DeductCard label="Reviews"    factor={w.reviews}    currency={currency} sublabel="reviewer / influencer cost" />
-      <DeductCard label="Commission" factor={w.commission} currency={currency} sublabel="Amazon platform fee" />
+      <FeeDeductCard label="Commission" factor={w.commission} currency={currency} sublabel="Amazon platform fee" />
       <SumCard    label="Net Revenue" value={w.netRevenue} currency={currency} accent="primary" />
-      <DeductCard label="Logistics"  factor={w.logistics}  currency={currency} sublabel="pick / pack / ship + warehousing" />
+      <FeeDeductCard label="Logistics"  factor={w.logistics}  currency={currency} sublabel="fulfillment + storage" />
       <ManualDeductCard label="Ad Spend" amount={w.adSpend} currency={currency} sublabel="actual spend from campaign metrics" />
       <DeductCard label="COGS"       factor={w.cogs}       currency={currency} sublabel="cost of goods sold" />
       <SumCard    label="Contribution Margin 2 (CM2)" value={w.cm2} currency={currency} accent={w.cm2 >= 0 ? "success" : "danger"} sub={`${w.cm2Pct.toFixed(1)}% of gross sales`} />
@@ -164,6 +198,45 @@ function DeductCard({ label, factor, currency, sublabel }: {
   );
 }
 
+function FeeDeductCard({ label, factor, currency, sublabel }: {
+  label: string; factor: FeeFactor; currency: string; sublabel?: string;
+}) {
+  const isActual = factor.source === "actual";
+  const badgeColors = isActual
+    ? { bg: "var(--c-success-bg)", fg: "var(--c-success-text)" }
+    : { bg: "var(--bg-input)",     fg: "var(--text-muted)" };
+  const pct = (factor.factor * 100).toFixed(1);
+  return (
+    <div style={{ ...card, padding: "10px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", marginLeft: 24 }}>
+      <div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 8 }}>
+          − {label}
+          <span style={{
+            background: badgeColors.bg, color: badgeColors.fg,
+            fontSize: 9, fontWeight: 700, letterSpacing: "0.05em",
+            padding: "2px 6px", borderRadius: 4, textTransform: "uppercase",
+          }}>
+            {isActual ? "actual" : "estimate"}
+          </span>
+          {!isActual && <span style={{ color: "var(--text-muted)", fontWeight: 500, fontSize: 11 }}>· {pct}%</span>}
+        </div>
+        {(sublabel || factor.reason) && (
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, maxWidth: 480 }}>
+            {sublabel}
+            {isActual && ` · settlements (vs ${fmt(factor.estimate, "currency", currency)} estimate)`}
+            {!isActual && factor.reason && factor.reason !== "ok" && (
+              <> · <span style={{ color: "var(--c-warning-text)" }}>{factor.reason}</span></>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={{ fontSize: 13, color: "var(--c-warning-text)", fontVariantNumeric: "tabular-nums" }}>
+        − {fmt(factor.amount, "currency", currency)}
+      </div>
+    </div>
+  );
+}
+
 function ManualDeductCard({ label, amount, currency, sublabel }: {
   label: string; amount: number; currency: string; sublabel?: string;
 }) {
@@ -176,6 +249,15 @@ function ManualDeductCard({ label, amount, currency, sublabel }: {
       <div style={{ fontSize: 13, color: "var(--c-warning-text)", fontVariantNumeric: "tabular-nums" }}>
         − {fmt(amount, "currency", currency)}
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)" }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }
