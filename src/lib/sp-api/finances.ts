@@ -119,10 +119,18 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
   let nextToken: string | undefined;
   let pages = 0;
   const MAX_PAGES = 50;       // safety net — 100 events/page × 50 = 5000 events
+
+  // SP-API requires PostedBefore to be no later than ~2 min ago. If endDate
+  // is today, cap the upper bound at now - 3 min instead of 23:59:59Z.
+  const todayUtc = new Date().toISOString().split("T")[0];
+  const postedBefore = endDate >= todayUtc
+    ? new Date(Date.now() - 3 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z")
+    : `${endDate}T23:59:59Z`;
+
   do {
     const params: Record<string, string> = {
       PostedAfter:       `${startDate}T00:00:00Z`,
-      PostedBefore:      `${endDate}T23:59:59Z`,
+      PostedBefore:      postedBefore,
       MaxResultsPerPage: "100",
     };
     if (nextToken) params.NextToken = nextToken;
