@@ -701,6 +701,7 @@ function SpApiSettingsCard() {
   const [refreshToken, setRefreshToken] = useState("");
   const [marketplaceId, setMarketplaceId] = useState("A21TJRUUN4KGV"); // India default
   const [endpoint, setEndpoint] = useState("https://sellingpartnerapi-eu.amazon.com");
+  const [sellerId, setSellerId] = useState("");
   const [hasClientId, setHasClientId]         = useState(false);
   const [hasClientSecret, setHasClientSecret] = useState(false);
   const [hasRefreshToken, setHasRefreshToken] = useState(false);
@@ -720,6 +721,8 @@ function SpApiSettingsCard() {
       if (mp) setMarketplaceId(mp);
       const ep = d.settings["sp_api.endpoint"]?.value;
       if (ep) setEndpoint(ep);
+      const sid = d.settings["sp_api.seller_id"]?.value;
+      if (sid) setSellerId(sid);
       setLoaded(true);
       // Auto-expand the card on first run if anything's missing
       if (!d.settings["sp_api.client_id"]?.hasValue ||
@@ -736,6 +739,7 @@ function SpApiSettingsCard() {
     const body: Record<string, string | null> = {
       "sp_api.marketplace_id": marketplaceId.trim() || null,
       "sp_api.endpoint":       endpoint.trim() || null,
+      "sp_api.seller_id":      sellerId.trim() || null,
     };
     if (clientId.trim())     body["sp_api.client_id"]     = clientId.trim();
     if (clientSecret.trim()) body["sp_api.client_secret"] = clientSecret.trim();
@@ -792,6 +796,8 @@ function SpApiSettingsCard() {
                       placeholder="https://sellingpartnerapi-eu.amazon.com" />
           <FieldLocal label="Refresh Token" value={refreshToken} onChange={setRefreshToken}
                       placeholder={hasRefreshToken ? "(set — paste to replace)" : "Atzr|…"} secret colSpan2 />
+          <FieldLocal label="Seller / Merchant ID (for SKU lookups)" value={sellerId} onChange={setSellerId}
+                      placeholder="Axxxxxxxxxxxxx (Seller Central → Account Info → Merchant Token)" colSpan2 />
 
           <div style={{ gridColumn: "1 / span 2", display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
             <button onClick={save} disabled={saving} style={btnPrimaryLocal(saving)}>{saving ? "Saving…" : "Save"}</button>

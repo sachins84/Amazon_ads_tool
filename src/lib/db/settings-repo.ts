@@ -16,7 +16,8 @@ export type SettingKey =
   | "sp_api.client_secret"
   | "sp_api.refresh_token"
   | "sp_api.marketplace_id"
-  | "sp_api.endpoint";
+  | "sp_api.endpoint"
+  | "sp_api.seller_id";
 
 /** Which keys are secrets — values are encrypted at rest. */
 const SECRET_KEYS: ReadonlySet<SettingKey> = new Set([
@@ -63,7 +64,7 @@ export function listSettingsSafe(): Record<string, { hasValue: boolean; value: s
   const out: Record<string, { hasValue: boolean; value: string | null }> = {};
   const allKeys: SettingKey[] = [
     "sp_api.client_id", "sp_api.client_secret", "sp_api.refresh_token",
-    "sp_api.marketplace_id", "sp_api.endpoint",
+    "sp_api.marketplace_id", "sp_api.endpoint", "sp_api.seller_id",
   ];
   for (const k of allKeys) {
     const row = map.get(k);

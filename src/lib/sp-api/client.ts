@@ -80,6 +80,53 @@ export function getSpMarketplaceId(): string | null {
 /** Invalidates the in-memory token cache — call after credentials change. */
 export function resetSpAccessTokenCache(): void {
   cache = null;
+  sellerIdCache = null;
+}
+
+// ─── Seller / merchant ID ─────────────────────────────────────────────────────
+//
+// Catalog Items API requires `sellerId` when looking up by SKU. We fetch it
+// once from /sellers/v1/marketplaceParticipations and cache for the process
+// lifetime — sellerId never changes for an authorized refresh token.
+
+let sellerIdCache: string | null = null;
+
+interface ParticipationsResponse {
+  payload: Array<{
+    marketplace: { id: string; name?: string; countryCode?: string };
+    participation: { isParticipating: boolean; hasSuspendedListings?: boolean };
+    storeName?: string;
+    sellerId?: string;       // some regions return this top-level
+    merchantId?: string;
+  }>;
+}
+
+export async function getSpSellerId(): Promise<string> {
+  if (sellerIdCache) return sellerIdCache;
+  // Allow manual override via settings (rare — useful if /sellers endpoint
+  // is unavailable or returns unexpected shape).
+  try {
+    const { getSetting } = await import("@/lib/db/settings-repo");
+    const s = getSetting("sp_api.seller_id");
+    if (s) { sellerIdCache = s; return s; }
+  } catch { /* DB not initialised */ }
+  // spRequest is defined below; safe to call recursively because token cache
+  // makes the auth round-trip cheap.
+  const res = await spRequest<ParticipationsResponse>("/sellers/v1/marketplaceParticipations");
+  const sid = res.payload?.find((p) => p.sellerId || p.merchantId)?.sellerId
+           ?? res.payload?.find((p) => p.sellerId || p.merchantId)?.merchantId;
+  if (!sid) {
+    // Fallback — some endpoints don't return sellerId in the payload but
+    // it's deducible from x-amzn-* headers on the catalog response. Throw
+    // with a clear hint so the caller can prompt the user to set it in
+    // settings.
+    throw new SpApiError(
+      "Could not derive SP-API sellerId from /sellers/v1/marketplaceParticipations. Set sp_api.seller_id in settings.",
+      500,
+    );
+  }
+  sellerIdCache = sid;
+  return sid;
 }
 
 export async function spRequest<T>(

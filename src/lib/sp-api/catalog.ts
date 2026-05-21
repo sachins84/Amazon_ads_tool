@@ -2,7 +2,7 @@
  * SP-API Catalog Items API — look up product title + brand by ASIN.
  * Docs: https://developer-docs.amazon.com/sp-api/docs/catalog-items-api-v2022-04-01-reference
  */
-import { spRequest } from "./client";
+import { spRequest, getSpSellerId } from "./client";
 import { accountSpRequest } from "../amazon-api/account-client";
 import { cacheGet, cacheSet } from "../cache";
 
@@ -88,22 +88,39 @@ async function fetchCatalogBatch(
 async function fetchCatalogBySkuBatch(
   skus: string[],
   marketplaceId: string,
+  sellerId: string,
 ): Promise<Map<string, AsinInfo & { asin: string }>> {
   const result = new Map<string, AsinInfo & { asin: string }>();
   if (!skus.length) return result;
   const identifiers = skus.join(",");
-  const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifiers)}&identifiersType=SKU&marketplaceIds=${marketplaceId}&includedData=summaries&pageSize=${skus.length}`;
-  // Note: catalog API by-SKU returns items in the SAME ORDER as identifiers,
-  // so we zip them. Items missing from response are skipped (caller retries).
-  interface CatalogItemWithAsin extends CatalogItem { asin: string }
+  // sellerId is REQUIRED for SKU-based searches per Catalog Items API spec.
+  // includedData=identifiers lets us match response items back to input SKUs
+  // by reading each item.identifiers[].identifiers[].identifier (== SKU).
+  const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifiers)}&identifiersType=SKU&marketplaceIds=${marketplaceId}&sellerId=${encodeURIComponent(sellerId)}&includedData=summaries,identifiers&pageSize=${skus.length}`;
+
+  interface CatalogItemIdentifiers {
+    marketplaceId: string;
+    identifiers: Array<{ identifier: string; identifierType: string }>;
+  }
+  interface CatalogItemWithAsin extends CatalogItem { asin: string; identifiers?: CatalogItemIdentifiers[] }
   const res = await spRequest<{ items: CatalogItemWithAsin[] }>(path);
-  res.items?.forEach((item, idx) => {
-    const sku = skus[idx];
+
+  for (const item of res.items ?? []) {
     const summary = item.summaries?.[0];
     const title = summary?.itemName ?? "";
     const brand = summary?.brand ?? summary?.brandName ?? inferBrand(title);
-    result.set(sku, { title, brand, asin: item.asin });
-  });
+    // Find every SKU identifier on this item and emit a row for each.
+    // Items in the response often include both ASIN and SKU identifiers;
+    // we only want to key the result by SKU.
+    const skuIds = item.identifiers
+      ?.flatMap((g) => g.identifiers ?? [])
+      .filter((id) => id.identifierType === "SKU")
+      .map((id) => id.identifier) ?? [];
+    if (skuIds.length === 0) continue;
+    for (const sku of skuIds) {
+      result.set(sku, { title, brand, asin: item.asin });
+    }
+  }
   return result;
 }
 
@@ -118,12 +135,14 @@ export async function lookupSkus(skus: string[], marketplaceId: string): Promise
   }
   if (!uncached.length) return result;
 
+  const sellerId = await getSpSellerId();
+
   for (let i = 0; i < uncached.length; i += 20) {
     const batch = uncached.slice(i, i + 20);
     let attempt = 0;
     let batchResult: Map<string, AsinInfo & { asin: string }> = new Map();
     while (attempt < 4) {
-      try { batchResult = await fetchCatalogBySkuBatch(batch, marketplaceId); break; }
+      try { batchResult = await fetchCatalogBySkuBatch(batch, marketplaceId, sellerId); break; }
       catch (e) {
         const msg = String(e);
         if (/429|rate limit/i.test(msg) && attempt < 3) {

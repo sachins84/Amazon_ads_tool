@@ -10,6 +10,7 @@ const ALLOWED_KEYS: SettingKey[] = [
   "sp_api.refresh_token",
   "sp_api.marketplace_id",
   "sp_api.endpoint",
+  "sp_api.seller_id",
 ];
 
 /**

@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { spRequest, getSpMarketplaceId } from "@/lib/sp-api/client";
+import { spRequest, getSpMarketplaceId, getSpSellerId } from "@/lib/sp-api/client";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +15,23 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const asin = sp.get("asin");
+  const sku  = sp.get("sku");
   const marketplaceId = sp.get("marketplaceId") ?? getSpMarketplaceId() ?? "";
-  const includedData = sp.get("includedData") ?? "summaries,attributes";
-  if (!asin)         return Response.json({ error: "asin required" }, { status: 400 });
+  const includedData = sp.get("includedData") ?? "summaries,attributes,identifiers";
+  if (!asin && !sku)  return Response.json({ error: "asin or sku required" }, { status: 400 });
   if (!marketplaceId) return Response.json({ error: "marketplaceId required" }, { status: 400 });
 
   try {
-    const path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(asin)}&identifiersType=ASIN&marketplaceIds=${marketplaceId}&includedData=${encodeURIComponent(includedData)}`;
+    const identifier      = (asin ?? sku)!;
+    const identifiersType = asin ? "ASIN" : "SKU";
+    let path = `/catalog/2022-04-01/items?identifiers=${encodeURIComponent(identifier)}&identifiersType=${identifiersType}&marketplaceIds=${marketplaceId}&includedData=${encodeURIComponent(includedData)}`;
+    let sellerId: string | undefined;
+    if (identifiersType === "SKU") {
+      sellerId = await getSpSellerId();
+      path += `&sellerId=${encodeURIComponent(sellerId)}`;
+    }
     const data = await spRequest<unknown>(path);
-    return Response.json({ asin, marketplaceId, raw: data });
+    return Response.json({ identifier, identifiersType, marketplaceId, sellerId, raw: data });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 200 });
   }
