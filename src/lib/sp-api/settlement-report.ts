@@ -157,8 +157,11 @@ export interface SettlementFeeAggregates {
 export async function fetchSettlementFees(startDate: string, endDate: string): Promise<SettlementFeeAggregates> {
   // Look back further than the window — settlement cycles can be 14d+, and
   // a report created 'last week' may contain rows posted 'two weeks ago'.
+  // SP-API caps createdSince at 89 days back from now, so we clamp.
   const lookbackStart = new Date(startDate); lookbackStart.setDate(lookbackStart.getDate() - 30);
   const lookbackEnd   = new Date(endDate);   lookbackEnd.setDate(lookbackEnd.getDate() + 7);
+  const minCreatedSince = new Date(); minCreatedSince.setDate(minCreatedSince.getDate() - 89);
+  if (lookbackStart < minCreatedSince) lookbackStart.setTime(minCreatedSince.getTime());
   const createdSince = lookbackStart.toISOString().split("T")[0];
   const createdUntil = lookbackEnd.toISOString().split("T")[0];
 
