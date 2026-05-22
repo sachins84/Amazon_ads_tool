@@ -3,7 +3,7 @@ import { getAccount } from "@/lib/db/accounts";
 import { getDb } from "@/lib/db";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { fetchBrandSplitSales, brandKeyFromAccountName } from "@/lib/sp-api/brand-split-sales";
-import { brandFeeTotals } from "@/lib/sp-api/brand-fees";
+import { fetchBrandFeeRates } from "@/lib/sp-api/brand-fees";
 import { getSpMarketplaceId } from "@/lib/sp-api/client";
 
 export const dynamic = "force-dynamic";
@@ -71,12 +71,18 @@ export async function GET(req: NextRequest) {
   `).get(accountId, range.startDate, range.endDate) as { spend: number };
   const adSpend = adSpendRow?.spend ?? 0;
 
-  // 3) Actuals for commission + logistics from settlements (per-SKU → brand).
-  // Falls back to factor-based estimates when SKU lookup or finances events
-  // are unavailable / empty. `reason` is surfaced to the UI when we fall back.
-  const feeResult = await brandFeeTotals(marketplaceId, range.startDate, range.endDate, brandKey);
-  const feeActuals = feeResult.data;
-  const feeReason  = feeResult.reason;
+  // 3) Per-brand fee rates from settlement-report history (cached 7 days).
+  //    rates = commission_paid / gross_principal observed over the last ~60d.
+  //    Applied to current window's grossSales to project commission + logistics.
+  //    Falls back to account factor when rate is 0 (low maturity / new brand).
+  let feeRates: Awaited<ReturnType<typeof fetchBrandFeeRates>> | null = null;
+  let feeRatesError: string | null = null;
+  try {
+    feeRates = await fetchBrandFeeRates(marketplaceId);
+  } catch (e) {
+    feeRatesError = String(e);
+  }
+  const brandRate = feeRates?.byBrand[brandKey];
 
   // 4) Apply factors to build the waterfall
   const rto         = grossSales * acct.rtoFactor;
@@ -85,14 +91,24 @@ export async function GET(req: NextRequest) {
   const reviews     = postRtoSales * acct.reviewsPct;
 
   const commissionEstimate = postRtoSales * acct.commissionPct;
-  const commissionActual   = feeActuals?.commission ?? null;
-  const commission         = commissionActual ?? commissionEstimate;
-  const commissionSource: "actual" | "estimate" = commissionActual !== null ? "actual" : "estimate";
+  const commissionProjected = brandRate && brandRate.commissionPct > 0
+    ? grossSales * brandRate.commissionPct
+    : null;
+  const commission         = commissionProjected ?? commissionEstimate;
+  const commissionSource: "actual" | "estimate" = commissionProjected !== null ? "actual" : "estimate";
 
   const logisticsEstimate  = postRtoSales * acct.logisticsPct;
-  const logisticsActual    = feeActuals?.logistics ?? null;
-  const logistics          = logisticsActual ?? logisticsEstimate;
-  const logisticsSource: "actual" | "estimate" = logisticsActual !== null ? "actual" : "estimate";
+  const logisticsProjected = brandRate && brandRate.logisticsPct > 0
+    ? grossSales * brandRate.logisticsPct
+    : null;
+  const logistics          = logisticsProjected ?? logisticsEstimate;
+  const logisticsSource: "actual" | "estimate" = logisticsProjected !== null ? "actual" : "estimate";
+
+  const feeReason = !feeRates
+    ? `Settlement reports unavailable: ${feeRatesError ?? "unknown"}`
+    : !brandRate || brandRate.commissionPct === 0
+      ? `No settled rows mapped to "${brandKey}" in the last ${feeRates.diagnostics.settledDays} settled days — using account factor.`
+      : "ok";
 
   const netRevenue  = postRtoSales - gst - reviews - commission;
   const cogs        = postRtoSales * acct.cogsPct;
@@ -132,15 +148,21 @@ export async function GET(req: NextRequest) {
       cm2Pct,
     },
     feeDiagnostics: {
-      source:       feeActuals ? "actual" : "estimate",
-      reason:       feeReason,
-      skusSeen:     feeResult.diagnostics.skusSeen,
-      skusMatched:  feeResult.diagnostics.skusMatched,
-      skusForBrand: feeResult.diagnostics.skusForBrand,
-      refunds:      feeActuals?.refunds ?? 0,
-      truncated:    feeResult.diagnostics.truncated ?? false,
-      pagesFetched: feeResult.diagnostics.pagesFetched ?? 0,
-      error:        feeResult.diagnostics.error,
+      source:        commissionProjected !== null ? "actual" : "estimate",
+      reason:        feeReason,
+      skusSeen:      feeRates?.diagnostics.asinsSeen ?? 0,
+      skusMatched:   feeRates?.diagnostics.asinsMatched ?? 0,
+      skusForBrand:  brandRate?.sampleGrossPrincipal ? 1 : 0,  // legacy field; non-zero when rate exists
+      refunds:       0,
+      truncated:     false,
+      pagesFetched:  0,
+      error:         feeRatesError ?? undefined,
+      // New shape: rate maturity for UI badge
+      maturity:      feeRates?.diagnostics.maturity ?? "low",
+      settledDays:   feeRates?.diagnostics.settledDays ?? 0,
+      refWindow:     feeRates?.diagnostics.refWindow ?? null,
+      commissionPct: brandRate?.commissionPct ?? 0,
+      logisticsPct:  brandRate?.logisticsPct ?? 0,
     },
     salesError,
     salesDiagnostics,

@@ -45,6 +45,11 @@ interface PnlResp {
     truncated: boolean;
     pagesFetched: number;
     error?: string;
+    maturity?: "low" | "medium" | "high";
+    settledDays?: number;
+    refWindow?: { startDate: string; endDate: string } | null;
+    commissionPct?: number;
+    logisticsPct?: number;
   } | null;
   salesError: string | null;
   error?: string;
@@ -122,23 +127,35 @@ export default function PnlPage() {
 
         {data?.feeDiagnostics && (
           <div style={{ ...card, padding: 12, marginTop: 12, fontSize: 11 }}>
-            <div style={{ fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-              Settlements (Finances API) · {data.feeDiagnostics.source === "actual" ? "wired" : "fell back to estimate"}
+            <div style={{ fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+              Settlement-based fee rates
+              {data.feeDiagnostics.maturity && (
+                <span style={{
+                  background: data.feeDiagnostics.maturity === "high" ? "var(--c-success-bg)" :
+                              data.feeDiagnostics.maturity === "medium" ? "var(--bg-input)" : "var(--c-warning-bg)",
+                  color: data.feeDiagnostics.maturity === "high" ? "var(--c-success-text)" :
+                         data.feeDiagnostics.maturity === "medium" ? "var(--text-muted)" : "var(--c-warning-text)",
+                  fontSize: 9, fontWeight: 700, letterSpacing: "0.05em",
+                  padding: "2px 6px", borderRadius: 4, textTransform: "uppercase",
+                }}>
+                  {data.feeDiagnostics.maturity} maturity
+                </span>
+              )}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, color: "var(--text-secondary)" }}>
-              <Stat label="SKUs in events" value={String(data.feeDiagnostics.skusSeen)} />
-              <Stat label="SKUs matched to brand" value={String(data.feeDiagnostics.skusMatched)} />
-              <Stat label="SKUs for this brand" value={String(data.feeDiagnostics.skusForBrand)} />
-              <Stat label="Refunds (all brands)" value={fmt(data.feeDiagnostics.refunds, "currency", currency)} />
+              <Stat label="Settled days (60d ref)" value={String(data.feeDiagnostics.settledDays ?? 0)} />
+              <Stat label="ASINs settled" value={`${data.feeDiagnostics.skusMatched}/${data.feeDiagnostics.skusSeen}`} />
+              <Stat label="Commission rate" value={data.feeDiagnostics.commissionPct ? `${(data.feeDiagnostics.commissionPct * 100).toFixed(2)}%` : "—"} />
+              <Stat label="Logistics rate" value={data.feeDiagnostics.logisticsPct ? `${(data.feeDiagnostics.logisticsPct * 100).toFixed(2)}%` : "—"} />
             </div>
-            {data.feeDiagnostics.source === "estimate" && (
-              <div style={{ marginTop: 8, color: "var(--c-warning-text)", fontSize: 11 }}>
-                Why estimate? {data.feeDiagnostics.reason}
+            {data.feeDiagnostics.refWindow && (
+              <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 10 }}>
+                Reference window: {data.feeDiagnostics.refWindow.startDate} → {data.feeDiagnostics.refWindow.endDate} · refreshes weekly
               </div>
             )}
-            {data.feeDiagnostics.truncated && (
-              <div style={{ marginTop: 6, color: "var(--c-warning-text)", fontSize: 11 }}>
-                ⚠ Partial data — only the first {data.feeDiagnostics.pagesFetched} pages of /finances/v0/financialEvents were fetched within the 60s budget. Actual commission/logistics will be higher than shown.
+            {data.feeDiagnostics.source === "estimate" && data.feeDiagnostics.reason !== "ok" && (
+              <div style={{ marginTop: 8, color: "var(--c-warning-text)", fontSize: 11 }}>
+                Using account factor. {data.feeDiagnostics.reason}
               </div>
             )}
             {data.feeDiagnostics.error && (

@@ -36,6 +36,27 @@ export interface BrandFeesResult {
   pagesFetched: number;
 }
 
+/** Per-brand fee % of gross principal, derived from a mature settlement
+ *  history window. Use these to project fees for any time window — the
+ *  underlying source refreshes weekly (settlement reports don't change
+ *  once posted, and Amazon emits them on a ~14-day cycle). */
+export interface BrandFeeRates {
+  byBrand: Record<BrandKey, BrandFeeRate>;
+  diagnostics: {
+    refWindow: { startDate: string; endDate: string };
+    settledDays: number;
+    totalGrossPrincipal: number;
+    asinsSeen: number;
+    asinsMatched: number;
+    maturity: "low" | "medium" | "high";  // <7d=low, 7-21d=medium, ≥21d=high
+  };
+}
+export interface BrandFeeRate {
+  commissionPct: number;   // 0..1 — commission_amount / grossPrincipal
+  logisticsPct: number;    // 0..1 — (fulfillment + storage) / grossPrincipal
+  sampleGrossPrincipal: number;
+}
+
 const EMPTY_BUCKET = (): BrandFeeBucket => ({
   commission: 0, fulfillment: 0, storage: 0, refunds: 0, skuCount: 0,
 });
@@ -161,6 +182,98 @@ export async function computeBrandFeesFromEvents(
 }
 
 void getSpMarketplaceId; // silence linter if unused
+
+// ─── Rate-based projection ────────────────────────────────────────────────────
+
+const rateInflight = new Map<string, Promise<BrandFeeRates>>();
+
+/** Pulls a 60-day mature-history window of settlement data and derives a
+ *  per-brand fee % of gross principal. Cached for 7 days; same call site can
+ *  use these rates to project commission + logistics for any P&L window
+ *  without re-fetching settlements per request. */
+export async function fetchBrandFeeRates(marketplaceId: string, refDaysBack = 60): Promise<BrandFeeRates> {
+  // Reference window: last `refDaysBack` days ending today. We don't trim to
+  // "fully-settled only" — newer days that *are* in a settlement report still
+  // contribute; days not yet settled simply add nothing.
+  const end   = new Date();
+  const start = new Date(); start.setDate(start.getDate() - refDaysBack);
+  const fmt   = (d: Date) => d.toISOString().split("T")[0];
+  const refStart = fmt(start), refEnd = fmt(end);
+  const key = `brand-fee-rates:${marketplaceId}:${refStart}:${refEnd}`;
+  const existing = rateInflight.get(key);
+  if (existing) return existing;
+
+  const p = withCache(key, () => computeBrandFeeRates(marketplaceId, refStart, refEnd), 7 * 24 * 60 * 60 * 1000)
+    .finally(() => rateInflight.delete(key));
+  rateInflight.set(key, p);
+  return p;
+}
+
+async function computeBrandFeeRates(
+  marketplaceId: string,
+  refStart: string,
+  refEnd: string,
+): Promise<BrandFeeRates> {
+  const settlement = await getSettlementFees(refStart, refEnd);
+  const asins = [...settlement.byAsin.keys()].filter((a) => a && a !== "(unknown)");
+  let asinInfo: Awaited<ReturnType<typeof lookupAsins>> = new Map();
+  if (asins.length) {
+    try { asinInfo = await lookupAsins(asins, marketplaceId); }
+    catch (e) { console.warn(`[brand-fees] ref ASIN lookup failed: ${String(e).slice(0, 120)}`); }
+  }
+
+  interface Accum { commission: number; logistics: number; gross: number }
+  const acc: Record<BrandKey, Accum> = {
+    manmatters: { commission: 0, logistics: 0, gross: 0 },
+    bebodywise: { commission: 0, logistics: 0, gross: 0 },
+    littlejoys: { commission: 0, logistics: 0, gross: 0 },
+    other:      { commission: 0, logistics: 0, gross: 0 },
+  };
+  let matched = 0;
+  for (const [asin, row] of settlement.byAsin) {
+    const info = asinInfo.get(asin);
+    const fromBrand = info?.brand ? inferBrandFromTitle(info.brand) : "other";
+    const brand: BrandKey = fromBrand !== "other" ? fromBrand : inferBrandFromTitle(info?.title ?? "");
+    acc[brand].commission += row.commission;
+    acc[brand].logistics  += row.fulfillment + row.storage;
+    acc[brand].gross      += Math.max(row.grossPrincipal, 0);
+    if (brand !== "other") matched++;
+  }
+
+  const byBrand: Record<BrandKey, BrandFeeRate> = {
+    manmatters: rateFromAccum(acc.manmatters),
+    bebodywise: rateFromAccum(acc.bebodywise),
+    littlejoys: rateFromAccum(acc.littlejoys),
+    other:      rateFromAccum(acc.other),
+  };
+
+  const settledDays = settlement.settledDates.length;
+  const maturity: "low" | "medium" | "high" =
+    settledDays >= 21 ? "high" : settledDays >= 7 ? "medium" : "low";
+
+  return {
+    byBrand,
+    diagnostics: {
+      refWindow: { startDate: refStart, endDate: refEnd },
+      settledDays,
+      totalGrossPrincipal: settlement.totals.grossPrincipal,
+      asinsSeen: settlement.byAsin.size,
+      asinsMatched: matched,
+      maturity,
+    },
+  };
+}
+
+function rateFromAccum(a: { commission: number; logistics: number; gross: number }): BrandFeeRate {
+  if (a.gross <= 0) {
+    return { commissionPct: 0, logisticsPct: 0, sampleGrossPrincipal: 0 };
+  }
+  return {
+    commissionPct: a.commission / a.gross,
+    logisticsPct:  a.logistics / a.gross,
+    sampleGrossPrincipal: a.gross,
+  };
+}
 
 export interface BrandFeeTotalsResult {
   data: { commission: number; logistics: number; refunds: number; skuCount: number } | null;

@@ -146,6 +146,7 @@ export interface SettlementFeeAggregates {
   byAsin:  Map<string, FeeAggByAsin>;
   totals:  { commission: number; fulfillment: number; storage: number; refunds: number; grossPrincipal: number; rowsSeen: number };
   reports: { reportId: string; dataStartTime?: string; dataEndTime?: string; rowCount: number }[];
+  settledDates: string[];    // YYYY-MM-DD list of every posted-date we saw rows for
   windowStart: string;
   windowEnd:   string;
 }
@@ -165,6 +166,7 @@ export async function fetchSettlementFees(startDate: string, endDate: string): P
   const byAsin = new Map<string, FeeAggByAsin>();
   const totals = { commission: 0, fulfillment: 0, storage: 0, refunds: 0, grossPrincipal: 0, rowsSeen: 0 };
   const reportDiag: SettlementFeeAggregates["reports"] = [];
+  const settledDateSet = new Set<string>();
 
   for (const r of reports) {
     if (!r.reportDocumentId) continue;
@@ -179,6 +181,7 @@ export async function fetchSettlementFees(startDate: string, endDate: string): P
     for (const row of rows) {
       // Filter to requested window by posted-date.
       if (!row.postedDate || row.postedDate < startDate || row.postedDate > endDate) continue;
+      settledDateSet.add(row.postedDate);
       // Many rows have no asin (eg whole-settlement adjustments). Skip — those
       // can't be brand-attributed. Their fees roll up into "(unknown)" via the
       // explicit empty-string ASIN key below if you want to surface them.
@@ -209,7 +212,11 @@ export async function fetchSettlementFees(startDate: string, endDate: string): P
       rowCount: usedFromThis,
     });
   }
-  return { byAsin, totals, reports: reportDiag, windowStart: startDate, windowEnd: endDate };
+  return {
+    byAsin, totals, reports: reportDiag,
+    settledDates: [...settledDateSet].sort(),
+    windowStart: startDate, windowEnd: endDate,
+  };
 }
 
 function newAsinRow(asin: string): FeeAggByAsin {
@@ -220,12 +227,14 @@ function newAsinRow(asin: string): FeeAggByAsin {
 
 const inflight = new Map<string, Promise<SettlementFeeAggregates>>();
 
-/** 30-min cache (settlements don't change often once posted). */
+/** 7-day cache. Settlement reports never change once posted, and Amazon
+ *  emits new ones on its own ~14-day cycle — refreshing weekly is plenty. */
+const SETTLEMENT_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 export async function getSettlementFees(startDate: string, endDate: string): Promise<SettlementFeeAggregates> {
   const key = `settlement-fees:${startDate}:${endDate}`;
   const existing = inflight.get(key);
   if (existing) return existing;
-  const p = withCache(key, () => fetchSettlementFees(startDate, endDate), 30 * 60 * 1000)
+  const p = withCache(key, () => fetchSettlementFees(startDate, endDate), SETTLEMENT_CACHE_MS)
     .finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
