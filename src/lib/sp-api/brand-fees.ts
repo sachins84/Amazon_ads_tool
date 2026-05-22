@@ -73,7 +73,7 @@ const rateInflight = new Map<string, Promise<BrandFeeRates>>();
  *  per-brand fee % of gross principal. Cached for 7 days; same call site can
  *  use these rates to project commission + logistics for any P&L window
  *  without re-fetching settlements per request. */
-export async function fetchBrandFeeRates(marketplaceId: string, refDaysBack = 60): Promise<BrandFeeRates> {
+export async function fetchBrandFeeRates(marketplaceId: string, refDaysBack = 30): Promise<BrandFeeRates> {
   // Reference window: last `refDaysBack` days ending today. We don't trim to
   // "fully-settled only" — newer days that *are* in a settlement report still
   // contribute; days not yet settled simply add nothing.

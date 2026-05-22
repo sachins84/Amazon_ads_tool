@@ -313,7 +313,9 @@ async function runSync({ maxReports = 25 }: { maxReports?: number }): Promise<Sy
 
   // Bust the rate-derivation cache so the next /api/pnl request picks up
   // the new settled data. Cache key is `brand-fee-rates:${marketplaceId}:...`.
-  if (rowsUpserted > 0) cacheDelete(`brand-fee-rates:${marketplaceId}`);
+  // Invalidate even on empty syncs — protects against a stale empty-result
+  // entry persisting after the first failed run.
+  cacheDelete(`brand-fee-rates:${marketplaceId}`);
 
   return {
     marketplaceId, status,
