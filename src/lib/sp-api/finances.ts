@@ -54,14 +54,23 @@ export interface SellerFeeAggregates {
   totalEvents: number;
 }
 
+// "Commission" in the seller's mental model = every Amazon-platform charge
+// that isn't FBA logistics: referral fee + closing fees + tech fee.
+// "Logistics" = FBA pick/pack/ship/storage.
+const COMMISSION_FEES = new Set([
+  "Commission",         // referral fee — 5-15% of price
+  "FixedClosingFee",    // ₹10-50 per order, varies by category
+  "VariableClosingFee", // book/media-style fees
+  "TechnologyFee",      // ₹1-5 per shipment in IN
+  "RefundCommission",   // commission portion returned on refund (rare)
+]);
 const FULFILLMENT_FEES = new Set([
   "FBAPerUnitFulfillmentFee",
   "FBAWeightBasedFee",
   "FBAPickAndPackFee",
   "ShippingChargeback",
   "ShippingHB",
-  "VariableClosingFee",
-  "FixedClosingFee",
+  "GiftwrapChargeback",
 ]);
 const STORAGE_FEES = new Set([
   "FBAStorageFee",
@@ -96,7 +105,7 @@ function tallyEvents(
         const amt  = absAmount(c.FeeAmount ?? c.ChargeAmount);
         if (!amt) continue;
         if (isRefund) { row.refunds += amt; totals.refunds += amt; continue; }
-        if (type === "Commission") {
+        if (COMMISSION_FEES.has(type)) {
           row.commission += amt; totals.commission += amt;
         } else if (FULFILLMENT_FEES.has(type)) {
           row.fulfillment += amt; totals.fulfillment += amt;
@@ -118,7 +127,9 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
   const totals = { commission: 0, fulfillment: 0, storage: 0, refunds: 0, totalEvents: 0 };
   let nextToken: string | undefined;
   let pages = 0;
-  const MAX_PAGES = 50;       // safety net — 100 events/page × 50 = 5000 events
+  // 100 events/page × 300 pages = 30k events. Yesterday alone exceeded the
+  // old 50-page cap (5k events), so we were truncating ~half the data.
+  const MAX_PAGES = 300;
 
   // SP-API requires PostedBefore to be no later than ~2 min ago. If endDate
   // is today, cap the upper bound at now - 3 min instead of 23:59:59Z.
@@ -127,10 +138,10 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
     ? new Date(Date.now() - 3 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z")
     : `${endDate}T23:59:59Z`;
 
-  // /finances/v0/financialEvents quota is 0.5 req/sec sustained (burst 30).
-  // Stay under by waiting ~2.1s between pages; retry 429s with backoff.
-  const PAGE_INTERVAL_MS = 2100;
-  const MAX_RETRIES = 5;
+  // /finances/v0/financialEvents quota is 0.5 req/sec sustained, burst 30.
+  // Use the burst (no pre-delay), back off on 429. This is faster for small
+  // windows; longer windows hit the rate ceiling and slow naturally.
+  const MAX_RETRIES = 6;
 
   do {
     const params: Record<string, string> = {
@@ -162,9 +173,6 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
     tallyEvents(res.payload.FinancialEvents, bySku, totals);
     nextToken = res.payload.NextToken;
     pages++;
-    if (nextToken && pages < MAX_PAGES) {
-      await new Promise((r) => setTimeout(r, PAGE_INTERVAL_MS));
-    }
   } while (nextToken && pages < MAX_PAGES);
   return { bySku, ...totals };
 }
