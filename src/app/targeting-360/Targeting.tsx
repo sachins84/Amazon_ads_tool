@@ -382,7 +382,7 @@ export default function Targeting360Page() {
         </div>
 
         {/* KPI strip */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 12, marginBottom: 12 }}>
           <Tile label={
             tab === "FLAT" ? "Targets" :
             level === "CAMPAIGNS" ? "Campaigns" :
@@ -390,6 +390,7 @@ export default function Targeting360Page() {
           } value={`${currentTotals.count.toLocaleString()}`} />
           <Tile label="Spend"  value={fmt(currentTotals.spend, "currency", currency)} />
           <Tile label="Sales"  value={fmt(currentTotals.sales, "currency", currency)} />
+          <Tile label="Orders" value={currentTotals.orders.toLocaleString()} />
           <Tile label="ROAS"   value={`${currentTotals.roas.toFixed(2)}x`} />
           <Tile label="ACOS"   value={`${currentTotals.acos.toFixed(1)}%`} />
         </div>
