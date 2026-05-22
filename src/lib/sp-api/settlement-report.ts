@@ -48,26 +48,45 @@ export interface SettlementRow {
 /** Lists all settlement reports created within [createdSince, createdUntil]. */
 async function listSettlementReports(createdSince: string, createdUntil: string): Promise<ReportListItem[]> {
   const all: ReportListItem[] = [];
-  let nextToken: string | undefined;
-  do {
-    const params: Record<string, string> = {
-      reportTypes:  REPORT_TYPE,
-      createdSince: `${createdSince}T00:00:00Z`,
-      createdUntil: `${createdUntil}T23:59:59Z`,
-      pageSize:     "100",
-    };
-    if (nextToken) params.nextToken = nextToken;
-    const res = await spRequest<ReportListResponse>("/reports/2021-06-30/reports", { params });
+  // First page uses filters; subsequent pages send ONLY nextToken (SP-API
+  // rejects requests that combine nextToken with any other params).
+  const firstParams: Record<string, string> = {
+    reportTypes:  REPORT_TYPE,
+    createdSince: `${createdSince}T00:00:00Z`,
+    createdUntil: `${createdUntil}T23:59:59Z`,
+    pageSize:     "100",
+  };
+  let res = await spRequest<ReportListResponse>("/reports/2021-06-30/reports", { params: firstParams });
+  all.push(...(res.reports ?? []));
+  while (res.nextToken) {
+    res = await spRequest<ReportListResponse>("/reports/2021-06-30/reports", {
+      params: { nextToken: res.nextToken },
+    });
     all.push(...(res.reports ?? []));
-    nextToken = res.nextToken;
-  } while (nextToken);
+  }
   return all.filter((r) => r.processingStatus === "DONE" && r.reportDocumentId);
 }
 
 async function downloadSettlementReport(documentId: string): Promise<SettlementRow[]> {
-  const doc = await spRequest<ReportDocResponse>(`/reports/2021-06-30/documents/${documentId}`);
+  // Retry on 429 for the document-fetch metadata call. Underlying S3 URL is
+  // not rate-limited.
+  let doc: ReportDocResponse | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try { doc = await spRequest<ReportDocResponse>(`/reports/2021-06-30/documents/${documentId}`); break; }
+    catch (e) {
+      const msg = String(e);
+      if (/429|rate limit/i.test(msg) && attempt < 3) {
+        const backoff = Math.min(60_000, 5_000 * Math.pow(2, attempt));
+        await new Promise((r) => setTimeout(r, backoff));
+        continue;
+      }
+      throw e;
+    }
+  }
+  if (!doc) throw new Error("Settlement document fetch failed after retries");
+
   const res = await fetch(doc.url);
-  if (!res.ok) throw new Error(`Settlement report download failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Settlement report S3 download failed: ${res.status}`);
 
   let text: string;
   if (doc.compressionAlgorithm === "GZIP") {
@@ -165,25 +184,60 @@ export async function fetchSettlementFees(startDate: string, endDate: string): P
   const createdSince = lookbackStart.toISOString().split("T")[0];
   const createdUntil = lookbackEnd.toISOString().split("T")[0];
 
-  const reports = await listSettlementReports(createdSince, createdUntil);
+  const allReports = await listSettlementReports(createdSince, createdUntil);
+  // Filter to reports whose data window overlaps the requested range — most
+  // older reports are irrelevant. Settlement reports cover a few hours each;
+  // for a 30-day window in IN we'd otherwise download hundreds of MB.
+  const filtered = allReports.filter((r) => {
+    const ds = (r.dataStartTime ?? "").slice(0, 10);
+    const de = (r.dataEndTime   ?? "").slice(0, 10);
+    if (!ds || !de) return true; // can't decide → keep, we'll filter rows downstream
+    return de >= startDate && ds <= endDate;
+  });
+  // SP-API /reports/.../documents/{id} quota: 0.0167 req/sec sustained,
+  // burst 15. Cap aggressively at the burst level so a single P&L request
+  // can finish — repeated requests will rebuild the burst budget. Sorted
+  // descending so we fetch the most recent (and likely most relevant) first.
+  const MAX_DOC_FETCHES = 12;
+  const overlapping = filtered
+    .sort((a, b) => (b.createdTime ?? "").localeCompare(a.createdTime ?? ""))
+    .slice(0, MAX_DOC_FETCHES);
+
   const byAsin = new Map<string, FeeAggByAsin>();
   const totals = { commission: 0, fulfillment: 0, storage: 0, refunds: 0, grossPrincipal: 0, rowsSeen: 0 };
   const reportDiag: SettlementFeeAggregates["reports"] = [];
   const settledDateSet = new Set<string>();
+  // Settlement reports can be emitted multiple times for the same period;
+  // dedupe rows by (settlement-id, order-id, amount-description, amount).
+  const seenKeys = new Set<string>();
 
-  for (const r of reports) {
-    if (!r.reportDocumentId) continue;
-    let rows: SettlementRow[];
-    try {
-      rows = await downloadSettlementReport(r.reportDocumentId);
-    } catch (e) {
-      console.warn(`[settlement] failed to download report ${r.reportId}: ${String(e).slice(0, 120)}`);
-      continue;
-    }
+  // Download with limited concurrency (Amazon's doc-fetch quota is small but
+  // burst-tolerant). Sequential parsing keeps memory bounded.
+  const CONCURRENCY = 4;
+  const reportRowsList: { r: ReportListItem; rows: SettlementRow[] }[] = [];
+  for (let i = 0; i < overlapping.length; i += CONCURRENCY) {
+    const slice = overlapping.slice(i, i + CONCURRENCY);
+    const fetched = await Promise.all(slice.map(async (r) => {
+      if (!r.reportDocumentId) return { r, rows: [] as SettlementRow[] };
+      try { return { r, rows: await downloadSettlementReport(r.reportDocumentId) }; }
+      catch (e) {
+        console.warn(`[settlement] download failed ${r.reportId}: ${String(e).slice(0, 120)}`);
+        return { r, rows: [] as SettlementRow[] };
+      }
+    }));
+    reportRowsList.push(...fetched);
+  }
+
+  for (const { r, rows } of reportRowsList) {
+    if (!rows.length) continue;
     let usedFromThis = 0;
     for (const row of rows) {
       // Filter to requested window by posted-date.
       if (!row.postedDate || row.postedDate < startDate || row.postedDate > endDate) continue;
+      // Dedupe rows that appear across overlapping report files.
+      const key = `${row.orderId}|${row.amountDescription}|${row.amount}|${row.postedDate}|${row.sku}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
       settledDateSet.add(row.postedDate);
       // Many rows have no asin (eg whole-settlement adjustments). Skip — those
       // can't be brand-attributed. Their fees roll up into "(unknown)" via the

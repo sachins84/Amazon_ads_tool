@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { fetchBrandSplitSales, brandKeyFromAccountName } from "@/lib/sp-api/brand-split-sales";
 import { fetchBrandFeeRates } from "@/lib/sp-api/brand-fees";
+import { getSyncState } from "@/lib/db/settlement-fees-store";
 import { getSpMarketplaceId } from "@/lib/sp-api/client";
 
 export const dynamic = "force-dynamic";
@@ -152,17 +153,17 @@ export async function GET(req: NextRequest) {
       reason:        feeReason,
       skusSeen:      feeRates?.diagnostics.asinsSeen ?? 0,
       skusMatched:   feeRates?.diagnostics.asinsMatched ?? 0,
-      skusForBrand:  brandRate?.sampleGrossPrincipal ? 1 : 0,  // legacy field; non-zero when rate exists
+      skusForBrand:  brandRate?.sampleGrossPrincipal ? 1 : 0,
       refunds:       0,
       truncated:     false,
       pagesFetched:  0,
       error:         feeRatesError ?? undefined,
-      // New shape: rate maturity for UI badge
       maturity:      feeRates?.diagnostics.maturity ?? "low",
       settledDays:   feeRates?.diagnostics.settledDays ?? 0,
       refWindow:     feeRates?.diagnostics.refWindow ?? null,
       commissionPct: brandRate?.commissionPct ?? 0,
       logisticsPct:  brandRate?.logisticsPct ?? 0,
+      syncState:     getSyncState(marketplaceId),
     },
     salesError,
     salesDiagnostics,

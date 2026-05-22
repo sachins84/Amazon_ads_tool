@@ -48,6 +48,30 @@ export function startRefreshCron() {
 
   cron.schedule(schedule, () => { void runDailyRefresh('cron'); }, { timezone: 'UTC' });
 
+  // ── Settlement sync (hourly) ────────────────────────────────────────
+  // The SP-API /reports/.../documents/{id} quota is 1/min sustained
+  // (burst 15). Running hourly with maxReports=25 keeps each invocation
+  // short — full backfill takes a few cycles, steady-state catches up
+  // within one hour after Amazon emits the next batch.
+  const settlementSchedule = process.env.SETTLEMENT_CRON || '12 * * * *';
+  if (!cron.validate(settlementSchedule)) {
+    console.error(`[cron] invalid SETTLEMENT_CRON "${settlementSchedule}", skipping`);
+  } else {
+    let settlementRunning = false;
+    cron.schedule(settlementSchedule, async () => {
+      if (settlementRunning) { console.warn('[cron] previous settlement sync still running, skipping'); return; }
+      settlementRunning = true;
+      try {
+        const { syncSettlements } = await import('@/lib/sp-api/settlement-sync');
+        const res = await syncSettlements({ maxReports: 25 });
+        console.log('[cron] settlement sync done', res);
+      } catch (e) {
+        console.error('[cron] settlement sync failed', e);
+      } finally { settlementRunning = false; }
+    }, { timezone: 'UTC' });
+    console.log(`[cron] settlement sync registered: "${settlementSchedule}" UTC`);
+  }
+
   // ── Startup catch-up ────────────────────────────────────────────────
   // If the most-recent refresh is > 24h old, the server was probably down
   // when the daily cron fired. Run one now so users don't sit on stale

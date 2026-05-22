@@ -7,8 +7,7 @@
  * logistics_pct factors with actuals from settlements where available.
  */
 import { fetchSellerFeeAggregates, type PerSkuFees } from "./finances";
-import { getSettlementFees } from "./settlement-report";
-import { lookupAsins, lookupSkus } from "./catalog";
+import { lookupSkus } from "./catalog";
 import { inferBrandFromTitle, type BrandKey } from "./brand-split-sales";
 import { getSpMarketplaceId } from "./client";
 import { withCache } from "@/lib/cache";
@@ -61,127 +60,10 @@ const EMPTY_BUCKET = (): BrandFeeBucket => ({
   commission: 0, fulfillment: 0, storage: 0, refunds: 0, skuCount: 0,
 });
 
-const inflight = new Map<string, Promise<BrandFeesResult>>();
-
-/** Cache key shape: marketplaceId:startDate:endDate. 10-min TTL — matches the
- *  underlying finances/catalog caches, so we don't re-walk SKUs unnecessarily. */
-export async function fetchBrandFees(
-  marketplaceId: string,
-  startDate: string,
-  endDate: string,
-): Promise<BrandFeesResult> {
-  const key = `brand-fees:${marketplaceId}:${startDate}:${endDate}`;
-  const existing = inflight.get(key);
-  if (existing) return existing;
-  const p = withCache(key, () => computeBrandFees(marketplaceId, startDate, endDate), 10 * 60 * 1000)
-    .finally(() => inflight.delete(key));
-  inflight.set(key, p);
-  return p;
-}
-
-async function computeBrandFees(
-  marketplaceId: string,
-  startDate: string,
-  endDate: string,
-): Promise<BrandFeesResult> {
-  // Primary path: Settlement Reports — single CSV per cycle, no rate limit,
-  // each row has ASIN so we use the existing ASIN→brand mapping (99.97% hit).
-  const settlement = await getSettlementFees(startDate, endDate);
-
-  const asins = [...settlement.byAsin.keys()].filter((a) => a && a !== "(unknown)");
-  let asinInfo: Awaited<ReturnType<typeof lookupAsins>> = new Map();
-  if (asins.length) {
-    try {
-      asinInfo = await lookupAsins(asins, marketplaceId);
-    } catch (e) {
-      console.warn(`[brand-fees] ASIN catalog lookup failed: ${String(e).slice(0, 120)}`);
-    }
-  }
-
-  const byBrand: Record<BrandKey, BrandFeeBucket> = {
-    manmatters: EMPTY_BUCKET(),
-    bebodywise: EMPTY_BUCKET(),
-    littlejoys: EMPTY_BUCKET(),
-    other:      EMPTY_BUCKET(),
-  };
-  const unmappedSkus: BrandFeesResult["unmappedSkus"] = [];
-  let matched = 0;
-
-  for (const [asin, row] of settlement.byAsin) {
-    const info = asinInfo.get(asin);
-    const fromBrandField = info?.brand ? inferBrandFromTitle(info.brand) : "other";
-    const brand: BrandKey = fromBrandField !== "other"
-      ? fromBrandField
-      : inferBrandFromTitle(info?.title ?? "");
-    const bucket = byBrand[brand];
-    bucket.commission  += row.commission;
-    bucket.fulfillment += row.fulfillment;
-    bucket.storage     += row.storage;
-    bucket.refunds     += row.refunds;
-    bucket.skuCount    += 1;
-    if (brand !== "other") matched++;
-    else if (row.commission + row.fulfillment + row.storage > 0) {
-      unmappedSkus.push({
-        sku: asin, commission: row.commission, fulfillment: row.fulfillment, storage: row.storage,
-      });
-    }
-  }
-  unmappedSkus.sort((a, b) => (b.commission + b.fulfillment + b.storage) - (a.commission + a.fulfillment + a.storage));
-
-  return {
-    byBrand,
-    unmappedSkus: unmappedSkus.slice(0, 30),
-    totals: {
-      commission:  settlement.totals.commission,
-      fulfillment: settlement.totals.fulfillment,
-      storage:     settlement.totals.storage,
-      refunds:     settlement.totals.refunds,
-      skusSeen:    settlement.byAsin.size,
-      skusMatched: matched,
-    },
-    truncated:    false,
-    pagesFetched: settlement.reports.length,
-  };
-}
-
-// Kept for back-compat / fallback consumers. Not used by the primary path.
-export async function computeBrandFeesFromEvents(
-  marketplaceId: string,
-  startDate: string,
-  endDate: string,
-): Promise<BrandFeesResult> {
-  const fees = await fetchSellerFeeAggregates(startDate, endDate);
-  const skus = [...fees.bySku.keys()].filter((s) => s && s !== "(unknown_sku)");
-  let skuInfo: Awaited<ReturnType<typeof lookupSkus>> = new Map();
-  try { skuInfo = await lookupSkus(skus, marketplaceId); }
-  catch (e) { console.warn(`[brand-fees] SKU catalog lookup failed: ${String(e).slice(0, 120)}`); }
-  const byBrand: Record<BrandKey, BrandFeeBucket> = {
-    manmatters: EMPTY_BUCKET(), bebodywise: EMPTY_BUCKET(),
-    littlejoys: EMPTY_BUCKET(), other: EMPTY_BUCKET(),
-  };
-  let matched = 0;
-  for (const [sku, row] of fees.bySku) {
-    const info = skuInfo.get(sku);
-    const fromBrandField = info?.brand ? inferBrandFromTitle(info.brand) : "other";
-    const brand: BrandKey = fromBrandField !== "other"
-      ? fromBrandField : inferBrandFromTitle(info?.title ?? "");
-    const bucket = byBrand[brand];
-    bucket.commission += row.commission; bucket.fulfillment += row.fulfillment;
-    bucket.storage += row.storage; bucket.refunds += row.refunds; bucket.skuCount += 1;
-    if (brand !== "other") matched++;
-    void sku;
-  }
-  return {
-    byBrand, unmappedSkus: [],
-    totals: {
-      commission: fees.commission, fulfillment: fees.fulfillment, storage: fees.storage,
-      refunds: fees.refunds, skusSeen: fees.bySku.size, skusMatched: matched,
-    },
-    truncated: fees.truncated, pagesFetched: fees.pagesFetched,
-  };
-}
-
-void getSpMarketplaceId; // silence linter if unused
+void fetchSellerFeeAggregates; // legacy /finances API path — no longer used
+void lookupSkus;               // SKU lookups not needed: settlement rows include ASIN
+void EMPTY_BUCKET;             // kept for the BrandFeesResult type only
+void getSpMarketplaceId;
 
 // ─── Rate-based projection ────────────────────────────────────────────────────
 
@@ -214,15 +96,33 @@ async function computeBrandFeeRates(
   refStart: string,
   refEnd: string,
 ): Promise<BrandFeeRates> {
-  const settlement = await getSettlementFees(refStart, refEnd);
-  const asins = [...settlement.byAsin.keys()].filter((a) => a && a !== "(unknown)");
-  let asinInfo: Awaited<ReturnType<typeof lookupAsins>> = new Map();
-  if (asins.length) {
-    try { asinInfo = await lookupAsins(asins, marketplaceId); }
-    catch (e) { console.warn(`[brand-fees] ref ASIN lookup failed: ${String(e).slice(0, 120)}`); }
+  // Read settled fee rollups from the DB (populated by the settlement-sync
+  // background job). No SP-API call here — the doc-fetch quota (1/min) made
+  // synchronous fetching untenable.
+  const { loadSettlementFees, listSettledDates } = await import("@/lib/db/settlement-fees-store");
+  const dailyRows = loadSettlementFees(marketplaceId, refStart, refEnd);
+
+  // Roll up per-SKU so we can map SKU → brand via Catalog lookup.
+  interface Accum { commission: number; logistics: number; gross: number }
+  const bySku = new Map<string, Accum>();
+  let totalGross = 0;
+  for (const r of dailyRows) {
+    if (!r.sku) continue;
+    const cur = bySku.get(r.sku) ?? { commission: 0, logistics: 0, gross: 0 };
+    cur.commission += r.commission;
+    cur.logistics  += r.fulfillment + r.storage;
+    cur.gross      += Math.max(r.grossPrincipal, 0);
+    bySku.set(r.sku, cur);
+    totalGross += Math.max(r.grossPrincipal, 0);
   }
 
-  interface Accum { commission: number; logistics: number; gross: number }
+  const skus = [...bySku.keys()];
+  let skuInfo: Awaited<ReturnType<typeof lookupSkus>> = new Map();
+  if (skus.length) {
+    try { skuInfo = await lookupSkus(skus, marketplaceId); }
+    catch (e) { console.warn(`[brand-fees] ref SKU lookup failed: ${String(e).slice(0, 120)}`); }
+  }
+
   const acc: Record<BrandKey, Accum> = {
     manmatters: { commission: 0, logistics: 0, gross: 0 },
     bebodywise: { commission: 0, logistics: 0, gross: 0 },
@@ -230,14 +130,15 @@ async function computeBrandFeeRates(
     other:      { commission: 0, logistics: 0, gross: 0 },
   };
   let matched = 0;
-  for (const [asin, row] of settlement.byAsin) {
-    const info = asinInfo.get(asin);
+  for (const [sku, row] of bySku) {
+    const info = skuInfo.get(sku);
     const fromBrand = info?.brand ? inferBrandFromTitle(info.brand) : "other";
     const brand: BrandKey = fromBrand !== "other" ? fromBrand : inferBrandFromTitle(info?.title ?? "");
     acc[brand].commission += row.commission;
-    acc[brand].logistics  += row.fulfillment + row.storage;
-    acc[brand].gross      += Math.max(row.grossPrincipal, 0);
+    acc[brand].logistics  += row.logistics;
+    acc[brand].gross      += row.gross;
     if (brand !== "other") matched++;
+    void sku;
   }
 
   const byBrand: Record<BrandKey, BrandFeeRate> = {
@@ -247,7 +148,7 @@ async function computeBrandFeeRates(
     other:      rateFromAccum(acc.other),
   };
 
-  const settledDays = settlement.settledDates.length;
+  const settledDays = listSettledDates(marketplaceId, refStart, refEnd).length;
   const maturity: "low" | "medium" | "high" =
     settledDays >= 21 ? "high" : settledDays >= 7 ? "medium" : "low";
 
@@ -256,8 +157,8 @@ async function computeBrandFeeRates(
     diagnostics: {
       refWindow: { startDate: refStart, endDate: refEnd },
       settledDays,
-      totalGrossPrincipal: settlement.totals.grossPrincipal,
-      asinsSeen: settlement.byAsin.size,
+      totalGrossPrincipal: totalGross,
+      asinsSeen: bySku.size,    // legacy field name; now counts SKUs
       asinsMatched: matched,
       maturity,
     },
@@ -275,71 +176,6 @@ function rateFromAccum(a: { commission: number; logistics: number; gross: number
   };
 }
 
-export interface BrandFeeTotalsResult {
-  data: { commission: number; logistics: number; refunds: number; skuCount: number } | null;
-  reason: string;          // human-readable explanation when data is null
-  diagnostics: {
-    skusSeen: number;
-    skusMatched: number;
-    skusForBrand: number;
-    totalEvents: number;
-    truncated?: boolean;
-    pagesFetched?: number;
-    error?: string;
-  };
-}
-
-/** Returns a single brand's actual fee totals, with a reason string when data
- *  is null so the UI can show *why* settlements weren't usable. */
-export async function brandFeeTotals(
-  marketplaceId: string,
-  startDate: string,
-  endDate: string,
-  brand: BrandKey,
-): Promise<BrandFeeTotalsResult> {
-  let all: BrandFeesResult;
-  try {
-    all = await fetchBrandFees(marketplaceId, startDate, endDate);
-  } catch (e) {
-    const err = String(e).slice(0, 200);
-    console.warn(`[brand-fees] failed: ${err}`);
-    return {
-      data: null,
-      reason: `SP-API settlements call failed: ${err}`,
-      diagnostics: { skusSeen: 0, skusMatched: 0, skusForBrand: 0, totalEvents: 0, error: err },
-    };
-  }
-  const b = all.byBrand[brand];
-  const diagnostics = {
-    skusSeen:     all.totals.skusSeen,
-    skusMatched:  all.totals.skusMatched,
-    skusForBrand: b?.skuCount ?? 0,
-    totalEvents:  all.totals.skusSeen > 0 ? 1 : 0,
-    truncated:    all.truncated,
-    pagesFetched: all.pagesFetched,
-  };
-  if (!b || b.skuCount === 0) {
-    let reason: string;
-    if (all.totals.skusSeen === 0) {
-      reason = "No financial events found in window — Seller Central had no shipments/refunds for this period.";
-    } else if (all.totals.skusMatched === 0) {
-      reason = `Found ${all.totals.skusSeen} SKU(s) with fees, but Catalog lookup couldn't match any to known brands.`;
-    } else {
-      reason = `${all.totals.skusMatched} SKU(s) matched brands, but none belonged to "${brand}".`;
-    }
-    return { data: null, reason, diagnostics };
-  }
-  return {
-    data: {
-      commission: b.commission,
-      logistics:  b.fulfillment + b.storage,
-      refunds:    b.refunds,
-      skuCount:   b.skuCount,
-    },
-    reason: "ok",
-    diagnostics,
-  };
-}
 
 // Re-export PerSkuFees for any caller that wants raw SKU rows.
 export type { PerSkuFees };

@@ -394,7 +394,75 @@ function migrate(db: Database.Database) {
       PRIMARY KEY (account_id, target_id)
     );
     CREATE INDEX IF NOT EXISTS idx_tm_account_adgroup ON targeting_meta (account_id, adgroup_id);
+
+    -- ─── Settlement fees ─────────────────────────────────────────────────
+    -- One row per (sku, posted_date) aggregating amounts from
+    -- GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 downloads. Populated by a
+    -- background sync (the SP-API doc-fetch quota is 1/min, untenable in a
+    -- request lifecycle). /api/pnl reads from here to compute fee rates.
+    -- NOTE: Settlement v2 report contains SKU but NOT ASIN — brand attribution
+    -- happens at read time via Catalog SKU lookup (needs merchant token set).
+    CREATE TABLE IF NOT EXISTS settlement_fees_daily (
+      marketplace_id  TEXT NOT NULL,
+      posted_date     TEXT NOT NULL,        -- YYYY-MM-DD
+      sku             TEXT NOT NULL,        -- "" for whole-settlement adjustments
+      commission      REAL NOT NULL DEFAULT 0,
+      fulfillment     REAL NOT NULL DEFAULT 0,
+      storage         REAL NOT NULL DEFAULT 0,
+      refunds         REAL NOT NULL DEFAULT 0,
+      gross_principal REAL NOT NULL DEFAULT 0,
+      row_count       INTEGER NOT NULL DEFAULT 0,
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (marketplace_id, posted_date, sku)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sfd_date ON settlement_fees_daily (marketplace_id, posted_date);
+
+    -- High-water marks for the settlement sync so subsequent runs only
+    -- pull reports created after last_synced_created_time.
+    CREATE TABLE IF NOT EXISTS settlement_sync_state (
+      marketplace_id            TEXT PRIMARY KEY,
+      last_synced_created_time  TEXT,        -- ISO8601 from report.createdTime
+      last_run_at               TEXT NOT NULL DEFAULT (datetime('now')),
+      last_status               TEXT,        -- 'ok' | 'partial' | 'error'
+      last_error                TEXT
+    );
+
+    -- Dedup so a report can be skipped if we already processed it (Amazon
+    -- emits overlapping reports for the same settlement window).
+    CREATE TABLE IF NOT EXISTS settlement_reports_processed (
+      report_id    TEXT PRIMARY KEY,
+      processed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      row_count    INTEGER
+    );
   `);
+
+  // One-off: settlement_fees_daily originally had column `asin` but the v2
+  // settlement TSV only contains SKU, so we renamed. Old rows are useless
+  // (all empty-ASIN). Detect + rebuild cleanly. Safe on fresh DBs (table is
+  // already correct shape; check returns false).
+  const settlementCols = db.prepare("PRAGMA table_info(settlement_fees_daily)").all() as { name: string }[];
+  if (settlementCols.some((c) => c.name === "asin") && !settlementCols.some((c) => c.name === "sku")) {
+    db.exec("DROP TABLE settlement_fees_daily");
+    db.exec(`
+      CREATE TABLE settlement_fees_daily (
+        marketplace_id  TEXT NOT NULL,
+        posted_date     TEXT NOT NULL,
+        sku             TEXT NOT NULL,
+        commission      REAL NOT NULL DEFAULT 0,
+        fulfillment     REAL NOT NULL DEFAULT 0,
+        storage         REAL NOT NULL DEFAULT 0,
+        refunds         REAL NOT NULL DEFAULT 0,
+        gross_principal REAL NOT NULL DEFAULT 0,
+        row_count       INTEGER NOT NULL DEFAULT 0,
+        updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (marketplace_id, posted_date, sku)
+      );
+      CREATE INDEX idx_sfd_date ON settlement_fees_daily (marketplace_id, posted_date);
+      DELETE FROM settlement_reports_processed;
+      DELETE FROM settlement_sync_state;
+    `);
+    console.log("[db] migrated settlement_fees_daily: asin → sku, cleared sync state");
+  }
 
   // ─── Non-destructive column adds for existing prod DBs ──────────────────
   // CREATE TABLE IF NOT EXISTS doesn't add columns to existing tables, so
