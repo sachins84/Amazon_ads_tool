@@ -138,6 +138,8 @@ export async function GET(req: NextRequest) {
       skusMatched:  feeResult.diagnostics.skusMatched,
       skusForBrand: feeResult.diagnostics.skusForBrand,
       refunds:      feeActuals?.refunds ?? 0,
+      truncated:    feeResult.diagnostics.truncated ?? false,
+      pagesFetched: feeResult.diagnostics.pagesFetched ?? 0,
       error:        feeResult.diagnostics.error,
     },
     salesError,

@@ -42,6 +42,8 @@ interface PnlResp {
     skusMatched: number;
     skusForBrand: number;
     refunds: number;
+    truncated: boolean;
+    pagesFetched: number;
     error?: string;
   } | null;
   salesError: string | null;
@@ -132,6 +134,11 @@ export default function PnlPage() {
             {data.feeDiagnostics.source === "estimate" && (
               <div style={{ marginTop: 8, color: "var(--c-warning-text)", fontSize: 11 }}>
                 Why estimate? {data.feeDiagnostics.reason}
+              </div>
+            )}
+            {data.feeDiagnostics.truncated && (
+              <div style={{ marginTop: 6, color: "var(--c-warning-text)", fontSize: 11 }}>
+                ⚠ Partial data — only the first {data.feeDiagnostics.pagesFetched} pages of /finances/v0/financialEvents were fetched within the 60s budget. Actual commission/logistics will be higher than shown.
               </div>
             )}
             {data.feeDiagnostics.error && (

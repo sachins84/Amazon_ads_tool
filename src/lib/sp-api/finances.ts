@@ -52,6 +52,10 @@ export interface SellerFeeAggregates {
   storage: number;
   refunds: number;
   totalEvents: number;
+  // True when we exited because of the wall-clock budget — caller should
+  // surface "partial data" to the user.
+  truncated: boolean;
+  pagesFetched: number;
 }
 
 // "Commission" in the seller's mental model = every Amazon-platform charge
@@ -127,9 +131,15 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
   const totals = { commission: 0, fulfillment: 0, storage: 0, refunds: 0, totalEvents: 0 };
   let nextToken: string | undefined;
   let pages = 0;
-  // 100 events/page × 300 pages = 30k events. Yesterday alone exceeded the
-  // old 50-page cap (5k events), so we were truncating ~half the data.
-  const MAX_PAGES = 300;
+  let truncated = false;
+  // Wall-clock budget — beyond this we return partial data so the UI doesn't
+  // spin forever. 60s comfortably fits within most reverse-proxy and browser
+  // timeouts (Nginx default = 60s; modern browsers ~120s).
+  const BUDGET_MS = 60_000;
+  const deadline = Date.now() + BUDGET_MS;
+  // 100 events/page × 500 pages = 50k events. Combined with the time budget
+  // this is just a safety net for runaway tokens.
+  const MAX_PAGES = 500;
 
   // SP-API requires PostedBefore to be no later than ~2 min ago. If endDate
   // is today, cap the upper bound at now - 3 min instead of 23:59:59Z.
@@ -173,8 +183,14 @@ async function pageFinancialEvents(startDate: string, endDate: string): Promise<
     tallyEvents(res.payload.FinancialEvents, bySku, totals);
     nextToken = res.payload.NextToken;
     pages++;
+    if (nextToken && Date.now() > deadline) {
+      console.warn(`[finances] wall-clock budget hit at page ${pages}; returning partial data`);
+      truncated = true;
+      break;
+    }
   } while (nextToken && pages < MAX_PAGES);
-  return { bySku, ...totals };
+  if (nextToken && pages >= MAX_PAGES) truncated = true;
+  return { bySku, ...totals, truncated, pagesFetched: pages };
 }
 
 /** Cached + de-duped marketplace-wide fee aggregates. 10-min TTL; key is

@@ -30,6 +30,8 @@ export interface BrandFeesResult {
     skusSeen: number;
     skusMatched: number;
   };
+  truncated: boolean;
+  pagesFetched: number;
 }
 
 const EMPTY_BUCKET = (): BrandFeeBucket => ({
@@ -113,6 +115,8 @@ async function computeBrandFees(
       skusSeen:    fees.bySku.size,
       skusMatched: matched,
     },
+    truncated:    fees.truncated,
+    pagesFetched: fees.pagesFetched,
   };
 }
 
@@ -124,6 +128,8 @@ export interface BrandFeeTotalsResult {
     skusMatched: number;
     skusForBrand: number;
     totalEvents: number;
+    truncated?: boolean;
+    pagesFetched?: number;
     error?: string;
   };
 }
@@ -153,7 +159,9 @@ export async function brandFeeTotals(
     skusSeen:     all.totals.skusSeen,
     skusMatched:  all.totals.skusMatched,
     skusForBrand: b?.skuCount ?? 0,
-    totalEvents:  all.totals.skusSeen > 0 ? 1 : 0, // see route for richer events count
+    totalEvents:  all.totals.skusSeen > 0 ? 1 : 0,
+    truncated:    all.truncated,
+    pagesFetched: all.pagesFetched,
   };
   if (!b || b.skuCount === 0) {
     let reason: string;
