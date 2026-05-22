@@ -7,8 +7,10 @@
  * logistics_pct factors with actuals from settlements where available.
  */
 import { fetchSellerFeeAggregates, type PerSkuFees } from "./finances";
-import { lookupSkus } from "./catalog";
+import { getSettlementFees } from "./settlement-report";
+import { lookupAsins, lookupSkus } from "./catalog";
 import { inferBrandFromTitle, type BrandKey } from "./brand-split-sales";
+import { getSpMarketplaceId } from "./client";
 import { withCache } from "@/lib/cache";
 
 export interface BrandFeeBucket {
@@ -61,15 +63,18 @@ async function computeBrandFees(
   startDate: string,
   endDate: string,
 ): Promise<BrandFeesResult> {
-  const fees = await fetchSellerFeeAggregates(startDate, endDate);
-  const skus = [...fees.bySku.keys()].filter((s) => s && s !== "(unknown_sku)");
+  // Primary path: Settlement Reports — single CSV per cycle, no rate limit,
+  // each row has ASIN so we use the existing ASIN→brand mapping (99.97% hit).
+  const settlement = await getSettlementFees(startDate, endDate);
 
-  // Catalog lookup; tolerate partial failure (returns subset of skus).
-  let skuInfo: Awaited<ReturnType<typeof lookupSkus>> = new Map();
-  try {
-    skuInfo = await lookupSkus(skus, marketplaceId);
-  } catch (e) {
-    console.warn(`[brand-fees] SKU catalog lookup failed: ${String(e).slice(0, 120)}`);
+  const asins = [...settlement.byAsin.keys()].filter((a) => a && a !== "(unknown)");
+  let asinInfo: Awaited<ReturnType<typeof lookupAsins>> = new Map();
+  if (asins.length) {
+    try {
+      asinInfo = await lookupAsins(asins, marketplaceId);
+    } catch (e) {
+      console.warn(`[brand-fees] ASIN catalog lookup failed: ${String(e).slice(0, 120)}`);
+    }
   }
 
   const byBrand: Record<BrandKey, BrandFeeBucket> = {
@@ -81,9 +86,8 @@ async function computeBrandFees(
   const unmappedSkus: BrandFeesResult["unmappedSkus"] = [];
   let matched = 0;
 
-  for (const [sku, row] of fees.bySku) {
-    const info = skuInfo.get(sku);
-    // Prefer Amazon's brand field; fall back to title regex when blank.
+  for (const [asin, row] of settlement.byAsin) {
+    const info = asinInfo.get(asin);
     const fromBrandField = info?.brand ? inferBrandFromTitle(info.brand) : "other";
     const brand: BrandKey = fromBrandField !== "other"
       ? fromBrandField
@@ -97,28 +101,66 @@ async function computeBrandFees(
     if (brand !== "other") matched++;
     else if (row.commission + row.fulfillment + row.storage > 0) {
       unmappedSkus.push({
-        sku, commission: row.commission, fulfillment: row.fulfillment, storage: row.storage,
+        sku: asin, commission: row.commission, fulfillment: row.fulfillment, storage: row.storage,
       });
     }
   }
-
   unmappedSkus.sort((a, b) => (b.commission + b.fulfillment + b.storage) - (a.commission + a.fulfillment + a.storage));
 
   return {
     byBrand,
     unmappedSkus: unmappedSkus.slice(0, 30),
     totals: {
-      commission:  fees.commission,
-      fulfillment: fees.fulfillment,
-      storage:     fees.storage,
-      refunds:     fees.refunds,
-      skusSeen:    fees.bySku.size,
+      commission:  settlement.totals.commission,
+      fulfillment: settlement.totals.fulfillment,
+      storage:     settlement.totals.storage,
+      refunds:     settlement.totals.refunds,
+      skusSeen:    settlement.byAsin.size,
       skusMatched: matched,
     },
-    truncated:    fees.truncated,
-    pagesFetched: fees.pagesFetched,
+    truncated:    false,
+    pagesFetched: settlement.reports.length,
   };
 }
+
+// Kept for back-compat / fallback consumers. Not used by the primary path.
+export async function computeBrandFeesFromEvents(
+  marketplaceId: string,
+  startDate: string,
+  endDate: string,
+): Promise<BrandFeesResult> {
+  const fees = await fetchSellerFeeAggregates(startDate, endDate);
+  const skus = [...fees.bySku.keys()].filter((s) => s && s !== "(unknown_sku)");
+  let skuInfo: Awaited<ReturnType<typeof lookupSkus>> = new Map();
+  try { skuInfo = await lookupSkus(skus, marketplaceId); }
+  catch (e) { console.warn(`[brand-fees] SKU catalog lookup failed: ${String(e).slice(0, 120)}`); }
+  const byBrand: Record<BrandKey, BrandFeeBucket> = {
+    manmatters: EMPTY_BUCKET(), bebodywise: EMPTY_BUCKET(),
+    littlejoys: EMPTY_BUCKET(), other: EMPTY_BUCKET(),
+  };
+  let matched = 0;
+  for (const [sku, row] of fees.bySku) {
+    const info = skuInfo.get(sku);
+    const fromBrandField = info?.brand ? inferBrandFromTitle(info.brand) : "other";
+    const brand: BrandKey = fromBrandField !== "other"
+      ? fromBrandField : inferBrandFromTitle(info?.title ?? "");
+    const bucket = byBrand[brand];
+    bucket.commission += row.commission; bucket.fulfillment += row.fulfillment;
+    bucket.storage += row.storage; bucket.refunds += row.refunds; bucket.skuCount += 1;
+    if (brand !== "other") matched++;
+    void sku;
+  }
+  return {
+    byBrand, unmappedSkus: [],
+    totals: {
+      commission: fees.commission, fulfillment: fees.fulfillment, storage: fees.storage,
+      refunds: fees.refunds, skusSeen: fees.bySku.size, skusMatched: matched,
+    },
+    truncated: fees.truncated, pagesFetched: fees.pagesFetched,
+  };
+}
+
+void getSpMarketplaceId; // silence linter if unused
 
 export interface BrandFeeTotalsResult {
   data: { commission: number; logistics: number; refunds: number; skuCount: number } | null;
