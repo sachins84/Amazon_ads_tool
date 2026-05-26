@@ -171,10 +171,9 @@ function AccountView({ data, accountId, dataWindow, bucketFilter, currency, revi
 }) {
   const rows = useMemo(() =>
     data.campaigns
-      // Hide archived / paused-and-not-spending: the optimizer is for live
-      // levers, so only show campaigns that are either currently ENABLED OR
-      // have any spend in the data window (paused-mid-window still relevant).
-      .filter((c) => c.state === "ENABLED" || c.m7d.spend > 0)
+      // Hide anything with no spend in the window — optimizer is for live
+      // levers, and a zero-spend campaign has nothing to scale up/down.
+      .filter((c) => c.m7d.spend > 0)
       .filter((c) =>
         bucketFilter === "ALL"
           || c.aiSuggestion?.bucket === bucketFilter
