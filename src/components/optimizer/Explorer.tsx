@@ -170,12 +170,17 @@ function AccountView({ data, accountId, dataWindow, bucketFilter, currency, revi
   onDrill: (l: Level) => void; onApplied: () => void;
 }) {
   const rows = useMemo(() =>
-    data.campaigns.filter((c) =>
-      bucketFilter === "ALL"
-        || c.aiSuggestion?.bucket === bucketFilter
-        || (c.manualSuggestion && (c.manualSuggestion.bucket ?? inferBucketFromAction(c.manualSuggestion)) === bucketFilter)
-        || (c.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
-    ).sort((a, b) => b.m7d.spend - a.m7d.spend),
+    data.campaigns
+      // Hide archived / paused-and-not-spending: the optimizer is for live
+      // levers, so only show campaigns that are either currently ENABLED OR
+      // have any spend in the data window (paused-mid-window still relevant).
+      .filter((c) => c.state === "ENABLED" || c.m7d.spend > 0)
+      .filter((c) =>
+        bucketFilter === "ALL"
+          || c.aiSuggestion?.bucket === bucketFilter
+          || (c.manualSuggestion && (c.manualSuggestion.bucket ?? inferBucketFromAction(c.manualSuggestion)) === bucketFilter)
+          || (c.childBuckets?.[bucketFilter as Bucket] ?? 0) > 0
+      ).sort((a, b) => b.m7d.spend - a.m7d.spend),
     [data.campaigns, bucketFilter]);
   return (
     <>

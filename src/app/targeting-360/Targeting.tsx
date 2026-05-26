@@ -19,6 +19,7 @@ type Program = "SP" | "SB" | "SD";
 type Status  = "ENABLED" | "PAUSED" | "ARCHIVED";
 
 type Intent = "BRANDED" | "GENERIC" | "COMPETITION" | "AUTO" | "PAT" | "OTHER";
+type Bucket = "SCALE_UP" | "SCALE_DOWN" | "PAUSE" | "BID_UP" | "BID_DOWN" | "HOLD";
 
 interface PrevMetrics {
   spend: number; sales: number; orders: number;
@@ -34,6 +35,8 @@ interface CampaignRow {
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  bucket?: Bucket | null;
+  childBuckets?: Partial<Record<Bucket, number>>;
   prev?: PrevMetrics;
 }
 interface AdGroupRow {
@@ -75,6 +78,7 @@ interface CampaignFilters {
   targetingType: "ALL" | "MANUAL" | "AUTO";
   status: Status | "ALL";
   intents: Intent[];  // empty = all
+  buckets: Bucket[];  // empty = all; matches campaign.bucket OR any childBuckets[*] > 0
 }
 interface AdGroupFilters  { search: string; status: Status | "ALL"; }
 interface TargetingFilters {
@@ -176,7 +180,7 @@ export default function Targeting360Page() {
   }, [accountId]);
   useEffect(() => { reloadPending(); }, [reloadPending, level, tab]);
 
-  const [campFilters, setCampFilters] = useState<CampaignFilters>({ search: "", programs: ["SP","SB","SD"], targetingType: "ALL", status: "ALL", intents: [] });
+  const [campFilters, setCampFilters] = useState<CampaignFilters>({ search: "", programs: ["SP","SB","SD"], targetingType: "ALL", status: "ALL", intents: [], buckets: [] });
   const [agFilters,   setAgFilters]   = useState<AdGroupFilters>({ search: "", status: "ALL" });
   const [tgFilters,   setTgFilters]   = useState<TargetingFilters>({
     search: "", kind: "ALL", matchType: "ALL", status: "ALL",
@@ -285,6 +289,11 @@ export default function Targeting360Page() {
     }
     if (campFilters.status !== "ALL" && c.status !== campFilters.status) return false;
     if (campFilters.intents.length > 0 && !campFilters.intents.includes(c.intent)) return false;
+    if (campFilters.buckets.length > 0) {
+      const own = c.bucket;
+      const childMatches = campFilters.buckets.some((b) => (c.childBuckets?.[b] ?? 0) > 0);
+      if (!(own && campFilters.buckets.includes(own)) && !childMatches) return false;
+    }
     return true;
   }).sort((a, b) => b.spend - a.spend), [campaigns, campFilters]);
 
@@ -625,6 +634,10 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
     const next = filters.intents.includes(i) ? filters.intents.filter((x) => x !== i) : [...filters.intents, i];
     setFilters({ ...filters, intents: next });
   };
+  const toggleBucket = (b: Bucket) => {
+    const next = filters.buckets.includes(b) ? filters.buckets.filter((x) => x !== b) : [...filters.buckets, b];
+    setFilters({ ...filters, buckets: next });
+  };
   return (
     <>
       <FilterBar>
@@ -659,6 +672,24 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
             {intentLabelShort(i)}
           </button>
         ))}
+      </FilterBar>
+      <FilterBar>
+        <span style={{ fontSize: 11, color: "var(--text-secondary)", alignSelf: "center" }}>Action:</span>
+        {(["SCALE_UP","SCALE_DOWN","PAUSE","BID_UP","BID_DOWN","HOLD"] as Bucket[]).map((b) => (
+          <button key={b} onClick={() => toggleBucket(b)} style={{
+            ...chipStyleOn(filters.buckets.includes(b)),
+            background: filters.buckets.includes(b) ? bucketChipColor(b).bg : "var(--bg-input)",
+            color:      filters.buckets.includes(b) ? bucketChipColor(b).fg : "var(--text-secondary)",
+            borderColor: filters.buckets.includes(b) ? bucketChipColor(b).fg : "var(--border)",
+          }}>
+            {bucketLabel(b)}
+          </button>
+        ))}
+        {filters.buckets.length > 0 && (
+          <button onClick={() => setFilters({ ...filters, buckets: [] })} style={{
+            ...chipStyleOn(false), color: "var(--text-muted)", marginLeft: 4,
+          }}>Clear</button>
+        )}
       </FilterBar>
       <TableShell loading={loading}>
         <table style={tableStyle}>
@@ -1131,6 +1162,19 @@ function intentChipColor(i: Intent): { bg: string; fg: string } {
     PAT:         { bg: "var(--c-violet2-bg)", fg: "var(--c-violet2-text)" },
     OTHER:       { bg: "var(--c-neutral-bg)",  fg: "var(--text-secondary)" },
   }[i];
+}
+function bucketLabel(b: Bucket): string {
+  return { SCALE_UP: "Scale up", SCALE_DOWN: "Scale down", PAUSE: "Pause", BID_UP: "Bid up", BID_DOWN: "Bid down", HOLD: "Hold" }[b];
+}
+function bucketChipColor(b: Bucket): { bg: string; fg: string } {
+  return {
+    SCALE_UP:   { bg: "var(--c-success-bg)", fg: "var(--c-success-text)" },
+    BID_UP:     { bg: "var(--c-success-bg)", fg: "var(--c-success-text)" },
+    SCALE_DOWN: { bg: "var(--c-warning-bg)", fg: "var(--c-warning-text)" },
+    BID_DOWN:   { bg: "var(--c-warning-bg)", fg: "var(--c-warning-text)" },
+    PAUSE:      { bg: "var(--c-danger-bg)",  fg: "#ef4444" },
+    HOLD:       { bg: "var(--c-neutral-bg)", fg: "var(--text-secondary)" },
+  }[b];
 }
 
 function Pill({ text, muted }: { text: string; muted?: boolean }) {

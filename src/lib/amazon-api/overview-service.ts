@@ -8,8 +8,55 @@ import { getAccount } from "@/lib/db/accounts";
 import {
   readCampaignMetrics, readCampaignMeta, getRefreshState, campaignMetricsCoverage,
 } from "@/lib/db/metrics-store";
+import { getDb } from "@/lib/db";
 import type { Program } from "./reports";
 import { inferIntent, type Intent } from "./intent";
+
+export type Bucket = "SCALE_UP" | "SCALE_DOWN" | "PAUSE" | "BID_UP" | "BID_DOWN" | "HOLD";
+
+/** Returns the latest PENDING suggestion bucket per campaign, plus a rollup
+ *  of pending suggestion-buckets nested under each campaign (so a campaign
+ *  whose own suggestion is HOLD can still surface "5 child SCALE_DOWNs"). */
+function loadCampaignBuckets(accountId: string): Map<string, { ownBucket: Bucket | null; childBuckets: Partial<Record<Bucket, number>> }> {
+  const own = getDb().prepare(`
+    SELECT s.target_id, s.bucket
+    FROM suggestions s
+    WHERE s.account_id = ?
+      AND s.target_type = 'CAMPAIGN'
+      AND s.status = 'PENDING'
+      AND s.bucket IS NOT NULL
+    GROUP BY s.target_id
+    HAVING MAX(s.created_at)
+  `).all(accountId) as Array<{ target_id: string; bucket: string }>;
+
+  const child = getDb().prepare(`
+    SELECT campaign_id, bucket, COUNT(*) AS n FROM (
+      SELECT ag.campaign_id, s.bucket
+      FROM suggestions s
+      JOIN adgroup_meta ag ON ag.account_id = s.account_id AND ag.adgroup_id = s.target_id
+      WHERE s.account_id = ? AND s.status = 'PENDING' AND s.target_type = 'AD_GROUP' AND s.bucket IS NOT NULL
+      UNION ALL
+      SELECT tm.campaign_id, s.bucket
+      FROM suggestions s
+      JOIN targeting_meta tm ON tm.account_id = s.account_id AND tm.target_id = s.target_id
+      WHERE s.account_id = ? AND s.status = 'PENDING' AND s.target_type IN ('KEYWORD','PRODUCT_TARGET') AND s.bucket IS NOT NULL
+    )
+    GROUP BY campaign_id, bucket
+  `).all(accountId, accountId) as Array<{ campaign_id: string; bucket: string; n: number }>;
+
+  const out = new Map<string, { ownBucket: Bucket | null; childBuckets: Partial<Record<Bucket, number>> }>();
+  for (const r of own) {
+    const cur = out.get(r.target_id) ?? { ownBucket: null, childBuckets: {} };
+    cur.ownBucket = r.bucket as Bucket;
+    out.set(r.target_id, cur);
+  }
+  for (const r of child) {
+    const cur = out.get(r.campaign_id) ?? { ownBucket: null, childBuckets: {} };
+    cur.childBuckets[r.bucket as Bucket] = (cur.childBuckets[r.bucket as Bucket] ?? 0) + r.n;
+    out.set(r.campaign_id, cur);
+  }
+  return out;
+}
 
 /** Previous-period metrics attached to each row. Used by the UI to render deltas. */
 export interface PrevMetrics {
@@ -44,6 +91,10 @@ export interface OverviewResult {
     spend: number; sales: number; orders: number;
     impressions: number; clicks: number;
     ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+    /** Latest PENDING AI-suggestion bucket for this campaign — null when none. */
+    bucket: Bucket | null;
+    /** Counts of PENDING suggestions one level down (ad-groups, keywords, targets). */
+    childBuckets: Partial<Record<Bucket, number>>;
     /** Equal-length previous period totals + derived metrics. Undefined when no prev data exists. */
     prev?: PrevMetrics;
   }[];
@@ -108,6 +159,7 @@ export async function getOverviewForAccount(
   const metaById = new Map(meta.map((m) => [m.campaignId, m]));
   const campaigns: OverviewResult["campaigns"] = [];
   const seen = new Set<string>();
+  const bucketsById = loadCampaignBuckets(accountId);
 
   for (const m of meta) {
     const agg = byCampaign.get(m.campaignId);
@@ -119,6 +171,7 @@ export async function getOverviewForAccount(
     const name   = m.name ?? `Campaign ${m.campaignId}`;
     // Auto-targeting SP campaigns are inherently AUTO intent.
     const intent = m.targetingType === "AUTO" ? "AUTO" : inferIntent(name);
+    const b = bucketsById.get(m.campaignId);
     campaigns.push({
       id: m.campaignId,
       name,
@@ -133,6 +186,8 @@ export async function getOverviewForAccount(
       ctr: pct(clicks, impr), cpc: div(spend, clicks),
       cvr: pct(orders, clicks), acos: pct(spend, sales, 1),
       roas: div(sales, spend),
+      bucket: b?.ownBucket ?? null,
+      childBuckets: b?.childBuckets ?? {},
     });
     seen.add(m.campaignId);
   }
@@ -141,6 +196,7 @@ export async function getOverviewForAccount(
   for (const [campaignId, agg] of byCampaign) {
     if (seen.has(campaignId)) continue;
     const name = `Campaign ${campaignId}`;
+    const b = bucketsById.get(campaignId);
     campaigns.push({
       id: campaignId,
       name,
@@ -153,6 +209,8 @@ export async function getOverviewForAccount(
       ctr: pct(agg.clicks, agg.impressions), cpc: div(agg.cost, agg.clicks),
       cvr: pct(agg.orders, agg.clicks), acos: pct(agg.cost, agg.sales, 1),
       roas: div(agg.sales, agg.cost),
+      bucket: b?.ownBucket ?? null,
+      childBuckets: b?.childBuckets ?? {},
     });
   }
 
