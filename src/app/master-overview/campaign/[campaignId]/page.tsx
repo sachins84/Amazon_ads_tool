@@ -157,7 +157,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
                       <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
                       <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.spend, "currency", currency)}</Td>
                       <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.sales, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.orders}</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(ag.orders)}</Td>
                       <Td align="right" style={{ color: ag.roas >= 2 ? "#22c55e" : ag.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{ag.roas.toFixed(2)}x</Td>
                       <Td align="right" style={{ color: ag.acos > 0 && ag.acos <= 25 ? "#22c55e" : ag.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{ag.acos.toFixed(1)}%</Td>
                       <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%</Td>

@@ -478,7 +478,7 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
                 <Td align="right"><BudgetUtilCell pct={c.budgetUtilization ?? null} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}<Delta current={c.spend} prev={c.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}<Delta current={c.sales} prev={c.prev?.sales} positive={true} /></Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(c.orders)}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
                 <Td align="right" style={{ color: c.roas >= 2 ? "#22c55e" : c.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{c.roas.toFixed(2)}x<Delta current={c.roas} prev={c.prev?.roas} positive={true} /></Td>
                 <Td align="right" style={{ color: c.acos > 0 && c.acos <= 25 ? "#22c55e" : c.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{c.acos.toFixed(1)}%<Delta current={c.acos} prev={c.prev?.acos} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.clicks > 0 ? fmt(c.cpc, "currency", currency) : "—"}</Td>

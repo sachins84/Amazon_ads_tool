@@ -178,7 +178,7 @@ function SegmentTable({ title, rows, currency }: { title: string; rows: Row[]; c
                   <td style={tdR}>{fmt(r.spend, "currency", currency)}</td>
                   <td style={{ ...tdR, color: "var(--text-secondary)" }}>{r.spendShare.toFixed(1)}%</td>
                   <td style={tdR}>{fmt(r.sales, "currency", currency)}</td>
-                  <td style={tdR}>{r.orders}</td>
+                  <td style={tdR}>{Math.round(r.orders)}</td>
                   <td style={{ ...tdR, color: acosColor(r.acos) }}>{r.acos != null ? `${r.acos.toFixed(1)}%` : "—"}</td>
                   <td style={tdR}>{r.roas != null ? `${r.roas.toFixed(2)}x` : "—"}</td>
                   <td style={{ ...tdR, color: "var(--text-secondary)" }}>{r.ctr.toFixed(2)}%</td>

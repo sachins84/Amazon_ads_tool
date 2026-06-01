@@ -195,7 +195,7 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
                         </Td>
                         <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.spend, "currency", currency)}</Td>
                         <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.sales, "currency", currency)}</Td>
-                        <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.orders}</Td>
+                        <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(r.orders)}</Td>
                         <Td align="right" style={{ color: r.roas >= 2 ? "#22c55e" : r.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{r.roas.toFixed(2)}x</Td>
                         <Td align="right" style={{ color: r.acos > 0 && r.acos <= 25 ? "#22c55e" : r.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{r.acos.toFixed(1)}%</Td>
                         <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.ctr.toFixed(2)}%</Td>

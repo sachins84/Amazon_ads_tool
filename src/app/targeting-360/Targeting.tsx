@@ -713,7 +713,7 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}<Delta current={c.spend} prev={c.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}<Delta current={c.sales} prev={c.prev?.sales} positive={true} /></Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(c.orders)}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
                 <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x<Delta current={c.roas} prev={c.prev?.roas} positive={true} /></Td>
                 <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%<Delta current={c.acos} prev={c.prev?.acos} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.ctr.toFixed(2)}%<Delta current={c.ctr} prev={c.prev?.ctr} positive={true} /></Td>
@@ -785,7 +785,7 @@ function AdGroupsView({ filters, setFilters, rows, loading, currency, onDrill, p
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.defaultBid, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.spend, "currency", currency)}<Delta current={ag.spend} prev={ag.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(ag.sales, "currency", currency)}<Delta current={ag.sales} prev={ag.prev?.sales} positive={true} /></Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.orders}<Delta current={ag.orders} prev={ag.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(ag.orders)}<Delta current={ag.orders} prev={ag.prev?.orders} positive={true} /></Td>
                 <Td align="right" style={{ color: roasColor(ag.roas) }}>{ag.roas.toFixed(2)}x<Delta current={ag.roas} prev={ag.prev?.roas} positive={true} /></Td>
                 <Td align="right" style={{ color: acosColor(ag.acos) }}>{ag.acos.toFixed(1)}%<Delta current={ag.acos} prev={ag.prev?.acos} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%<Delta current={ag.ctr} prev={ag.prev?.ctr} positive={true} /></Td>
@@ -849,7 +849,7 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}<Delta current={t.spend} prev={t.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.sales, "currency", currency)}<Delta current={t.sales} prev={t.prev?.sales} positive={true} /></Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.orders}<Delta current={t.orders} prev={t.prev?.orders} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(t.orders)}<Delta current={t.orders} prev={t.prev?.orders} positive={true} /></Td>
                 <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x<Delta current={t.roas} prev={t.prev?.roas} positive={true} /></Td>
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%<Delta current={t.acos} prev={t.prev?.acos} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.ctr.toFixed(2)}%<Delta current={t.ctr} prev={t.prev?.ctr} positive={true} /></Td>
@@ -922,7 +922,7 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.revenue, "currency", currency)}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{t.orders}</Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(t.orders)}</Td>
                 <Td align="right" style={{ color: roasColor(t.roas) }}>{t.roas.toFixed(2)}x</Td>
                 <Td align="right" style={{ color: acosColor(t.acos) }}>{t.acos.toFixed(1)}%</Td>
                 <Td><LastActionPill mark={last[t.id]} currency={currency} /></Td>
