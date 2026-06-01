@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
-import { readTargetingMetrics, readTargetingMeta, getRefreshState } from "@/lib/db/metrics-store";
+import { readTargetingMetrics, readTargetingMeta, readBidRecommendations, getRefreshState } from "@/lib/db/metrics-store";
 import { getAccount } from "@/lib/db/accounts";
 import type { Target } from "@/lib/types";
 
@@ -29,6 +29,9 @@ export async function GET(req: NextRequest) {
   const meta      = readTargetingMeta(accountId);
   const refreshState = getRefreshState(accountId, "targeting");
 
+  // Bid recommendations keyed by targetId for inline join.
+  const recByTargetId = new Map(readBidRecommendations(accountId).map((r) => [r.targetId, r]));
+
   // Aggregate metrics per target_id
   const agg = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
   for (const r of dailyRows) {
@@ -56,7 +59,9 @@ export async function GET(req: NextRequest) {
       adGroupName: `Ad Group ${m.adGroupId}`,
       status: m.state ?? "ARCHIVED",
       bid: m.bid ?? 0,
-      suggestedBid: m.bid ?? 0,
+      suggestedBid:     recByTargetId.get(m.targetId)?.bidMedian ?? null,
+      suggestedBidLow:  recByTargetId.get(m.targetId)?.bidLow    ?? null,
+      suggestedBidHigh: recByTargetId.get(m.targetId)?.bidHigh   ?? null,
       impressions: impr, clicks,
       ctr: impr > 0 ? Math.round((clicks / impr) * 10000) / 100 : 0,
       spend: Math.round(spend * 100) / 100,

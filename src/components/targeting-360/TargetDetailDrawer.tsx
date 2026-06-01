@@ -137,8 +137,8 @@ export default function TargetDetailDrawer({ target, onClose, onBidChange }: Pro
               </div>
               <div style={{ textAlign: "right" }}>
                 <span style={{ fontSize: 10, color: "#555f6e", display: "block", marginBottom: 2 }}>Suggested Bid</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "#6366f1" }}>
-                  ₹{target.suggestedBid.toFixed(2)}
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#6366f1" }} title={target.suggestedBidLow != null || target.suggestedBidHigh != null ? `Amazon range: ₹${target.suggestedBidLow ?? "?"} – ₹${target.suggestedBidHigh ?? "?"}` : undefined}>
+                  {target.suggestedBid != null ? `₹${target.suggestedBid.toFixed(2)}` : "—"}
                 </span>
               </div>
             </div>

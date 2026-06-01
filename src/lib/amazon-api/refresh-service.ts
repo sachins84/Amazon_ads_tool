@@ -48,10 +48,12 @@ type RefreshPhase =
   | "bid_recs";
 
 /** Cap on how many ad groups we fetch bid recommendations for per refresh.
- *  The API caps each request to one ad group, so volume = N ad groups × ~1s.
- *  We sort by spend so the AI optimiser gets coverage for the campaigns that
- *  actually matter; tail ad groups fall back to "no recommendation". */
-const BID_REC_AD_GROUP_CAP = 200;
+ *  The API caps each request to one ad group, so volume = N ad groups × ~1s
+ *  serial. India brands routinely have 1000+ ad groups, so 200 left most
+ *  keywords with no recommendation in the UI. 1000 covers the long tail while
+ *  staying inside the rate budget (a ~15 min refresh window). Sorted by SP
+ *  spend so the highest-impact ad groups always make the cut. */
+const BID_REC_AD_GROUP_CAP = 1000;
 
 export async function refreshAccountRecent(accountId: string, days = 21): Promise<RefreshResult> {
   const acct = getAccount(accountId);

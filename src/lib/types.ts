@@ -62,7 +62,13 @@ export interface Target {
   adGroupName: string;
   status: TargetStatus;
   bid: number;
-  suggestedBid: number;
+  /** Amazon-suggested bid (median of the recommended range). Null when
+   *  the bid-recommendation refresh hasn't covered this target yet, or when
+   *  Amazon doesn't return a rec for it (PT clauses, low-volume keywords). */
+  suggestedBid: number | null;
+  /** Amazon-suggested low/high bounds. Null when no recommendation cached. */
+  suggestedBidLow: number | null;
+  suggestedBidHigh: number | null;
   impressions: number;
   clicks: number;
   ctr: number;

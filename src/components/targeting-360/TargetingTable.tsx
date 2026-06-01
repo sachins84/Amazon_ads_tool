@@ -331,7 +331,7 @@ export default function TargetingTable({
                     ) : (
                       <span
                         onClick={() => { setEditingBidId(t.id); setEditingBidVal(String(t.bid)); }}
-                        title={`Suggested: ₹${t.suggestedBid}`}
+                        title={t.suggestedBid != null ? `Suggested: ₹${t.suggestedBid.toFixed(2)} (range ₹${t.suggestedBidLow ?? "?"}–₹${t.suggestedBidHigh ?? "?"})` : "No Amazon suggestion cached for this target"}
                         style={{ fontSize: 12, color: "#e2e8f0", cursor: "text", borderBottom: "1px dashed #2a3245", paddingBottom: 1 }}
                       >
                         ₹{t.bid.toFixed(2)}
