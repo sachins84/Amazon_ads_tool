@@ -10,14 +10,16 @@ import {
   upsertCampaignMetrics, upsertAdGroupMetrics, upsertTargetingMetrics,
   upsertCampaignMeta,    upsertAdGroupMeta,    upsertTargetingMeta,
   upsertPlacementMetrics, upsertAdvertisedProductMetrics,
+  upsertBidRecommendations,
   setRefreshState,
   type CampaignDailyRow, type AdGroupDailyRow, type TargetingDailyRow,
   type CampaignMetaRow,  type AdGroupMetaRow,  type TargetingMetaRow,
   type PlacementDailyRow, type AdvertisedProductDailyRow,
+  type BidRecommendationRow,
 } from "@/lib/db/metrics-store";
 import { listAllCampaigns }      from "./campaigns";
 import { listAllAdGroups }       from "./adgroups";
-import { listSPKeywords, listSPProductTargets } from "./targeting";
+import { listSPKeywords, listSPProductTargets, getSPBidRecommendations } from "./targeting";
 import {
   fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
   fetchSPPlacementReport, fetchSPAdvertisedProductReport,
@@ -42,7 +44,14 @@ export interface RefreshResult {
 
 type RefreshPhase =
   | "campaigns" | "adgroups" | "targeting" | "placement" | "advertised_product"
-  | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets";
+  | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets"
+  | "bid_recs";
+
+/** Cap on how many ad groups we fetch bid recommendations for per refresh.
+ *  The API caps each request to one ad group, so volume = N ad groups × ~1s.
+ *  We sort by spend so the AI optimiser gets coverage for the campaigns that
+ *  actually matter; tail ad groups fall back to "no recommendation". */
+const BID_REC_AD_GROUP_CAP = 200;
 
 export async function refreshAccountRecent(accountId: string, days = 21): Promise<RefreshResult> {
   const acct = getAccount(accountId);
@@ -255,6 +264,18 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   void placementRowsUpserted; void advertisedProductRowsUpserted;
   // (Both surfaced via refresh state error column when zero; not in RefreshResult.)
 
+  // ─── 4. Bid recommendations (SP only, best-effort) ──────────────────────
+  // Run AFTER advertised_product upsert: the rec endpoint requires the ASINs
+  // currently advertised in the ad group, which we just refreshed.
+  const bidRecRowsUpserted = await syncBidRecommendations({
+    accountId,
+    profileId: acct.adsProfileId,
+    targetingMeta,
+    targetingDaily,
+    advertisedProductRows: advertisedProductDaily,
+    errors,
+  });
+
   const durationMs = Date.now() - start;
   const lastRefreshAt = new Date().toISOString();
 
@@ -278,6 +299,13 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     rowsUpserted: targetingRowsUpserted,
     durationMs,
     error: errors.filter((e) => e.phase === "targeting" || e.phase === "list_keywords" || e.phase === "list_targets").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
+  });
+  setRefreshState({
+    accountId, level: "bid_recs",
+    lastRefreshAt, windowStart, windowEnd,
+    rowsUpserted: bidRecRowsUpserted,
+    durationMs,
+    error: errors.filter((e) => e.phase === "bid_recs").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
   });
 
   // ─── Outcome capture ─────────────────────────────────────────────────
@@ -303,6 +331,114 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     durationMs,
     errors,
   };
+}
+
+/**
+ * Best-effort: call the SP Theme-Based Bid Recommendations API once per
+ * ad group (capped at BID_REC_AD_GROUP_CAP highest-spend groups) and persist
+ * the returned (low/median/high) tuple per target. Failures on a single ad
+ * group are non-fatal — we just skip that group's targets so the optimiser
+ * sees `null` recommendations and treats them as "unknown, ignore".
+ */
+async function syncBidRecommendations(args: {
+  accountId: string;
+  profileId: string;
+  targetingMeta: TargetingMetaRow[];
+  targetingDaily: TargetingDailyRow[];
+  advertisedProductRows: AdvertisedProductDailyRow[];
+  errors: RefreshResult["errors"];
+}): Promise<number> {
+  // 1. ad groups in order of recent spend (SP only — bid rec API is SP).
+  // Amazon has no SP ad-group report, so we rank by SP targeting spend.
+  const spendByAg = new Map<string, number>();
+  for (const r of args.targetingDaily) {
+    if (r.program !== "SP") continue;
+    spendByAg.set(r.adGroupId, (spendByAg.get(r.adGroupId) ?? 0) + r.cost);
+  }
+  const orderedAgs = [...spendByAg.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, BID_REC_AD_GROUP_CAP)
+    .map(([id]) => id);
+  if (orderedAgs.length === 0) return 0;
+
+  // 2. unique advertised ASINs per ad group (needed by the API).
+  const asinsByAg = new Map<string, Set<string>>();
+  for (const r of args.advertisedProductRows) {
+    if (!r.asin) continue;
+    const s = asinsByAg.get(r.adGroupId) ?? new Set<string>();
+    s.add(r.asin);
+    asinsByAg.set(r.adGroupId, s);
+  }
+
+  // 3. group ENABLED SP targeting meta by ad group.
+  const targetsByAg = new Map<string, TargetingMetaRow[]>();
+  for (const m of args.targetingMeta) {
+    if (m.program !== "SP" || m.state !== "ENABLED") continue;
+    const arr = targetsByAg.get(m.adGroupId) ?? [];
+    arr.push(m);
+    targetsByAg.set(m.adGroupId, arr);
+  }
+
+  // 4. fetch + collect per ad group, serially (the endpoint is rate-limited
+  //    and parallelising it tends to trip Amazon's 425/429 dedup logic).
+  const out: BidRecommendationRow[] = [];
+  for (const adGroupId of orderedAgs) {
+    const targets = targetsByAg.get(adGroupId);
+    const asins = [...(asinsByAg.get(adGroupId) ?? [])];
+    if (!targets?.length || asins.length === 0) continue;
+
+    const expressions = targets.map((m) => targetingMetaToExpression(m)).filter(Boolean) as { type: string; value?: string }[];
+    if (expressions.length === 0) continue;
+
+    try {
+      const recs = await getSPBidRecommendations(args.profileId, {
+        campaignId: targets[0].campaignId,
+        adGroupId,
+        asins,
+        expressions,
+      }, args.accountId);
+
+      const recsByKey = new Map(recs.map((r) => [exprKey(r.expression[0]), r]));
+      for (const m of targets) {
+        const expr = targetingMetaToExpression(m);
+        if (!expr) continue;
+        const r = recsByKey.get(exprKey(expr));
+        if (!r) continue;
+        out.push({
+          accountId:  args.accountId,
+          targetId:   m.targetId,
+          campaignId: m.campaignId,
+          adGroupId:  m.adGroupId,
+          bidLow:     r.bidLow,
+          bidMedian:  r.bidMedian,
+          bidHigh:    r.bidHigh,
+        });
+      }
+    } catch (e) {
+      args.errors.push({ program: "SP", error: String(e).slice(0, 120), phase: "bid_recs" });
+      // continue with next ad group
+    }
+  }
+
+  return upsertBidRecommendations(out);
+}
+
+function targetingMetaToExpression(m: TargetingMetaRow): { type: string; value?: string } | null {
+  if (m.kind === "KEYWORD" && m.display && m.matchType) {
+    return { type: `KEYWORD_${m.matchType}_MATCH`, value: m.display };
+  }
+  if (m.kind === "PRODUCT_TARGET" && m.display) {
+    // display is "ASIN: B0..." or "category: ..." — extract ASIN form for now.
+    const ix = m.display.indexOf(":");
+    const value = ix >= 0 ? m.display.slice(ix + 1).trim() : m.display;
+    if (m.display.toLowerCase().startsWith("asin")) return { type: "ASIN_SAME_AS", value };
+    return null; // category recs not supported by this endpoint without category id
+  }
+  return null;
+}
+
+function exprKey(e: { type: string; value?: string } | undefined): string {
+  return `${e?.type ?? ""}::${e?.value ?? ""}`;
 }
 
 function deriveKind(keywordType: string): TargetingDailyRow["kind"] {

@@ -34,6 +34,14 @@ export interface OverviewCampaignRow {
   cvr: number;
   acos: number;
   roas: number;
+  /** Impression-weighted Top-of-Search impression share over the window (0..100). Null if Amazon didn't return it. */
+  topOfSearchIS?: number | null;
+  /** Median Amazon-suggested bid across ENABLED targets. Null when no bid recs cached. */
+  suggestedBidMedian?: number | null;
+  /** Median current bid across ENABLED targets — show alongside suggested to surface the gap. */
+  currentBidMedian?: number | null;
+  /** Budget utilization (%) over the window. Null when daily budget is 0/unknown or campaign is archived. */
+  budgetUtilization?: number | null;
   prev?: {
     spend: number; sales: number; orders: number;
     impressions: number; clicks: number;

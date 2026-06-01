@@ -463,9 +463,57 @@ export function readTargetingMeta(accountId: string, opts: { adGroupId?: string;
     }));
 }
 
+// ─── Bid recommendations ─────────────────────────────────────────────────────
+
+export interface BidRecommendationRow {
+  accountId:  string;
+  targetId:   string;
+  campaignId: string;
+  adGroupId:  string;
+  bidLow:     number | null;
+  bidMedian:  number | null;
+  bidHigh:    number | null;
+}
+
+export function upsertBidRecommendations(rows: BidRecommendationRow[]): number {
+  if (rows.length === 0) return 0;
+  const stmt = getDb().prepare(`
+    INSERT INTO bid_recommendations
+      (account_id, target_id, campaign_id, adgroup_id, bid_low, bid_median, bid_high, fetched_at)
+    VALUES (@accountId, @targetId, @campaignId, @adGroupId, @bidLow, @bidMedian, @bidHigh, datetime('now'))
+    ON CONFLICT(account_id, target_id) DO UPDATE SET
+      campaign_id = excluded.campaign_id,
+      adgroup_id  = excluded.adgroup_id,
+      bid_low     = excluded.bid_low,
+      bid_median  = excluded.bid_median,
+      bid_high    = excluded.bid_high,
+      fetched_at  = excluded.fetched_at
+  `);
+  const tx = getDb().transaction((items: typeof rows) => {
+    for (const r of items) stmt.run(r);
+  });
+  tx(rows);
+  return rows.length;
+}
+
+interface RawBidRecRow {
+  target_id: string; campaign_id: string; adgroup_id: string;
+  bid_low: number | null; bid_median: number | null; bid_high: number | null;
+}
+
+export function readBidRecommendations(accountId: string): BidRecommendationRow[] {
+  return (getDb()
+    .prepare("SELECT target_id, campaign_id, adgroup_id, bid_low, bid_median, bid_high FROM bid_recommendations WHERE account_id = ?")
+    .all(accountId) as RawBidRecRow[])
+    .map((r) => ({
+      accountId, targetId: r.target_id, campaignId: r.campaign_id, adGroupId: r.adgroup_id,
+      bidLow: r.bid_low, bidMedian: r.bid_median, bidHigh: r.bid_high,
+    }));
+}
+
 // ─── Refresh state ───────────────────────────────────────────────────────────
 
-export type RefreshLevel = "campaigns" | "adgroups" | "targeting";
+export type RefreshLevel = "campaigns" | "adgroups" | "targeting" | "bid_recs";
 
 export interface RefreshStateRow {
   accountId: string;

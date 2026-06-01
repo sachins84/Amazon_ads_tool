@@ -69,6 +69,15 @@ export interface OptimizerEntity {
   /** Share of 7d spend from PLACEMENT_TOP (0..100). Available only for SP
    *  campaigns (placement_metrics_daily is SP-only). */
   topSpendShare7d?: number | null;
+  /** Budget utilization over the 7d window as a percent (spend / (7 × daily-budget) × 100).
+   *  Null for ad groups / targets (no campaign-level budget) and for archived campaigns. */
+  budgetUtilization7d?: number | null;
+  /** Median Amazon-suggested bid for this entity (campaign-level: median across
+   *  ENABLED targets; ad-group: same; keyword/product-target: that target's own
+   *  median rec). Null when no recommendation cached. */
+  suggestedBidMedian?: number | null;
+  /** Median current bid across ENABLED targets under this entity. Null when no targets. */
+  currentBidMedian?: number | null;
   benchmark?: { avgCpc?: number };
 }
 
@@ -85,6 +94,12 @@ export interface OptimizerSignals {
    *  saturation signal: high TOP share + bad ACOS = we've already won the
    *  slot and it's still not paying. */
   topSpendShare7d: number | null;
+  /** Budget utilization 0..100+ over the 7d window. Null when entity has no budget concept. */
+  budgetUtilization7d: number | null;
+  /** Bid headroom = suggestedBidMedian / currentBidMedian. >1 means Amazon
+   *  thinks higher bids are warranted; <1 means we're over-bidding. Null when
+   *  either side isn't known. */
+  bidVsSuggestedRatio: number | null;
   zeroOrderDays: number;
   vsBenchmarkCpc: number | null;
   targetAcos: number;
@@ -106,6 +121,7 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
   const signals = computeSignals(e, target);
   const { acos7d, acos3d, ordersTrend7vs3, acosTrend7vs3,
           zeroOrderDays, topOfSearchIS7d, topSpendShare7d,
+          budgetUtilization7d, bidVsSuggestedRatio,
           vsBenchmarkCpc, cpc7d } = signals;
 
   const spend7 = e.m7d.spend;
@@ -154,39 +170,77 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
     const dropPct = Math.max(cap, -Math.min(Math.abs(cap), intensified));
     const newVal = clampDelta(e.currentValue, dropPct);
     const placementNote = saturatedTop ? ` ${topSpendShare7d!.toFixed(0)}% of spend already at TOP — no placement headroom.` : "";
+    // If the campaign isn't even hitting budget today, a budget cut is largely
+    // cosmetic — surface that so reviewers know to fix bids/targeting instead.
+    const budgetUnderfilledNote = (!isBidLevel && budgetUtilization7d != null && budgetUtilization7d < 60)
+      ? ` Budget only ${budgetUtilization7d.toFixed(0)}% utilised — the real lever is bids/targeting, not budget.`
+      : "";
     return {
       bucket: isBidLevel ? "BID_DOWN" : "SCALE_DOWN",
       actionType: isBidLevel ? "SET_BID" : "SET_BUDGET",
       actionValue: round2(newVal),
-      reason: `ACOS ${fmtPct(acos7d)} is ${fmtPct(excessPct)} above target ${fmtPct(target)} (7d).${placementNote} Cut ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)}.`,
+      reason: `ACOS ${fmtPct(acos7d)} is ${fmtPct(excessPct)} above target ${fmtPct(target)} (7d).${placementNote}${budgetUnderfilledNote} Cut ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)}.`,
       confidence: saturatedTop ? 0.82 : 0.75, signals,
     };
   }
 
   // ── 5. Strong winner with headroom → SCALE_UP / BID_UP ──
-  // ACOS ≤ 60% of target, trend not worsening, AND either impression-share has
-  // room OR most spend is not at TOP yet (we can climb) OR orders accelerating.
+  // ACOS ≤ 60% of target, trend not worsening, AND there's actual headroom:
+  //   - TOS impression-share < 60%        (can win more search-top slots)
+  //   - placement TOP share < 40%         (most spend not at TOP yet)
+  //   - orders accelerating               (demand is real)
+  //   - bid headroom: suggestedBid > currentBid × 1.05
+  //
+  // Budget-level scaling (SCALE_UP on a campaign) ALSO requires that the
+  // current budget is actually being hit — otherwise raising it is a no-op
+  // because the campaign isn't even spending what it already has.
   if (acos7d != null && acos7d <= target * 0.6 && acosTrend7vs3 !== "worsening") {
     const hasIsHeadroom    = topOfSearchIS7d != null && topOfSearchIS7d < 60;
     const placementHeadroom = topSpendShare7d != null && topSpendShare7d < 40;
     const momentum         = ordersTrend7vs3 === "up";
-    if (hasIsHeadroom || placementHeadroom || momentum) {
+    const bidHeadroom      = bidVsSuggestedRatio != null && bidVsSuggestedRatio > 1.05;
+    const tosSaturated     = topOfSearchIS7d != null && topOfSearchIS7d >= 80;
+    const bidsMaxed        = bidVsSuggestedRatio != null && bidVsSuggestedRatio < 0.95;
+    // Budget gate: only applies to budget-level SCALE_UP. Below 70% util means
+    // the campaign isn't even spending its current budget — raising it is a
+    // no-op. If utilisation is unknown (null) we don't block (e.g. ad-groups).
+    const budgetExhausted  = budgetUtilization7d == null || budgetUtilization7d >= 70;
+
+    if ((hasIsHeadroom || placementHeadroom || momentum || bidHeadroom) && !tosSaturated) {
+      if (!isBidLevel && !budgetExhausted) {
+        return {
+          bucket: "HOLD", actionType: "ENABLE", actionValue: null,
+          reason: `Strong winner (ACOS ${fmtPct(acos7d)} ≤ target × 0.6) but only used ${budgetUtilization7d!.toFixed(0)}% of budget in 7d — raising budget won't move spend. Investigate bids/impression-share instead.`,
+          confidence: 0.7, signals,
+        };
+      }
+      if (!isBidLevel && bidsMaxed && !hasIsHeadroom && !placementHeadroom) {
+        return {
+          bucket: "HOLD", actionType: "ENABLE", actionValue: null,
+          reason: `Winner but bids are already ${(1 / bidVsSuggestedRatio!).toFixed(2)}× Amazon's suggested median and TOS share/placement is saturated — no obvious lever to scale further.`,
+          confidence: 0.65, signals,
+        };
+      }
+
       const efficiencyPct = ((target - acos7d) / target) * 100; // positive = good
       const placementBonus = placementHeadroom ? 4 : 0;
-      const aggressionPct = Math.min(obj.maxScaleUpPct, efficiencyPct * 0.4 + (momentum ? 5 : 0) + placementBonus);
+      const bidBonus       = bidHeadroom ? 3 : 0;
+      const aggressionPct = Math.min(obj.maxScaleUpPct, efficiencyPct * 0.4 + (momentum ? 5 : 0) + placementBonus + bidBonus);
       const newVal = clampDelta(e.currentValue, aggressionPct);
       const why = [
         `ACOS ${fmtPct(acos7d)} ≤ ${fmtPct(target * 0.6)} (target × 0.6)`,
         hasIsHeadroom ? `TOS impression-share ${topOfSearchIS7d!.toFixed(0)}% has headroom` : "",
         placementHeadroom ? `only ${topSpendShare7d!.toFixed(0)}% of spend at TOP — room to climb` : "",
+        bidHeadroom ? `bid is ${(bidVsSuggestedRatio! * 100 - 100).toFixed(0)}% below Amazon-suggested median — room to bid up` : "",
         momentum ? "orders trending up" : "",
+        !isBidLevel && budgetUtilization7d != null ? `budget ${budgetUtilization7d.toFixed(0)}% utilized` : "",
       ].filter(Boolean).join("; ");
       return {
         bucket: isBidLevel ? "BID_UP" : "SCALE_UP",
         actionType: isBidLevel ? "SET_BID" : "SET_BUDGET",
         actionValue: round2(newVal),
         reason: `${why}. Lean in ${pctLabel(aggressionPct)}.`,
-        confidence: hasIsHeadroom && momentum ? 0.85 : (placementHeadroom ? 0.7 : 0.65),
+        confidence: hasIsHeadroom && momentum ? 0.85 : (placementHeadroom || bidHeadroom ? 0.7 : 0.65),
         signals,
       };
     }
@@ -253,14 +307,20 @@ function computeSignals(e: OptimizerEntity, target: number): OptimizerSignals {
     ? ((cpc7d - e.benchmark.avgCpc) / e.benchmark.avgCpc) * 100
     : null;
 
+  const bidVsSuggestedRatio = (e.currentBidMedian && e.currentBidMedian > 0 && e.suggestedBidMedian && e.suggestedBidMedian > 0)
+    ? e.suggestedBidMedian / e.currentBidMedian
+    : null;
+
   return {
     acos1d, acos3d, acos7d,
     roas7d: e.m7d.spend > 0 ? e.m7d.sales / e.m7d.spend : 0,
     ordersTrend7vs3: classifyVolumeTrend(ordersRecent3d / 3, ordersEarlier / 4),
     acosTrend7vs3:   classifyAcosTrend(acos3d, acosEarlier),
     cpc7d, ctr7d,
-    topOfSearchIS7d: e.m7d.topOfSearchIS ?? null,
-    topSpendShare7d: e.topSpendShare7d ?? null,
+    topOfSearchIS7d:    e.m7d.topOfSearchIS ?? null,
+    topSpendShare7d:    e.topSpendShare7d ?? null,
+    budgetUtilization7d: e.budgetUtilization7d ?? null,
+    bidVsSuggestedRatio,
     zeroOrderDays:   e.m1d.orders === 0 && e.m3d.orders === 0 && e.m7d.orders === 0 ? 7 :
                      e.m1d.orders === 0 && e.m3d.orders === 0 ? 3 :
                      e.m1d.orders === 0 ? 1 : 0,

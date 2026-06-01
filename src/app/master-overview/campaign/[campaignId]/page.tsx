@@ -15,6 +15,8 @@ interface AdGroupRow {
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  suggestedBidMedian?: number | null;
+  currentBidMedian?: number | null;
 }
 interface AdGroupResponse {
   brandName: string | null;
@@ -137,7 +139,9 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
                   <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                     <Th>Type</Th><Th>Status</Th><Th align="left">Ad Group</Th><Th align="right">Default Bid</Th>
                     <Th align="right">Spend</Th><Th align="right">Sales</Th><Th align="right">Orders</Th>
-                    <Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th><Th align="right">CPC</Th>
+                    <Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+                    <Th align="right">Avg CPC</Th>
+                    <Th align="right" title="Median current bid vs Amazon-suggested median across enabled targets">Bid · Suggested</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -157,7 +161,8 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ campa
                       <Td align="right" style={{ color: ag.roas >= 2 ? "#22c55e" : ag.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{ag.roas.toFixed(2)}x</Td>
                       <Td align="right" style={{ color: ag.acos > 0 && ag.acos <= 25 ? "#22c55e" : ag.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{ag.acos.toFixed(1)}%</Td>
                       <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.ctr.toFixed(2)}%</Td>
-                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(ag.cpc, "currency", currency)}</Td>
+                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{ag.clicks > 0 ? fmt(ag.cpc, "currency", currency) : "—"}</Td>
+                      <Td align="right"><BidVsSuggestedCell current={ag.currentBidMedian ?? null} suggested={ag.suggestedBidMedian ?? null} currency={currency} /></Td>
                     </tr>
                   ))}
                 </tbody>
@@ -219,12 +224,29 @@ function DailyMini({ data, currency }: { data: { date: string; spend: number; sa
   );
 }
 
-function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return <th style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{children}</th>;
+function Th({ children, align = "left", title }: { children: React.ReactNode; align?: "left" | "right"; title?: string }) {
+  return <th title={title} style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{children}</th>;
 }
 function Td({ children, align = "left", style, title }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string }) {
   return <td style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
 }
+function BidVsSuggestedCell({ current, suggested, currency }: { current: number | null; suggested: number | null; currency: string }) {
+  if (current == null && suggested == null) {
+    return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  }
+  const overBid = current != null && suggested != null && current >= suggested * 1.2;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
+      <span style={{ color: overBid ? "#ef4444" : "var(--text-primary)", fontSize: 12, fontWeight: 500 }}>
+        {current != null ? fmt(current, "currency", currency) : "—"}
+      </span>
+      <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+        vs {suggested != null ? fmt(suggested, "currency", currency) : "—"}
+      </span>
+    </div>
+  );
+}
+
 function Pill({ text, muted }: { text: string; muted?: boolean }) {
   const palette: Record<string, { bg: string; fg: string }> = {
     SP:       { bg: "var(--c-indigo-bg)", fg: "var(--c-indigo-text)" },

@@ -9,8 +9,10 @@ import { getAccount } from "@/lib/db/accounts";
 import {
   readAdGroupMetrics, readAdGroupMeta,
   readTargetingMetrics, readTargetingMeta,
+  readBidRecommendations,
   getRefreshState,
 } from "@/lib/db/metrics-store";
+import { getDb } from "@/lib/db";
 
 /** Same shape used as PrevMetrics in overview-service. Kept local to avoid cycles. */
 export interface PrevMetrics {
@@ -36,6 +38,10 @@ export interface AdGroupRow {
   cvr: number;
   acos: number;
   roas: number;
+  /** Median Amazon-suggested bid across this ad-group's ENABLED targets. Null if no bid recs cached. */
+  suggestedBidMedian: number | null;
+  /** Median current bid across ENABLED targets. */
+  currentBidMedian: number | null;
   prev?: PrevMetrics;
 }
 
@@ -148,6 +154,29 @@ export async function getAdGroupsForCampaign(
     };
   };
 
+  // Roll bid recommendations + current bids up to ad-group medians.
+  const allRecs = readBidRecommendations(accountId);
+  const recsByAg = new Map<string, number[]>();
+  for (const r of allRecs) {
+    if (r.bidMedian == null) continue;
+    const arr = recsByAg.get(r.adGroupId) ?? [];
+    arr.push(r.bidMedian);
+    recsByAg.set(r.adGroupId, arr);
+  }
+  const currentBidsByAg = new Map<string, number[]>();
+  {
+    interface Row { adgroup_id: string; bid: number | null }
+    const rows = getDb()
+      .prepare("SELECT adgroup_id, bid FROM targeting_meta WHERE account_id = ? AND campaign_id = ? AND state = 'ENABLED' AND bid IS NOT NULL")
+      .all(accountId, campaignId) as Row[];
+    for (const r of rows) {
+      if (r.bid == null) continue;
+      const arr = currentBidsByAg.get(r.adgroup_id) ?? [];
+      arr.push(r.bid);
+      currentBidsByAg.set(r.adgroup_id, arr);
+    }
+  }
+
   const rows: AdGroupRow[] = meta.map((ag) => {
     const m = byAg.get(ag.adGroupId);
     const spend = m?.cost ?? 0;
@@ -163,6 +192,8 @@ export async function getAdGroupsForCampaign(
       ctr: pct(clicks, impr), cpc: div(spend, clicks),
       cvr: pct(orders, clicks), acos: pct(spend, sales, 1),
       roas: div(sales, spend),
+      suggestedBidMedian: round2OrNull(median(recsByAg.get(ag.adGroupId))),
+      currentBidMedian:   round2OrNull(median(currentBidsByAg.get(ag.adGroupId))),
       prev: prevMetrics(ag.adGroupId),
     };
   });
@@ -179,6 +210,8 @@ export async function getAdGroupsForCampaign(
       ctr: pct(m.clicks, m.impressions), cpc: div(m.cost, m.clicks),
       cvr: pct(m.orders, m.clicks), acos: pct(m.cost, m.sales, 1),
       roas: div(m.sales, m.cost),
+      suggestedBidMedian: round2OrNull(median(recsByAg.get(adGroupId))),
+      currentBidMedian:   round2OrNull(median(currentBidsByAg.get(adGroupId))),
       prev: prevMetrics(adGroupId),
     });
   }
@@ -227,6 +260,10 @@ export interface TargetingRow {
   matchType?: "EXACT" | "PHRASE" | "BROAD";
   state: "ENABLED" | "PAUSED" | "ARCHIVED";
   bid: number;
+  /** Amazon's suggested bid range. Null when no recommendation cached for this target. */
+  suggestedBidLow: number | null;
+  suggestedBidMedian: number | null;
+  suggestedBidHigh: number | null;
   campaignId: string;
   adGroupId:  string;
   spend: number;
@@ -269,6 +306,13 @@ export async function getTargetingForAdGroup(
   // Read from store (populated by the daily refresh).
   const dailyRows = readTargetingMetrics(accountId, startDate, endDate, { adGroupId });
   const meta      = readTargetingMeta(accountId, { adGroupId });
+  const recs      = readBidRecommendations(accountId);
+  const recByTargetId = new Map(recs.filter((r) => r.adGroupId === adGroupId).map((r) => [r.targetId, r]));
+  const recOf = (id: string) => ({
+    suggestedBidLow:    recByTargetId.get(id)?.bidLow    ?? null,
+    suggestedBidMedian: recByTargetId.get(id)?.bidMedian ?? null,
+    suggestedBidHigh:   recByTargetId.get(id)?.bidHigh   ?? null,
+  });
 
   // Aggregate metrics per target_id
   const byId = new Map<string, { impressions: number; clicks: number; cost: number; orders: number; sales: number }>();
@@ -308,6 +352,7 @@ export async function getTargetingForAdGroup(
       return {
         id: m.targetId, kind: "KEYWORD", display: m.display ?? `id ${m.targetId}`,
         matchType: m.matchType ?? undefined, state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
+        ...recOf(m.targetId),
         campaignId: m.campaignId, adGroupId: m.adGroupId,
         spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
         impressions: a.impressions, clicks: a.clicks,
@@ -325,6 +370,7 @@ export async function getTargetingForAdGroup(
       return {
         id: m.targetId, kind: "PRODUCT_TARGET", display: m.display ?? "—",
         state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
+        ...recOf(m.targetId),
         campaignId: m.campaignId, adGroupId: m.adGroupId,
         spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
         impressions: a.impressions, clicks: a.clicks,
@@ -342,6 +388,7 @@ export async function getTargetingForAdGroup(
       return {
         id: m.targetId, kind: "AUTO", display: m.display ?? "Auto target",
         state: m.state ?? "ARCHIVED", bid: m.bid ?? 0,
+        ...recOf(m.targetId),
         campaignId: m.campaignId, adGroupId: m.adGroupId,
         spend: round2(a.cost), sales: round2(a.sales), orders: a.orders,
         impressions: a.impressions, clicks: a.clicks,
@@ -379,9 +426,16 @@ export async function getTargetingForAdGroup(
 }
 
 function round2(n: number) { return Math.round(n * 100) / 100; }
+function round2OrNull(n: number | null): number | null { return n == null ? null : Math.round(n * 100) / 100; }
 function div(a: number, b: number) { return b > 0 ? Math.round((a / b) * 100) / 100 : 0; }
 function pct(a: number, b: number, digits = 2) {
   if (b <= 0) return 0;
   const factor = Math.pow(10, digits);
   return Math.round((a / b) * 100 * factor) / factor;
+}
+function median(values: number[] | undefined): number | null {
+  if (!values || values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }

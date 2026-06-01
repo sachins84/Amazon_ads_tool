@@ -17,7 +17,7 @@ import {
   readCampaignMetrics, readCampaignMeta,
   readAdGroupMetrics,  readAdGroupMeta,
   readTargetingMetrics, readTargetingMeta,
-  readPlacementMetrics,
+  readPlacementMetrics, readBidRecommendations,
 } from "@/lib/db/metrics-store";
 import {
   evaluateEntity, effectiveTarget,
@@ -77,6 +77,19 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
     readPlacementMetrics(input.accountId, r7.startDate, r7.endDate),
   );
 
+  // Bid recommendations (cached by the refresh service). Rolled up to
+  // campaign + ad-group + target medians so the engine can ask "are we at /
+  // above Amazon's recommendation?" at every level. Current bid medians come
+  // from targeting_meta (already rolled up by adGroupId & campaignId here).
+  const bidRecs = readBidRecommendations(input.accountId);
+  const suggestedBidByCampaign  = rollupBidsByCampaign(bidRecs, "bidMedian");
+  const suggestedBidByAdGroup   = rollupBidsByAdGroup(bidRecs, "bidMedian");
+  const suggestedBidByTarget    = new Map(bidRecs.map((r) => [r.targetId, r.bidMedian]));
+  const currentBidsByEnabledTarget = readCurrentBidsByCampaignAndAdGroup(input.accountId);
+
+  // Budget window = 7 days (matches the m7d signal we score against).
+  const BUDGET_WINDOW_DAYS = 7;
+
   // Cache campaign-level (program, intent) once — ad groups + targets inherit
   // these via campaignId join so we don't have to re-classify every keyword.
   const campContext = new Map<string, { programKey: OptimizerProgram; intent: Intent; targetAcos: number | null }>();
@@ -91,6 +104,8 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
 
   const campaignEntities: OptimizerEntity[] = campMeta.map((m) => {
     const ctx = campContext.get(m.campaignId)!;
+    const m7 = camp7.get(m.campaignId) ?? zeroWindow();
+    const dailyBudget = m.dailyBudget ?? 0;
     return {
       id: m.campaignId,
       name: m.name ?? `Campaign ${m.campaignId}`,
@@ -100,11 +115,16 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
       intent: ctx.intent,
       targetAcos: ctx.targetAcos ?? undefined,
       topSpendShare7d: placementShare.get(m.campaignId) ?? null,
+      budgetUtilization7d: dailyBudget > 0
+        ? (m7.spend / (dailyBudget * BUDGET_WINDOW_DAYS)) * 100
+        : null,
+      suggestedBidMedian: suggestedBidByCampaign.get(m.campaignId) ?? null,
+      currentBidMedian:   currentBidsByEnabledTarget.byCampaign.get(m.campaignId) ?? null,
       state: m.state ?? "ARCHIVED",
-      currentValue: m.dailyBudget ?? 0,
+      currentValue: dailyBudget,
       m1d: camp1.get(m.campaignId) ?? zeroWindow(),
       m3d: camp3.get(m.campaignId) ?? zeroWindow(),
-      m7d: camp7.get(m.campaignId) ?? zeroWindow(),
+      m7d: m7,
       benchmark: { avgCpc: acctAvgCpc },
     };
   });
@@ -141,6 +161,8 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
       intent: ctx?.intent,
       targetAcos: ctx?.targetAcos ?? undefined,
       topSpendShare7d: m ? placementShare.get(m.campaignId) ?? null : null,
+      suggestedBidMedian: suggestedBidByAdGroup.get(id) ?? null,
+      currentBidMedian:   currentBidsByEnabledTarget.byAdGroup.get(id) ?? null,
       campaignId: m?.campaignId,
       state: m?.state ?? "ARCHIVED",
       currentValue: m?.defaultBid ?? 0,
@@ -167,6 +189,7 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
     const m = tgByIdMeta.get(id);
     const ctx = m ? campContext.get(m.campaignId) : undefined;
     const type = m?.kind === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET";
+    const currentBid = m?.bid ?? 0;
     return {
       id,
       name: m?.display ?? `id ${id}`,
@@ -176,10 +199,12 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
       intent: ctx?.intent,
       targetAcos: ctx?.targetAcos ?? undefined,
       topSpendShare7d: m ? placementShare.get(m.campaignId) ?? null : null,
+      suggestedBidMedian: suggestedBidByTarget.get(id) ?? null,
+      currentBidMedian:   currentBid > 0 ? currentBid : null,
       campaignId: m?.campaignId,
       adGroupId:  m?.adGroupId,
       state: m?.state ?? "ARCHIVED",
-      currentValue: m?.bid ?? 0,
+      currentValue: currentBid,
       m1d: tg1.get(id) ?? zeroWindow(),
       m3d: tg3.get(id) ?? zeroWindow(),
       m7d: tg7.get(id) ?? zeroWindow(),
@@ -564,6 +589,76 @@ function applyScaleGuardrail(
       } as unknown as OptimizerSuggestion["signals"],
     });
   }
+}
+
+/**
+ * Roll bid_recommendations rows up to per-campaign medians of the chosen field
+ * (typically "bidMedian"). Null values are skipped. Used by the optimizer to
+ * gate SCALE_UP / BID_UP at campaign level.
+ */
+function rollupBidsByCampaign(
+  rows: { campaignId: string; bidLow: number | null; bidMedian: number | null; bidHigh: number | null }[],
+  field: "bidLow" | "bidMedian" | "bidHigh",
+): Map<string, number> {
+  const buckets = new Map<string, number[]>();
+  for (const r of rows) {
+    const v = r[field];
+    if (v == null) continue;
+    const arr = buckets.get(r.campaignId) ?? [];
+    arr.push(v);
+    buckets.set(r.campaignId, arr);
+  }
+  return medianMap(buckets);
+}
+
+function rollupBidsByAdGroup(
+  rows: { adGroupId: string; bidLow: number | null; bidMedian: number | null; bidHigh: number | null }[],
+  field: "bidLow" | "bidMedian" | "bidHigh",
+): Map<string, number> {
+  const buckets = new Map<string, number[]>();
+  for (const r of rows) {
+    const v = r[field];
+    if (v == null) continue;
+    const arr = buckets.get(r.adGroupId) ?? [];
+    arr.push(v);
+    buckets.set(r.adGroupId, arr);
+  }
+  return medianMap(buckets);
+}
+
+function medianMap(buckets: Map<string, number[]>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const [k, vals] of buckets) {
+    const sorted = [...vals].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const m = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+    out.set(k, m);
+  }
+  return out;
+}
+
+/**
+ * Read current bids of all ENABLED targets, rolled up to (campaign-median,
+ * ad-group-median). Used as the denominator for "bid headroom" — comparing
+ * what we're actually bidding against what Amazon suggests.
+ */
+function readCurrentBidsByCampaignAndAdGroup(accountId: string): {
+  byCampaign: Map<string, number>; byAdGroup: Map<string, number>;
+} {
+  interface Row { campaign_id: string; adgroup_id: string; bid: number | null }
+  const rows = getDb()
+    .prepare("SELECT campaign_id, adgroup_id, bid FROM targeting_meta WHERE account_id = ? AND state = 'ENABLED' AND bid IS NOT NULL")
+    .all(accountId) as Row[];
+  const byCampaignBucket = new Map<string, number[]>();
+  const byAdGroupBucket  = new Map<string, number[]>();
+  for (const r of rows) {
+    if (r.bid == null) continue;
+    const c = byCampaignBucket.get(r.campaign_id) ?? [];
+    c.push(r.bid); byCampaignBucket.set(r.campaign_id, c);
+    const a = byAdGroupBucket.get(r.adgroup_id) ?? [];
+    a.push(r.bid); byAdGroupBucket.set(r.adgroup_id, a);
+  }
+  return { byCampaign: medianMap(byCampaignBucket), byAdGroup: medianMap(byAdGroupBucket) };
 }
 
 /**

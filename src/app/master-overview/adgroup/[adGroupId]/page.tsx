@@ -15,6 +15,9 @@ interface TargetingRow {
   matchType?: "EXACT" | "PHRASE" | "BROAD";
   state: "ENABLED" | "PAUSED" | "ARCHIVED";
   bid: number;
+  suggestedBidLow?: number | null;
+  suggestedBidMedian?: number | null;
+  suggestedBidHigh?: number | null;
   campaignId: string;
   adGroupId: string;
   spend: number; sales: number; orders: number;
@@ -170,26 +173,36 @@ export default function AdGroupDetailPage({ params }: { params: Promise<{ adGrou
                     <Th>Status</Th>
                     <Th align="left">{tab === "KEYWORDS" ? "Keyword" : "Target"}</Th>
                     <Th align="right">Bid</Th>
+                    <Th align="right" title="Amazon's suggested bid range (low · median · high)">Suggested</Th>
                     <Th align="right">Spend</Th><Th align="right">Sales</Th><Th align="right">Orders</Th>
-                    <Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th><Th align="right">CPC</Th>
+                    <Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+                    <Th align="right">Avg CPC</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} style={{ borderBottom: "1px solid var(--bg-input)" }}>
-                      {tab === "KEYWORDS" && <Td><Pill text={r.matchType ?? ""} /></Td>}
-                      <Td><Pill text={r.state} muted={r.state !== "ENABLED"} /></Td>
-                      <Td style={{ color: "var(--text-primary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.display}>{r.display}</Td>
-                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(r.bid, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.spend, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.sales, "currency", currency)}</Td>
-                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.orders}</Td>
-                      <Td align="right" style={{ color: r.roas >= 2 ? "#22c55e" : r.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{r.roas.toFixed(2)}x</Td>
-                      <Td align="right" style={{ color: r.acos > 0 && r.acos <= 25 ? "#22c55e" : r.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{r.acos.toFixed(1)}%</Td>
-                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.ctr.toFixed(2)}%</Td>
-                      <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(r.cpc, "currency", currency)}</Td>
-                    </tr>
-                  ))}
+                  {rows.map((r) => {
+                    const overBid = r.suggestedBidMedian != null && r.bid >= r.suggestedBidMedian * 1.2;
+                    return (
+                      <tr key={r.id} style={{ borderBottom: "1px solid var(--bg-input)" }}>
+                        {tab === "KEYWORDS" && <Td><Pill text={r.matchType ?? ""} /></Td>}
+                        <Td><Pill text={r.state} muted={r.state !== "ENABLED"} /></Td>
+                        <Td style={{ color: "var(--text-primary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.display}>{r.display}</Td>
+                        <Td align="right" style={{ color: overBid ? "#ef4444" : "var(--text-secondary)" }}>{fmt(r.bid, "currency", currency)}</Td>
+                        <Td align="right" style={{ color: "var(--text-muted)", fontSize: 11 }}>
+                          {r.suggestedBidMedian == null ? "—" : (
+                            <span title={`Amazon range: ${r.suggestedBidLow ?? "?"} – ${r.suggestedBidHigh ?? "?"}`}>{fmt(r.suggestedBidMedian, "currency", currency)}</span>
+                          )}
+                        </Td>
+                        <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.spend, "currency", currency)}</Td>
+                        <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(r.sales, "currency", currency)}</Td>
+                        <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.orders}</Td>
+                        <Td align="right" style={{ color: r.roas >= 2 ? "#22c55e" : r.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{r.roas.toFixed(2)}x</Td>
+                        <Td align="right" style={{ color: r.acos > 0 && r.acos <= 25 ? "#22c55e" : r.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{r.acos.toFixed(1)}%</Td>
+                        <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.ctr.toFixed(2)}%</Td>
+                        <Td align="right" style={{ color: "var(--text-secondary)" }}>{r.clicks > 0 ? fmt(r.cpc, "currency", currency) : "—"}</Td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               {rows.length === 0 && (
@@ -222,8 +235,8 @@ function Tile({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return <th style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{children}</th>;
+function Th({ children, align = "left", title }: { children: React.ReactNode; align?: "left" | "right"; title?: string }) {
+  return <th title={title} style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{children}</th>;
 }
 function Td({ children, align = "left", style, title }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string }) {
   return <td style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;

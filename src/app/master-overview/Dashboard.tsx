@@ -458,8 +458,12 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
               <Th>Type</Th><Th>Status</Th><Th align="left">Campaign</Th>
-              <Th align="right">Budget</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
+              <Th align="right">Budget</Th><Th align="right" title="Spend ÷ (days × daily budget)">Budget util</Th>
+              <Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
+              <Th align="right">Avg CPC</Th>
+              <Th align="right" title="Top-of-Search impression share over the window">TOS share</Th>
+              <Th align="right" title="Median Amazon-suggested bid vs current bid across enabled targets in this campaign">Bid · Suggested</Th>
             </tr>
           </thead>
           <tbody>
@@ -471,16 +475,52 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
                   <Link href={`/master-overview/campaign/${c.id}`} style={{ color: "var(--c-indigo-text)", textDecoration: "none" }}>{c.name}</Link>
                 </Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
+                <Td align="right"><BudgetUtilCell pct={c.budgetUtilization ?? null} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}<Delta current={c.spend} prev={c.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}<Delta current={c.sales} prev={c.prev?.sales} positive={true} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.orders}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
                 <Td align="right" style={{ color: c.roas >= 2 ? "#22c55e" : c.roas >= 1 ? "#f59e0b" : "#ef4444" }}>{c.roas.toFixed(2)}x<Delta current={c.roas} prev={c.prev?.roas} positive={true} /></Td>
                 <Td align="right" style={{ color: c.acos > 0 && c.acos <= 25 ? "#22c55e" : c.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>{c.acos.toFixed(1)}%<Delta current={c.acos} prev={c.prev?.acos} positive={false} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.clicks > 0 ? fmt(c.cpc, "currency", currency) : "—"}</Td>
+                <Td align="right"><TosCell pct={c.topOfSearchIS ?? null} /></Td>
+                <Td align="right"><BidVsSuggestedCell current={c.currentBidMedian ?? null} suggested={c.suggestedBidMedian ?? null} currency={currency} /></Td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/** Budget utilization 0..>100; green ~60–95, amber <60, red >95 (over-spend). */
+function BudgetUtilCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  const color = pct > 95 ? "#ef4444" : pct >= 60 ? "#22c55e" : "#f59e0b";
+  return <span style={{ color, fontSize: 12, fontWeight: 500 }}>{pct.toFixed(0)}%</span>;
+}
+
+/** TOS share 0..100; high = already winning the slot, low = headroom. */
+function TosCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  const color = pct >= 60 ? "#22c55e" : pct >= 30 ? "#f59e0b" : "var(--text-secondary)";
+  return <span style={{ color, fontSize: 12, fontWeight: 500 }} title={pct >= 60 ? "Saturated — limited headroom from bidding higher" : "Headroom — bid up may move impressions"}>{pct.toFixed(0)}%</span>;
+}
+
+/** Two-line cell: "₹15" / "vs ₹22" (suggested). Red when current ≥ suggested high. */
+function BidVsSuggestedCell({ current, suggested, currency }: { current: number | null; suggested: number | null; currency: string }) {
+  if (current == null && suggested == null) {
+    return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  }
+  const overBid = current != null && suggested != null && current >= suggested * 1.2;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
+      <span style={{ color: overBid ? "#ef4444" : "var(--text-primary)", fontSize: 12, fontWeight: 500 }}>
+        {current != null ? fmt(current, "currency", currency) : "—"}
+      </span>
+      <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+        vs {suggested != null ? fmt(suggested, "currency", currency) : "—"}
+      </span>
     </div>
   );
 }
@@ -499,8 +539,8 @@ function Delta({ current, prev, positive }: { current: number; prev?: number; po
   return <div style={{ fontSize: 9, color, marginTop: 1 }} title={`Previous: ${prev}`}>{arrow} {Math.abs(pct).toFixed(1)}%</div>;
 }
 
-function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return <th style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{children}</th>;
+function Th({ children, align = "left", title }: { children: React.ReactNode; align?: "left" | "right"; title?: string }) {
+  return <th title={title} style={{ textAlign: align, padding: "8px 6px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{children}</th>;
 }
 function Td({ children, align = "left", style, title }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string }) {
   return <td style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;

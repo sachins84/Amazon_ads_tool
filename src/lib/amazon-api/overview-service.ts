@@ -7,6 +7,7 @@ import { dateRangeFromPreset } from "./transform";
 import { getAccount } from "@/lib/db/accounts";
 import {
   readCampaignMetrics, readCampaignMeta, getRefreshState, campaignMetricsCoverage,
+  readBidRecommendations,
 } from "@/lib/db/metrics-store";
 import { getDb } from "@/lib/db";
 import type { Program } from "./reports";
@@ -91,6 +92,14 @@ export interface OverviewResult {
     spend: number; sales: number; orders: number;
     impressions: number; clicks: number;
     ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+    /** Impression-weighted Top-of-Search impression share over the window (0..100). Null if Amazon didn't report TOS_IS. */
+    topOfSearchIS: number | null;
+    /** Median Amazon-suggested bid across the campaign's ENABLED targets. Null if no bid recs are cached yet. */
+    suggestedBidMedian: number | null;
+    /** Median current bid across ENABLED targets (kept alongside suggested so the UI can show the gap inline). */
+    currentBidMedian: number | null;
+    /** Budget utilization = spend / (days × dailyBudget) × 100. Null when budget is 0/unknown. */
+    budgetUtilization: number | null;
     /** Latest PENDING AI-suggestion bucket for this campaign — null when none. */
     bucket: Bucket | null;
     /** Counts of PENDING suggestions one level down (ad-groups, keywords, targets). */
@@ -136,6 +145,10 @@ export async function getOverviewForAccount(
   const byCampaign = new Map<string, {
     program: Program;
     impressions: number; clicks: number; cost: number; orders: number; sales: number;
+    /** Impression-weighted sum of top_of_search_is (divide by tosImpr at the end). */
+    tosWeighted: number;
+    /** Impressions that contributed to tosWeighted (rows where top_of_search_is was non-null). */
+    tosImpr: number;
   }>();
   const byProgram: Record<Program, { spend: number; sales: number; orders: number; clicks: number; impressions: number }> = {
     SP: zero(), SB: zero(), SD: zero(),
@@ -143,8 +156,12 @@ export async function getOverviewForAccount(
   const byDate = new Map<string, { spend: number; sales: number; orders: number; clicks: number; impressions: number }>();
 
   for (const r of dailyRows) {
-    const c = byCampaign.get(r.campaignId) ?? { program: r.program, impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0 };
+    const c = byCampaign.get(r.campaignId) ?? { program: r.program, impressions: 0, clicks: 0, cost: 0, orders: 0, sales: 0, tosWeighted: 0, tosImpr: 0 };
     c.impressions += r.impressions; c.clicks += r.clicks; c.cost += r.cost; c.orders += r.orders; c.sales += r.sales;
+    if (r.topOfSearchIS != null && r.impressions > 0) {
+      c.tosWeighted += r.topOfSearchIS * r.impressions;
+      c.tosImpr     += r.impressions;
+    }
     byCampaign.set(r.campaignId, c);
 
     const p = byProgram[r.program];
@@ -154,6 +171,34 @@ export async function getOverviewForAccount(
     d.spend += r.cost; d.sales += r.sales; d.orders += r.orders; d.clicks += r.clicks; d.impressions += r.impressions;
     byDate.set(r.date, d);
   }
+
+  // Bid recommendations rolled up to campaign-level median (over ENABLED targets only).
+  const bidRecs = readBidRecommendations(accountId);
+  const recsByCampaign = new Map<string, number[]>();
+  for (const r of bidRecs) {
+    if (r.bidMedian == null) continue;
+    const arr = recsByCampaign.get(r.campaignId) ?? [];
+    arr.push(r.bidMedian);
+    recsByCampaign.set(r.campaignId, arr);
+  }
+
+  // Current bids rolled up similarly so the UI can show "you're bidding X vs
+  // suggested Y" without a second query.
+  const currentBidsByCampaign = new Map<string, number[]>();
+  {
+    interface Row { campaign_id: string; bid: number | null }
+    const rows = getDb()
+      .prepare("SELECT campaign_id, bid FROM targeting_meta WHERE account_id = ? AND state = 'ENABLED' AND bid IS NOT NULL")
+      .all(accountId) as Row[];
+    for (const r of rows) {
+      if (r.bid == null) continue;
+      const arr = currentBidsByCampaign.get(r.campaign_id) ?? [];
+      arr.push(r.bid);
+      currentBidsByCampaign.set(r.campaign_id, arr);
+    }
+  }
+
+  const windowDays = Math.max(1, daysInclusive(startDate, endDate));
 
   // Merge with metadata for the campaign rows.
   const metaById = new Map(meta.map((m) => [m.campaignId, m]));
@@ -186,6 +231,12 @@ export async function getOverviewForAccount(
       ctr: pct(clicks, impr), cpc: div(spend, clicks),
       cvr: pct(orders, clicks), acos: pct(spend, sales, 1),
       roas: div(sales, spend),
+      topOfSearchIS:      agg && agg.tosImpr > 0 ? Math.round((agg.tosWeighted / agg.tosImpr) * 10) / 10 : null,
+      suggestedBidMedian: round2OrNull(median(recsByCampaign.get(m.campaignId))),
+      currentBidMedian:   round2OrNull(median(currentBidsByCampaign.get(m.campaignId))),
+      budgetUtilization:  m.dailyBudget && m.dailyBudget > 0
+        ? Math.round((spend / (m.dailyBudget * windowDays)) * 1000) / 10
+        : null,
       bucket: b?.ownBucket ?? null,
       childBuckets: b?.childBuckets ?? {},
     });
@@ -209,6 +260,10 @@ export async function getOverviewForAccount(
       ctr: pct(agg.clicks, agg.impressions), cpc: div(agg.cost, agg.clicks),
       cvr: pct(agg.orders, agg.clicks), acos: pct(agg.cost, agg.sales, 1),
       roas: div(agg.sales, agg.cost),
+      topOfSearchIS:      agg.tosImpr > 0 ? Math.round((agg.tosWeighted / agg.tosImpr) * 10) / 10 : null,
+      suggestedBidMedian: round2OrNull(median(recsByCampaign.get(campaignId))),
+      currentBidMedian:   round2OrNull(median(currentBidsByCampaign.get(campaignId))),
+      budgetUtilization:  null,
       bucket: b?.ownBucket ?? null,
       childBuckets: b?.childBuckets ?? {},
     });
@@ -339,9 +394,23 @@ function delta(current: number, previous: number): number {
 }
 
 function round2(n: number) { return Math.round(n * 100) / 100; }
+function round2OrNull(n: number | null): number | null { return n == null ? null : Math.round(n * 100) / 100; }
 function div(a: number, b: number) { return b > 0 ? Math.round((a / b) * 100) / 100 : 0; }
 function pct(a: number, b: number, digits = 2) {
   if (b <= 0) return 0;
   const factor = Math.pow(10, digits);
   return Math.round((a / b) * 100 * factor) / factor;
+}
+
+function median(values: number[] | undefined): number | null {
+  if (!values || values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function daysInclusive(start: string, end: string): number {
+  const s = new Date(start + "T00:00:00Z").getTime();
+  const e = new Date(end   + "T00:00:00Z").getTime();
+  return Math.round((e - s) / 86_400_000) + 1;
 }

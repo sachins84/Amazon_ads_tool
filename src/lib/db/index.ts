@@ -395,6 +395,25 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_tm_account_adgroup ON targeting_meta (account_id, adgroup_id);
 
+    -- Amazon's per-target bid recommendations (POST /sp/keywords/bidRecommendations
+    -- + /sp/targets/bid/recommendations). Pulled on the same refresh cycle as
+    -- targeting metadata. Used by the AI optimizer to gate BID_UP — if current
+    -- bid is already at/above Amazon's high recommendation, there's no headroom
+    -- and scaling budget won't move impressions; cut/hold instead.
+    CREATE TABLE IF NOT EXISTS bid_recommendations (
+      account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      target_id    TEXT NOT NULL,
+      campaign_id  TEXT NOT NULL,
+      adgroup_id   TEXT NOT NULL,
+      bid_low      REAL,
+      bid_median   REAL,
+      bid_high     REAL,
+      fetched_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, target_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_br_account_campaign ON bid_recommendations (account_id, campaign_id);
+    CREATE INDEX IF NOT EXISTS idx_br_account_adgroup  ON bid_recommendations (account_id, adgroup_id);
+
     -- ─── Settlement fees ─────────────────────────────────────────────────
     -- One row per (sku, posted_date) aggregating amounts from
     -- GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 downloads. Populated by a

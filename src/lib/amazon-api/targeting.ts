@@ -209,6 +209,95 @@ export async function createSPAutoTargets(
   });
 }
 
+// ─── Bid recommendations (Theme-Based Bid Recommendations v3) ───────────────
+// POST /sp/targets/bid/recommendations returns suggested bid ranges
+// (rangeStart / suggestedBid / rangeEnd) for one ad group's targets at a time.
+// The response is themed (CONVERSION_OPPORTUNITIES etc.) — we just collapse
+// every bid-value tuple per targeting expression and take the median across
+// themes so each (target) ends up with one (low, median, high) tuple.
+
+const BID_REC_CONTENT = "application/vnd.spthemebasedbidrecommendation.v3+json";
+
+export interface BidRecommendation {
+  /** Echoes our input so the caller can match back to a targetId. */
+  expression: { type: string; value?: string }[];
+  matchType?: "EXACT" | "PHRASE" | "BROAD";
+  bidLow:    number | null;
+  bidMedian: number | null;
+  bidHigh:   number | null;
+}
+
+interface RawBidRecResponse {
+  bidRecommendations?: Array<{
+    theme?: string;
+    bidRecommendationsForTargetingExpressions?: Array<{
+      targetingExpression?: { type?: string; value?: string };
+      bidValues?: Array<{ suggestedBid?: number; rangeStart?: number; rangeEnd?: number }>;
+    }>;
+  }>;
+}
+
+/**
+ * Fetch suggested bids for a set of existing targeting expressions in one ad
+ * group. `expressions` map matches the Amazon spec — type is e.g.
+ * "KEYWORD_BROAD_MATCH" / "KEYWORD_EXACT_MATCH" / "KEYWORD_PHRASE_MATCH" or
+ * "ASIN_SAME_AS" for product targets. Returns an entry per expression; values
+ * may be null when Amazon has no recommendation for that target.
+ *
+ * Caller is expected to drive batching per ad group (Amazon caps at one
+ * ad-group per request). On error we throw — the refresh-service layer catches
+ * and degrades to "no recommendations" for that batch.
+ */
+export async function getSPBidRecommendations(
+  profileId: string,
+  args: {
+    campaignId: string;
+    adGroupId:  string;
+    asins:      string[];
+    expressions: { type: string; value?: string }[];
+  },
+  accountId?: string,
+): Promise<BidRecommendation[]> {
+  if (args.expressions.length === 0) return [];
+
+  const body = {
+    campaignId:       args.campaignId,
+    adGroupId:        args.adGroupId,
+    asins:            args.asins,
+    targetingExpressions: args.expressions,
+    recommendationType: "BIDS_FOR_EXISTING_AD_GROUP",
+  };
+
+  const res = await amazonRequest<RawBidRecResponse>("/sp/targets/bid/recommendations", {
+    profileId, accountId, method: "POST", body,
+    headers: { "Content-Type": BID_REC_CONTENT, "Accept": BID_REC_CONTENT },
+  });
+
+  // Index across themes: for each expression collapse to (min low, mean median, max high).
+  const collapsed = new Map<string, { lows: number[]; meds: number[]; highs: number[]; type: string; value?: string }>();
+  for (const theme of res.bidRecommendations ?? []) {
+    for (const item of theme.bidRecommendationsForTargetingExpressions ?? []) {
+      const expr = item.targetingExpression;
+      if (!expr?.type) continue;
+      const key = `${expr.type}::${expr.value ?? ""}`;
+      const cur = collapsed.get(key) ?? { lows: [], meds: [], highs: [], type: expr.type, value: expr.value };
+      for (const v of item.bidValues ?? []) {
+        if (typeof v.rangeStart   === "number") cur.lows.push(v.rangeStart);
+        if (typeof v.suggestedBid === "number") cur.meds.push(v.suggestedBid);
+        if (typeof v.rangeEnd     === "number") cur.highs.push(v.rangeEnd);
+      }
+      collapsed.set(key, cur);
+    }
+  }
+
+  return [...collapsed.values()].map((c) => ({
+    expression: [{ type: c.type, value: c.value }],
+    bidLow:    c.lows.length  ? Math.min(...c.lows)              : null,
+    bidMedian: c.meds.length  ? c.meds.reduce((s, x) => s + x, 0) / c.meds.length : null,
+    bidHigh:   c.highs.length ? Math.max(...c.highs)             : null,
+  }));
+}
+
 // ─── Negative keywords ───────────────────────────────────────────────────────
 
 const NEG_KW_CONTENT = "application/vnd.spNegativeKeyword.v3+json";
