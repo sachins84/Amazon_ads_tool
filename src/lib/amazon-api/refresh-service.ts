@@ -10,7 +10,7 @@ import {
   upsertCampaignMetrics, upsertAdGroupMetrics, upsertTargetingMetrics,
   upsertCampaignMeta,    upsertAdGroupMeta,    upsertTargetingMeta,
   upsertPlacementMetrics, upsertAdvertisedProductMetrics,
-  upsertBidRecommendations,
+  upsertBidRecommendations, readTargetingMeta, readAdvertisedProductMetrics,
   setRefreshState,
   type CampaignDailyRow, type AdGroupDailyRow, type TargetingDailyRow,
   type CampaignMetaRow,  type AdGroupMetaRow,  type TargetingMetaRow,
@@ -269,12 +269,25 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   // ─── 4. Bid recommendations (SP only, best-effort) ──────────────────────
   // Run AFTER advertised_product upsert: the rec endpoint requires the ASINs
   // currently advertised in the ad group, which we just refreshed.
+  //
+  // Use the just-persisted targeting_meta rather than the in-flight
+  // `targetingMeta` variable: on some accounts (Vendor SP particularly)
+  // `listSPKeywords` occasionally returns an empty page mid-refresh, which
+  // would silently leave bid_recs at 0 even though the DB still has the
+  // previous run's keywords. Reading from the DB after upsert means we
+  // always work with the most authoritative state we have for this account.
+  const persistedTargetingMeta = readTargetingMeta(accountId);
+  // Same defensive read for ASINs: if the SP advertised-product report came
+  // back empty this run, fall back to the trailing 14d ASINs already stored.
+  const persistedAsins = advertisedProductDaily.length > 0
+    ? advertisedProductDaily
+    : readAdvertisedProductMetrics(accountId, daysAgoUTC(14), windowEnd);
   const bidRecRowsUpserted = await syncBidRecommendations({
     accountId,
     profileId: acct.adsProfileId,
-    targetingMeta,
+    targetingMeta: persistedTargetingMeta,
     targetingDaily,
-    advertisedProductRows: advertisedProductDaily,
+    advertisedProductRows: persistedAsins,
     errors,
   });
 
