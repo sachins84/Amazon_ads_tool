@@ -93,6 +93,15 @@ async function run() {
       for (const f of ["id","name","type","status","spend","sales","orders","roas","acos","ctr","intent"]) {
         check(`overview.campaigns[0].${f} present`, c[f] !== undefined, `campaigns row missing ${f}`);
       }
+      // New (2026-06): campaign-level optimisation signals. Values may be null
+      // (e.g. no bid recs cached yet, or campaign has no daily budget), but
+      // the KEY must be present — otherwise the UI silently shows "—" and we
+      // can't tell whether the column is unwired or genuinely empty.
+      for (const f of ["topOfSearchIS","suggestedBidMedian","currentBidMedian","budgetUtilization"]) {
+        const anyHasKey = camps.some((r) => f in r);
+        check(`at least one campaign row has key '${f}'`, anyHasKey,
+          `no row has ${f} — overview-service.ts dropped the field OR API layer reshaped it away`);
+      }
       // Row-level prev: optional, but if any campaign has spend > 0 and we have refresh data,
       // at least one row in the response should carry `prev`.
       const anyHasPrev = camps.some((r) => r.prev !== undefined);
@@ -104,6 +113,78 @@ async function run() {
     }
   } catch (e) {
     check("/api/overview reachable", false, String(e));
+  }
+
+  // 2b. /api/campaigns/[id]/adgroups — ad-group drill-down
+  // Pick a campaign from the overview response (need at least one); if none,
+  // skip with a warning rather than fail (might just be an empty account).
+  console.log(`• /api/campaigns/[id]/adgroups`);
+  try {
+    const ov = await getJson(`/api/overview?accountId=${acct.id}&dateRange=Last+7D`) as {
+      campaigns?: Array<{ id: string }>;
+    };
+    const campId = ov.campaigns?.[0]?.id;
+    if (!campId) {
+      check("ad-group drill has at least one campaign to query", false,
+        "no campaigns available — skipping ad-group shape check");
+    } else {
+      const ag = await getJson(`/api/campaigns/${campId}/adgroups?accountId=${acct.id}&dateRange=Last+7D`) as {
+        adGroups?: Array<Record<string, unknown>>;
+      };
+      check("adgroups response has adGroups array", Array.isArray(ag.adGroups));
+      const rows = ag.adGroups ?? [];
+      if (rows.length > 0) {
+        for (const f of ["suggestedBidMedian","currentBidMedian"]) {
+          const anyHasKey = rows.some((r) => f in r);
+          check(`at least one ad-group row has key '${f}'`, anyHasKey,
+            `no ad-group has ${f} — hierarchy-service.ts dropped it`);
+        }
+      }
+    }
+  } catch (e) {
+    check("/api/campaigns/[id]/adgroups reachable", false, String(e));
+  }
+
+  // 2c. /api/adgroups/[id]/targeting — per-keyword/target drill-down
+  console.log(`• /api/adgroups/[id]/targeting`);
+  try {
+    const ov = await getJson(`/api/overview?accountId=${acct.id}&dateRange=Last+7D`) as {
+      campaigns?: Array<{ id: string }>;
+    };
+    const campId = ov.campaigns?.[0]?.id;
+    if (!campId) {
+      check("targeting drill needs an ad group to query", false,
+        "no campaigns available — skipping targeting shape check");
+    } else {
+      const ag = await getJson(`/api/campaigns/${campId}/adgroups?accountId=${acct.id}&dateRange=Last+7D`) as {
+        adGroups?: Array<{ id: string }>;
+      };
+      const adGroupId = ag.adGroups?.[0]?.id;
+      if (!adGroupId) {
+        check("targeting drill has at least one ad group to query", false,
+          "campaign has no ad groups — skipping targeting shape check");
+      } else {
+        const tg = await getJson(`/api/adgroups/${adGroupId}/targeting?accountId=${acct.id}&dateRange=Last+7D`) as {
+          keywords?: Array<Record<string, unknown>>;
+          productTargets?: Array<Record<string, unknown>>;
+          autoTargets?: Array<Record<string, unknown>>;
+        };
+        const allTargets = [
+          ...(tg.keywords ?? []),
+          ...(tg.productTargets ?? []),
+          ...(tg.autoTargets ?? []),
+        ];
+        if (allTargets.length > 0) {
+          for (const f of ["suggestedBidLow","suggestedBidMedian","suggestedBidHigh"]) {
+            const anyHasKey = allTargets.some((r) => f in r);
+            check(`at least one targeting row has key '${f}'`, anyHasKey,
+              `no target has ${f} — hierarchy-service.ts dropped it OR recOf() spread is broken`);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    check("/api/adgroups/[id]/targeting reachable", false, String(e));
   }
 
   // 3. /api/targeting

@@ -371,9 +371,15 @@ async function syncBidRecommendations(args: {
   }
 
   // 3. group ENABLED SP targeting meta by ad group.
+  //    Amazon's theme-based bid rec v3 endpoint returns 422 for pure-PT
+  //    ad-groups, and even in mixed ad-groups it doesn't return recs for the
+  //    PT clauses themselves — so we limit the request to KEYWORDs only and
+  //    skip any ad-group with no enabled keywords. PT rows just stay
+  //    suggestedBid=null in the UI (no API call attempted, no error).
   const targetsByAg = new Map<string, TargetingMetaRow[]>();
   for (const m of args.targetingMeta) {
     if (m.program !== "SP" || m.state !== "ENABLED") continue;
+    if (m.kind !== "KEYWORD") continue;
     const arr = targetsByAg.get(m.adGroupId) ?? [];
     arr.push(m);
     targetsByAg.set(m.adGroupId, arr);
@@ -424,15 +430,11 @@ async function syncBidRecommendations(args: {
 }
 
 function targetingMetaToExpression(m: TargetingMetaRow): { type: string; value?: string } | null {
+  // Theme-based bid rec v3 only returns useful recs for keywords. The endpoint
+  // 422s on pure-PT ad-groups and silently ignores PT clauses in mixed ones,
+  // so we never build an expression for product targets.
   if (m.kind === "KEYWORD" && m.display && m.matchType) {
     return { type: `KEYWORD_${m.matchType}_MATCH`, value: m.display };
-  }
-  if (m.kind === "PRODUCT_TARGET" && m.display) {
-    // display is "ASIN: B0..." or "category: ..." — extract ASIN form for now.
-    const ix = m.display.indexOf(":");
-    const value = ix >= 0 ? m.display.slice(ix + 1).trim() : m.display;
-    if (m.display.toLowerCase().startsWith("asin")) return { type: "ASIN_SAME_AS", value };
-    return null; // category recs not supported by this endpoint without category id
   }
   return null;
 }
