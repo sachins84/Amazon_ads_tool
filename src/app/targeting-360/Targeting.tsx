@@ -51,6 +51,9 @@ interface TargetingRow {
   id: string; kind: "KEYWORD" | "PRODUCT_TARGET" | "AUTO"; display: string;
   matchType?: "EXACT" | "PHRASE" | "BROAD";
   state: Status; bid: number;
+  suggestedBidLow?: number | null;
+  suggestedBidMedian?: number | null;
+  suggestedBidHigh?: number | null;
   campaignId: string; adGroupId: string;
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
@@ -67,6 +70,9 @@ interface FlatTarget {
   campaignId: string; campaignName: string;
   adGroupId: string;  adGroupName: string;
   status: Status; bid: number;
+  suggestedBid?: number | null;
+  suggestedBidLow?: number | null;
+  suggestedBidHigh?: number | null;
   spend: number; revenue: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
@@ -832,7 +838,9 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
           <thead>
             <tr style={tableHeadRow}>
               <Th>Kind</Th><Th>Match</Th><Th>State</Th><Th align="left">Keyword / Target</Th>
-              <Th align="right">Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
+              <Th align="right">Bid</Th>
+              <Th align="right">Suggested</Th>
+              <Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
               <Th align="right">CTR</Th><Th align="right">CPC</Th><Th align="right">CVR</Th>
               <Th align="left">Last Action</Th>
@@ -846,7 +854,8 @@ function TargetsView({ filters, setFilters, rows, loading, currency, pending, la
                 <Td>{t.matchType ? <Pill text={t.matchType} /> : <span style={{ color: "var(--text-muted)" }}>—</span>}</Td>
                 <Td><Pill text={t.state} muted={t.state !== "ENABLED"} /></Td>
                 <Td title={t.display} style={cellNameStyle}>{t.display}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
+                <Td align="right" style={{ color: t.suggestedBidMedian != null && t.bid >= t.suggestedBidMedian * 1.2 ? "#ef4444" : "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
+                <Td align="right">{t.suggestedBidMedian != null ? <span style={{ color: "var(--c-indigo-text)", fontWeight: 500 }} title={t.suggestedBidLow != null || t.suggestedBidHigh != null ? `Amazon range: ${fmt(t.suggestedBidLow ?? 0, "currency", currency)} – ${fmt(t.suggestedBidHigh ?? 0, "currency", currency)}` : undefined}>{fmt(t.suggestedBidMedian, "currency", currency)}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}<Delta current={t.spend} prev={t.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.sales, "currency", currency)}<Delta current={t.sales} prev={t.prev?.sales} positive={true} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(t.orders)}<Delta current={t.orders} prev={t.prev?.orders} positive={true} /></Td>
@@ -904,7 +913,9 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
               <Th>Kind</Th><Th>Match</Th><Th>State</Th>
               <Th align="left">Keyword / Target</Th>
               <Th align="left">Campaign</Th><Th align="left">Ad Group</Th>
-              <Th align="right">Bid</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
+              <Th align="right">Bid</Th>
+              <Th align="right">Suggested</Th>
+              <Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th>
               <Th align="left">Last Action</Th>
               <Th align="right">Actions</Th>
@@ -919,7 +930,8 @@ function FlatView({ filters, setFilters, rows, totalCount, loading, currency, pa
                 <Td title={t.value} style={cellNameStyle}>{t.value}</Td>
                 <Td title={t.campaignName} style={{ ...cellNameStyle, maxWidth: 200, color: "var(--text-secondary)" }}>{t.campaignName}</Td>
                 <Td title={t.adGroupName} style={{ ...cellNameStyle, maxWidth: 180, color: "var(--text-secondary)" }}>{t.adGroupName}</Td>
-                <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
+                <Td align="right" style={{ color: t.suggestedBid != null && t.bid >= t.suggestedBid * 1.2 ? "#ef4444" : "var(--text-secondary)" }}>{fmt(t.bid, "currency", currency)}</Td>
+                <Td align="right">{t.suggestedBid != null ? <span style={{ color: "var(--c-indigo-text)", fontWeight: 500 }} title={t.suggestedBidLow != null || t.suggestedBidHigh != null ? `Amazon range: ${fmt(t.suggestedBidLow ?? 0, "currency", currency)} – ${fmt(t.suggestedBidHigh ?? 0, "currency", currency)}` : undefined}>{fmt(t.suggestedBid, "currency", currency)}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.spend, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(t.revenue, "currency", currency)}</Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(t.orders)}</Td>

@@ -137,6 +137,23 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   for (const e of campaignReports.errors) errors.push({ program: e.program, error: e.error, phase: "campaigns" });
   for (const e of adGroupReports.errors)  errors.push({ program: e.program, error: e.error, phase: "adgroups" });
 
+  // Diagnostic: surface what each list endpoint returned even when no
+  // exception was thrown. An account with previously-large campaign counts
+  // suddenly getting 0/24 entries (BeBodywise on 2026-06-01) is a silent
+  // failure that would otherwise leave the refresh-state error column
+  // empty. These diagnostic rows go into the same error column so it shows
+  // up in /api/admin/refresh.
+  const spCamps = campaignsResult.campaigns.filter((c) => c.program === "SP").length;
+  const sbCamps = campaignsResult.campaigns.filter((c) => c.program === "SB").length;
+  const sdCamps = campaignsResult.campaigns.filter((c) => c.program === "SD").length;
+  const spAg    = adGroupsResult.adGroups.filter((a) => a.program === "SP").length;
+  const sbAg    = adGroupsResult.adGroups.filter((a) => a.program === "SB").length;
+  const sdAg    = adGroupsResult.adGroups.filter((a) => a.program === "SD").length;
+  const tgRows  = (targetingReport as Record<string, unknown>[]).length;
+  const kwCount = keywordsResult.length;
+  const ptCount = productTargetsResult.length;
+  errors.push({ program: "SP", error: `LIST_COUNTS: SP/SB/SD camps=${spCamps}/${sbCamps}/${sdCamps} ags=${spAg}/${sbAg}/${sdAg} targeting_report=${tgRows} kw=${kwCount} pt=${ptCount}`, phase: "list_campaigns" });
+
   // ─── 2. Upsert metadata + daily metrics ────────────────────────────────
   const campaignMeta: CampaignMetaRow[] = campaignsResult.campaigns.map((c) => ({
     accountId, campaignId: c.campaignId, program: c.program,
