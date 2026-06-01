@@ -186,6 +186,7 @@ export default function TargetingTable({
               <Th k="adGroupName" label="Ad Group" />
               <Th label="Status" />
               <Th k="bid" label="Bid" right />
+              <Th k="suggestedBid" label="Suggested" right />
               <Th k="impressions" label="Impr." right />
               <Th k="clicks" label="Clicks" right />
               <Th k="ctr" label="CTR" right />
@@ -332,10 +333,26 @@ export default function TargetingTable({
                       <span
                         onClick={() => { setEditingBidId(t.id); setEditingBidVal(String(t.bid)); }}
                         title={t.suggestedBid != null ? `Suggested: ₹${t.suggestedBid.toFixed(2)} (range ₹${t.suggestedBidLow ?? "?"}–₹${t.suggestedBidHigh ?? "?"})` : "No Amazon suggestion cached for this target"}
-                        style={{ fontSize: 12, color: "#e2e8f0", cursor: "text", borderBottom: "1px dashed #2a3245", paddingBottom: 1 }}
+                        style={{ fontSize: 12, color: t.suggestedBid != null && t.bid >= t.suggestedBid * 1.2 ? "#ef4444" : "#e2e8f0", cursor: "text", borderBottom: "1px dashed #2a3245", paddingBottom: 1 }}
                       >
                         ₹{t.bid.toFixed(2)}
                       </span>
+                    )}
+                  </td>
+
+                  {/* Suggested bid (Amazon's recommendation, read-only) */}
+                  <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                    {t.suggestedBid != null ? (
+                      <span
+                        title={t.suggestedBidLow != null || t.suggestedBidHigh != null
+                          ? `Amazon range: ₹${t.suggestedBidLow ?? "?"} – ₹${t.suggestedBidHigh ?? "?"}`
+                          : undefined}
+                        style={{ fontSize: 12, color: "#6366f1", fontWeight: 500 }}
+                      >
+                        ₹{t.suggestedBid.toFixed(2)}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "#555f6e" }}>—</span>
                     )}
                   </td>
 
