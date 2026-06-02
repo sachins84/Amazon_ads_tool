@@ -152,7 +152,21 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   const tgRows  = (targetingReport as Record<string, unknown>[]).length;
   const kwCount = keywordsResult.length;
   const ptCount = productTargetsResult.length;
-  errors.push({ program: "SP", error: `LIST_COUNTS: SP/SB/SD camps=${spCamps}/${sbCamps}/${sdCamps} ags=${spAg}/${sbAg}/${sdAg} targeting_report=${tgRows} kw=${kwCount} pt=${ptCount}`, phase: "list_campaigns" });
+  // Report-row breakdown per program — catches the BeBodywise case where the
+  // ad listings work but Amazon's Reports API returns 0 rows for some/all programs.
+  const cReportSP = campaignReports.rows.filter((r) => r.program === "SP").length;
+  const cReportSB = campaignReports.rows.filter((r) => r.program === "SB").length;
+  const cReportSD = campaignReports.rows.filter((r) => r.program === "SD").length;
+  const agReportSP = adGroupReports.rows.filter((r) => r.program === "SP").length;
+  const agReportSB = adGroupReports.rows.filter((r) => r.program === "SB").length;
+  const agReportSD = adGroupReports.rows.filter((r) => r.program === "SD").length;
+  const placementRowCount = placementReport.length;
+  const advertisedProductRowCount = advertisedProductReport.length;
+  errors.push({
+    program: "SP",
+    error: `LIST_COUNTS: SP/SB/SD camps=${spCamps}/${sbCamps}/${sdCamps} ags=${spAg}/${sbAg}/${sdAg} | REPORTS: camp=${cReportSP}/${cReportSB}/${cReportSD} ag=${agReportSP}/${agReportSB}/${agReportSD} tgt=${tgRows} place=${placementRowCount} ap=${advertisedProductRowCount} | listSP: kw=${kwCount} pt=${ptCount}`,
+    phase: "list_campaigns",
+  });
 
   // ─── 2. Upsert metadata + daily metrics ────────────────────────────────
   const campaignMeta: CampaignMetaRow[] = campaignsResult.campaigns.map((c) => ({
@@ -316,28 +330,28 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     lastRefreshAt, windowStart, windowEnd,
     rowsUpserted: campaignRowsUpserted,
     durationMs,
-    error: errors.filter((e) => e.phase === "campaigns" || e.phase === "list_campaigns").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
+    error: errors.filter((e) => e.phase === "campaigns" || e.phase === "list_campaigns").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 400)}`).join("; ") || null,
   });
   setRefreshState({
     accountId, level: "adgroups",
     lastRefreshAt, windowStart, windowEnd,
     rowsUpserted: adGroupRowsUpserted,
     durationMs,
-    error: errors.filter((e) => e.phase === "adgroups" || e.phase === "list_adgroups").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
+    error: errors.filter((e) => e.phase === "adgroups" || e.phase === "list_adgroups").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 400)}`).join("; ") || null,
   });
   setRefreshState({
     accountId, level: "targeting",
     lastRefreshAt, windowStart, windowEnd,
     rowsUpserted: targetingRowsUpserted,
     durationMs,
-    error: errors.filter((e) => e.phase === "targeting" || e.phase === "list_keywords" || e.phase === "list_targets").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
+    error: errors.filter((e) => e.phase === "targeting" || e.phase === "list_keywords" || e.phase === "list_targets").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 400)}`).join("; ") || null,
   });
   setRefreshState({
     accountId, level: "bid_recs",
     lastRefreshAt, windowStart, windowEnd,
     rowsUpserted: bidRecRowsUpserted,
     durationMs,
-    error: errors.filter((e) => e.phase === "bid_recs").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 80)}`).join("; ") || null,
+    error: errors.filter((e) => e.phase === "bid_recs").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 400)}`).join("; ") || null,
   });
 
   // ─── Outcome capture ─────────────────────────────────────────────────
