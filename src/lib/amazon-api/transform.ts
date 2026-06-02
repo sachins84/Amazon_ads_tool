@@ -15,9 +15,12 @@ export function dateRangeFromPreset(preset: string): { startDate: string; endDat
   switch (preset) {
     case "Today":      start.setDate(end.getDate()); break;
     case "Yesterday":  start.setDate(end.getDate() - 1); end.setDate(end.getDate() - 1); break;
+    case "Last 1D":    start.setDate(end.getDate() - 1); break;
+    case "Last 3D":    start.setDate(end.getDate() - 3); break;
     case "Last 7D":    start.setDate(end.getDate() - 7); break;
     case "Last 14D":   start.setDate(end.getDate() - 14); break;
     case "Last 30D":   start.setDate(end.getDate() - 30); break;
+    case "Last 60D":   start.setDate(end.getDate() - 60); break;
     case "This Month": start.setDate(1); break;
     case "Last Month": start.setMonth(start.getMonth() - 1, 1); end.setDate(0); break;
     default:           start.setDate(end.getDate() - 30);
