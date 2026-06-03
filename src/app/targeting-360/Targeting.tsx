@@ -35,6 +35,15 @@ interface CampaignRow {
   spend: number; sales: number; orders: number;
   impressions: number; clicks: number;
   ctr: number; cpc: number; cvr: number; acos: number; roas: number;
+  /** Top-of-Search impression share — SP-only; null for SB/SD or campaigns
+   *  with no impressions in the window. */
+  topOfSearchIS?: number | null;
+  /** Median Amazon-suggested bid across the campaign's enabled targets. */
+  suggestedBidMedian?: number | null;
+  /** Median current bid across enabled targets. */
+  currentBidMedian?: number | null;
+  /** Budget utilization (spend / (days × dailyBudget) × 100). */
+  budgetUtilization?: number | null;
   bucket?: Bucket | null;
   childBuckets?: Partial<Record<Bucket, number>>;
   prev?: PrevMetrics;
@@ -702,8 +711,13 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
           <thead>
             <tr style={tableHeadRow}>
               <Th>Type</Th><Th>Intent</Th><Th>Targeting</Th><Th>Status</Th><Th align="left">Campaign</Th>
-              <Th align="right">Budget</Th><Th align="right">Spend</Th><Th align="right">Sales</Th>
+              <Th align="right">Budget</Th>
+              <Th align="right">Budget util</Th>
+              <Th align="right">Spend</Th><Th align="right">Sales</Th>
               <Th align="right">Orders</Th><Th align="right">ROAS</Th><Th align="right">ACOS</Th><Th align="right">CTR</Th>
+              <Th align="right">Avg CPC</Th>
+              <Th align="right">TOS share</Th>
+              <Th align="right">Bid · Suggested</Th>
               <Th align="left">Last Action</Th>
               <Th align="right">Actions</Th>
             </tr>
@@ -717,12 +731,16 @@ function CampaignsView({ filters, setFilters, rows, loading, currency, onDrill, 
                 <Td onClick={() => onDrill(c)} style={{ cursor: "pointer" }}><Pill text={c.status} muted={c.status !== "ENABLED"} /></Td>
                 <Td onClick={() => onDrill(c)} title={c.name} style={{ ...cellNameStyle, cursor: "pointer" }}>{c.name}</Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(c.budget, "currency", currency)}</Td>
+                <Td align="right"><CampBudgetUtilCell pct={c.budgetUtilization ?? null} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.spend, "currency", currency)}<Delta current={c.spend} prev={c.prev?.spend} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(c.sales, "currency", currency)}<Delta current={c.sales} prev={c.prev?.sales} positive={true} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(c.orders)}<Delta current={c.orders} prev={c.prev?.orders} positive={true} /></Td>
                 <Td align="right" style={{ color: roasColor(c.roas) }}>{c.roas.toFixed(2)}x<Delta current={c.roas} prev={c.prev?.roas} positive={true} /></Td>
                 <Td align="right" style={{ color: acosColor(c.acos) }}>{c.acos.toFixed(1)}%<Delta current={c.acos} prev={c.prev?.acos} positive={false} /></Td>
                 <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.ctr.toFixed(2)}%<Delta current={c.ctr} prev={c.prev?.ctr} positive={true} /></Td>
+                <Td align="right" style={{ color: "var(--text-secondary)" }}>{c.clicks > 0 ? fmt(c.cpc, "currency", currency) : "—"}</Td>
+                <Td align="right"><CampTosCell pct={c.topOfSearchIS ?? null} /></Td>
+                <Td align="right"><CampBidVsSuggestedCell current={c.currentBidMedian ?? null} suggested={c.suggestedBidMedian ?? null} currency={currency} /></Td>
                 <Td><LastActionPill mark={last[c.id]} currency={currency} /></Td>
                 <Td align="right">
                   <RowActions
@@ -1056,6 +1074,37 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
 }
 function Td({ children, align = "left", style, title, onClick }: { children: React.ReactNode; align?: "left" | "right"; style?: React.CSSProperties; title?: string; onClick?: () => void }) {
   return <td onClick={onClick} style={{ textAlign: align, padding: "10px 6px", ...style }} title={title}>{children}</td>;
+}
+
+// ─── Campaign-level signal cells (matching master-overview Top 10 styling) ──
+
+function CampBudgetUtilCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  const color = pct > 95 ? "#ef4444" : pct >= 60 ? "#22c55e" : "#f59e0b";
+  return <span style={{ color, fontSize: 12, fontWeight: 500 }}>{pct.toFixed(0)}%</span>;
+}
+
+function CampTosCell({ pct }: { pct: number | null }) {
+  if (pct == null) return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  const color = pct >= 60 ? "#22c55e" : pct >= 30 ? "#f59e0b" : "var(--text-secondary)";
+  return <span style={{ color, fontSize: 12, fontWeight: 500 }} title={pct >= 60 ? "Saturated — limited headroom from bidding higher" : "Headroom — bid up may move impressions"}>{pct.toFixed(0)}%</span>;
+}
+
+function CampBidVsSuggestedCell({ current, suggested, currency }: { current: number | null; suggested: number | null; currency: string }) {
+  if (current == null && suggested == null) {
+    return <span style={{ color: "var(--text-muted)", fontSize: 11 }}>—</span>;
+  }
+  const overBid = current != null && suggested != null && current >= suggested * 1.2;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
+      <span style={{ color: overBid ? "#ef4444" : "var(--text-primary)", fontSize: 12, fontWeight: 500 }}>
+        {current != null ? fmt(current, "currency", currency) : "—"}
+      </span>
+      <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+        vs {suggested != null ? fmt(suggested, "currency", currency) : "—"}
+      </span>
+    </div>
+  );
 }
 
 /**
