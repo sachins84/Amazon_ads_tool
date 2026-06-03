@@ -308,11 +308,12 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   // previous run's keywords. Reading from the DB after upsert means we
   // always work with the most authoritative state we have for this account.
   const persistedTargetingMeta = readTargetingMeta(accountId);
-  // Same defensive read for ASINs: if the SP advertised-product report came
-  // back empty this run, fall back to the trailing 14d ASINs already stored.
-  const persistedAsins = advertisedProductDaily.length > 0
-    ? advertisedProductDaily
-    : readAdvertisedProductMetrics(accountId, daysAgoUTC(14), windowEnd);
+  // ASINs come from the advertised-product report, which only has rows for
+  // ad-groups with recent spend. Paused ad-groups have no recent ASINs in the
+  // 14-day window — pull from a wider 90-day window so paused-recently
+  // campaigns still have ASIN data we can drive the bid-rec request with.
+  // Anything paused longer than 90 days simply gets no rec (rare in practice).
+  const persistedAsins = readAdvertisedProductMetrics(accountId, daysAgoUTC(90), windowEnd);
   const bidRecRowsUpserted = await syncBidRecommendations({
     accountId,
     profileId: acct.adsProfileId,
@@ -394,17 +395,26 @@ async function syncBidRecommendations(args: {
   advertisedProductRows: AdvertisedProductDailyRow[];
   errors: RefreshResult["errors"];
 }): Promise<number> {
-  // 1. ad groups in order of recent spend (SP only — bid rec API is SP).
-  // Amazon has no SP ad-group report, so we rank by SP targeting spend.
+  // 1. Rank ad groups for bid-rec coverage (SP only — bid rec API is SP).
+  // First: ad groups with recent SP spend, highest-first. Then: ad groups
+  // with keyword targeting meta but no recent spend (paused campaigns,
+  // dormant groups) — so even paused-campaign keywords get bid recs cached
+  // for when they're re-enabled. All sorted into a single list capped at
+  // BID_REC_AD_GROUP_CAP so refresh time stays bounded.
   const spendByAg = new Map<string, number>();
   for (const r of args.targetingDaily) {
     if (r.program !== "SP") continue;
     spendByAg.set(r.adGroupId, (spendByAg.get(r.adGroupId) ?? 0) + r.cost);
   }
-  const orderedAgs = [...spendByAg.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, BID_REC_AD_GROUP_CAP)
-    .map(([id]) => id);
+  const allSpAgIds = new Set<string>();
+  for (const m of args.targetingMeta) {
+    if (m.program === "SP" && m.kind === "KEYWORD") allSpAgIds.add(m.adGroupId);
+  }
+  // Sort: ad-groups with recent spend by spend desc, then everything else
+  // (any keyword-bearing SP ad-group) by adGroupId for deterministic order.
+  const spending  = [...spendByAg.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const dormant   = [...allSpAgIds].filter((id) => !spendByAg.has(id)).sort();
+  const orderedAgs = [...spending, ...dormant].slice(0, BID_REC_AD_GROUP_CAP);
   if (orderedAgs.length === 0) return 0;
 
   // 2. unique advertised ASINs per ad group (needed by the API).
@@ -416,15 +426,17 @@ async function syncBidRecommendations(args: {
     asinsByAg.set(r.adGroupId, s);
   }
 
-  // 3. group ENABLED SP targeting meta by ad group.
-  //    Amazon's theme-based bid rec v3 endpoint returns 422 for pure-PT
-  //    ad-groups, and even in mixed ad-groups it doesn't return recs for the
-  //    PT clauses themselves — so we limit the request to KEYWORDs only and
-  //    skip any ad-group with no enabled keywords. PT rows just stay
-  //    suggestedBid=null in the UI (no API call attempted, no error).
+  // 3. group SP keyword targeting meta by ad group.
+  //    Include ENABLED + PAUSED keywords — paused keywords still benefit
+  //    from a recommendation cache (lets operators see "what would Amazon
+  //    suggest if I re-enable this?" without waiting for a refresh cycle).
+  //    Skip ARCHIVED keywords — they can't be re-enabled.
+  //    PT clauses are excluded: the theme-based bid rec v3 endpoint 422s
+  //    on pure-PT ad-groups and silently ignores PT in mixed ones.
   const targetsByAg = new Map<string, TargetingMetaRow[]>();
   for (const m of args.targetingMeta) {
-    if (m.program !== "SP" || m.state !== "ENABLED") continue;
+    if (m.program !== "SP") continue;
+    if (m.state === "ARCHIVED") continue;
     if (m.kind !== "KEYWORD") continue;
     const arr = targetsByAg.get(m.adGroupId) ?? [];
     arr.push(m);
