@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { getDb } from "@/lib/db";
 import { captureOutcomesForAccount } from "@/lib/rules/outcome-capture";
+import { getLearnedStatsForAccount } from "@/lib/rules/learned-confidence";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +32,14 @@ export async function GET(req: NextRequest) {
     LIMIT ?
   `).all(accountId, limit) as AppliedRow[];
 
+  // Per-bucket learned multipliers — what the optimizer is using to dampen
+  // new suggestions in each bucket. Exposed here so reviewers can sanity-check
+  // "PAUSE is at 0.55× because only 4/10 worked" before scoffing at low
+  // confidences on the Suggestions page.
+  const learnedStats = Object.fromEntries(getLearnedStatsForAccount(accountId));
+
   if (suggestions.length === 0) {
-    return Response.json({ suggestions: [], outcomes: {} });
+    return Response.json({ suggestions: [], outcomes: {}, learnedStats });
   }
 
   const ids = suggestions.map((s) => s.id);
@@ -49,7 +56,7 @@ export async function GET(req: NextRequest) {
     (outcomes[r.suggestion_id] ??= []).push(r);
   }
 
-  return Response.json({ suggestions, outcomes });
+  return Response.json({ suggestions, outcomes, learnedStats });
 }
 
 export async function POST(req: NextRequest) {

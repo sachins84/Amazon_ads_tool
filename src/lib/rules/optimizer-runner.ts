@@ -23,6 +23,7 @@ import {
   evaluateEntity, effectiveTarget,
   type OptimizerObjective, type OptimizerEntity, type WindowMetrics, type OptimizerSuggestion,
 } from "./optimizer";
+import { getLearnedStatsForAccount } from "./learned-confidence";
 import { dateRangeFromPreset } from "@/lib/amazon-api/transform";
 import { inferIntent, type Intent } from "@/lib/amazon-api/intent";
 import { buildTargetResolver, type OptimizerProgram } from "@/lib/db/acos-targets-repo";
@@ -306,6 +307,13 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
 
   const created = createSuggestions(inserts);
 
+  // Conservative feedback loop: per-bucket success rate from past APPLIED
+  // suggestions (window_days=7) dampens (never boosts) confidence on new
+  // suggestions in the same bucket. Buckets with <5 historical outcomes get
+  // multiplier=1.0 (no adjustment). Multiplier floors at 0.5 so a poor-
+  // performing bucket still surfaces for human review at half-confidence.
+  const learned = getLearnedStatsForAccount(input.accountId);
+
   // Stamp bucket / signals / confidence on the rows we just inserted.
   const stmt = getDb().prepare(`
     UPDATE suggestions SET bucket = ?, signals_json = ?, confidence = ?
@@ -315,7 +323,9 @@ export async function runOptimizerForAccount(input: OptimizerInput): Promise<Opt
   for (const ins of inserts) {
     const out = evalMap.get(ins.targetId);
     if (!out) continue;
-    stmt.run(out.bucket, JSON.stringify(out.signals), out.confidence, rule.id, input.accountId, ins.targetId);
+    const mult = learned.get(out.bucket)?.multiplier ?? 1.0;
+    const adjustedConfidence = Math.round(out.confidence * mult * 1000) / 1000;
+    stmt.run(out.bucket, JSON.stringify({ ...out.signals, learnedMultiplier: mult }), adjustedConfidence, rule.id, input.accountId, ins.targetId);
   }
 
   // Audit log row
