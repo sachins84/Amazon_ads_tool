@@ -55,9 +55,16 @@ export async function createAllOrdersReport(
   return res.reportId;
 }
 
-/** Poll until the report is DONE, then download + parse. */
+/** Poll until the report is DONE, then download + parse.
+ *
+ *  All Orders by order-date is Seller-account-wide (every brand's orders),
+ *  so report generation routinely takes 10-20 min for an account with
+ *  tens of thousands of orders across a 14-day window. Default poll
+ *  envelope: 100 × 15s = 25 min. Sales-traffic uses MAX_POLLS=20 (5 min)
+ *  because that report is far smaller. */
 export async function waitForAllOrdersReport(reportId: string): Promise<AllOrdersItemRow[]> {
-  const MAX_POLLS = 30;
+  const MAX_POLLS = 100;
+  const POLL_MS   = 15_000;
   for (let i = 0; i < MAX_POLLS; i++) {
     const status = await spRequest<ReportStatusResponse>(`/reports/2021-06-30/reports/${reportId}`);
     if (status.processingStatus === "DONE" && status.reportDocumentId) {
@@ -66,9 +73,14 @@ export async function waitForAllOrdersReport(reportId: string): Promise<AllOrder
     if (status.processingStatus === "FATAL" || status.processingStatus === "CANCELLED") {
       throw new Error(`SP-API All Orders report ${reportId} failed: ${status.processingStatus}`);
     }
-    await new Promise((r) => setTimeout(r, 15_000));
+    // Log every 5th poll so refresh-service logs show progress (silent
+    // 25-min hangs are the worst kind of debugging experience).
+    if (i > 0 && i % 5 === 0) {
+      console.log(`[all-orders] report ${reportId} still ${status.processingStatus} after ${(i * POLL_MS) / 1000}s`);
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
   }
-  throw new Error(`SP-API All Orders report ${reportId} timed out`);
+  throw new Error(`SP-API All Orders report ${reportId} timed out after ${(MAX_POLLS * POLL_MS) / 1000}s`);
 }
 
 async function downloadAndParse(documentId: string): Promise<AllOrdersItemRow[]> {
