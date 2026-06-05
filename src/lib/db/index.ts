@@ -414,6 +414,27 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_br_account_campaign ON bid_recommendations (account_id, campaign_id);
     CREATE INDEX IF NOT EXISTS idx_br_account_adgroup  ON bid_recommendations (account_id, adgroup_id);
 
+    -- ASIN × warehouse × day breakdown sourced from the SP-API All Orders
+    -- flat-file report. "Warehouse" here is the ship-from city/state combo
+    -- (Amazon's FBA fulfillment-center location). Populated only for
+    -- accounts where spMarketplaceId is configured; others see an empty
+    -- table and a "configure SP-API" hint in the UI.
+    CREATE TABLE IF NOT EXISTS asin_warehouse_daily (
+      account_id    TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      date          TEXT NOT NULL,    -- YYYY-MM-DD (purchase date)
+      asin          TEXT NOT NULL,
+      asin_title    TEXT,             -- item-name from the report
+      ship_city     TEXT NOT NULL DEFAULT '',
+      ship_state    TEXT NOT NULL DEFAULT '',
+      orders        INTEGER NOT NULL DEFAULT 0,
+      units         INTEGER NOT NULL DEFAULT 0,
+      sales         REAL    NOT NULL DEFAULT 0,
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, date, asin, ship_city, ship_state)
+    );
+    CREATE INDEX IF NOT EXISTS idx_awd_account_date ON asin_warehouse_daily (account_id, date);
+    CREATE INDEX IF NOT EXISTS idx_awd_asin         ON asin_warehouse_daily (account_id, asin);
+
     -- ─── Settlement fees ─────────────────────────────────────────────────
     -- One row per (sku, posted_date) aggregating amounts from
     -- GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 downloads. Populated by a

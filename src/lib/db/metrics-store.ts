@@ -508,7 +508,7 @@ export function readBidRecommendations(accountId: string): BidRecommendationRow[
 
 // ─── Refresh state ───────────────────────────────────────────────────────────
 
-export type RefreshLevel = "campaigns" | "adgroups" | "targeting" | "bid_recs";
+export type RefreshLevel = "campaigns" | "adgroups" | "targeting" | "bid_recs" | "asin_warehouse";
 
 export interface RefreshStateRow {
   accountId: string;

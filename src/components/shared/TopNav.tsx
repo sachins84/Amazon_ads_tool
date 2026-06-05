@@ -8,6 +8,7 @@ const tabs = [
   { label: "Master Overview",   href: "/master-overview"   },
   { label: "Targeting 360",     href: "/targeting-360"     },
   { label: "Segments",          href: "/segments"          },
+  { label: "ASIN × Warehouse",  href: "/asin-warehouse"    },
   { label: "P&L",               href: "/pnl"               },
   { label: "Optimizer",         href: "/optimizer"         },
   { label: "Rules",             href: "/rules"             },

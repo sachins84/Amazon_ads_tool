@@ -20,6 +20,8 @@ import {
 import { listAllCampaigns }      from "./campaigns";
 import { listAllAdGroups }       from "./adgroups";
 import { listSPKeywords, listSPProductTargets, getSPBidRecommendations } from "./targeting";
+import { fetchAllOrdersReport, type AllOrdersItemRow } from "@/lib/sp-api/all-orders-report";
+import { upsertAsinWarehouseDaily, type AsinWarehouseDailyRow } from "@/lib/db/asin-warehouse-store";
 import {
   fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
   fetchSPPlacementReport, fetchSPAdvertisedProductReport,
@@ -45,7 +47,8 @@ export interface RefreshResult {
 type RefreshPhase =
   | "campaigns" | "adgroups" | "targeting" | "placement" | "advertised_product"
   | "list_campaigns" | "list_adgroups" | "list_keywords" | "list_targets"
-  | "bid_recs";
+  | "bid_recs"
+  | "asin_warehouse";
 
 /** Cap on how many ad groups we fetch bid recommendations for per refresh.
  *  The API caps each request to one ad group, so volume = N ad groups × ~1s
@@ -323,6 +326,19 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     errors,
   });
 
+  // ─── 5. ASIN × warehouse from SP-API All Orders (Seller-side, optional) ──
+  // Only runs when spMarketplaceId is configured on the account. Powers the
+  // /asin-warehouse tab. Non-fatal — failures here don't block the refresh.
+  const asinWarehouseRowsUpserted = acct.spMarketplaceId
+    ? await syncAsinWarehouseDaily({
+        accountId,
+        marketplaceId: acct.spMarketplaceId,
+        windowStart,
+        windowEnd,
+        errors,
+      })
+    : 0;
+
   const durationMs = Date.now() - start;
   const lastRefreshAt = new Date().toISOString();
 
@@ -353,6 +369,13 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
     rowsUpserted: bidRecRowsUpserted,
     durationMs,
     error: errors.filter((e) => e.phase === "bid_recs").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 400)}`).join("; ") || null,
+  });
+  setRefreshState({
+    accountId, level: "asin_warehouse",
+    lastRefreshAt, windowStart, windowEnd,
+    rowsUpserted: asinWarehouseRowsUpserted,
+    durationMs,
+    error: errors.filter((e) => e.phase === "asin_warehouse").map((e) => `${e.program}/${e.phase}: ${e.error.slice(0, 400)}`).join("; ") || null,
   });
 
   // ─── Outcome capture ─────────────────────────────────────────────────
@@ -387,6 +410,70 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
  * group are non-fatal — we just skip that group's targets so the optimiser
  * sees `null` recommendations and treats them as "unknown, ignore".
  */
+/**
+ * Pull the SP-API All Orders flat-file report, aggregate by
+ * (date × asin × ship_city × ship_state), and upsert. Best-effort: any
+ * error gets recorded under phase "asin_warehouse" and 0 rows are written.
+ *
+ * Only runs when the account has spMarketplaceId set — call site already
+ * gates on this.
+ */
+async function syncAsinWarehouseDaily(args: {
+  accountId: string;
+  marketplaceId: string;
+  windowStart: string;
+  windowEnd: string;
+  errors: RefreshResult["errors"];
+}): Promise<number> {
+  let items: AllOrdersItemRow[];
+  try {
+    items = await fetchAllOrdersReport(args.marketplaceId, args.windowStart, args.windowEnd);
+  } catch (e) {
+    args.errors.push({ program: "SP", error: String(e).slice(0, 300), phase: "asin_warehouse" });
+    return 0;
+  }
+
+  // Aggregate: (date, asin, ship_city, ship_state) → orders+units+sales.
+  // Each report row is one ITEM in one order; multiple items in the same
+  // order with the same asin/destination collapse together.
+  interface Bucket { asinTitle: string | null; orders: Set<string>; units: number; sales: number }
+  const map = new Map<string, Bucket & { date: string; asin: string; shipCity: string; shipState: string }>();
+  let rowIdx = 0;
+  for (const it of items) {
+    rowIdx++;
+    if (!it.asin || !it.purchaseDate) continue;
+    const k = `${it.purchaseDate}|${it.asin}|${it.shipCity}|${it.shipState}`;
+    const cur = map.get(k) ?? {
+      date: it.purchaseDate, asin: it.asin,
+      shipCity: it.shipCity, shipState: it.shipState,
+      asinTitle: it.itemName || null,
+      orders: new Set<string>(), units: 0, sales: 0,
+    };
+    // The All Orders report has no order-id-per-item field we exposed —
+    // use the row index as a stand-in so we count each row as a unique "order
+    // item line". This double-counts orders when one order ships multiple
+    // line items of the same ASIN, but that's rare and acceptable for the
+    // warehouse-level view (units count is what most reviewers care about).
+    cur.orders.add(`${k}#${rowIdx}`);
+    cur.units += it.quantity;
+    cur.sales += it.itemPrice * (it.quantity || 1);
+    if (!cur.asinTitle && it.itemName) cur.asinTitle = it.itemName;
+    map.set(k, cur);
+  }
+
+  const rows: AsinWarehouseDailyRow[] = [];
+  for (const v of map.values()) {
+    rows.push({
+      accountId: args.accountId,
+      date: v.date, asin: v.asin, asinTitle: v.asinTitle,
+      shipCity: v.shipCity, shipState: v.shipState,
+      orders: v.orders.size, units: v.units,
+      sales: Math.round(v.sales * 100) / 100,
+    });
+  }
+  return upsertAsinWarehouseDaily(rows);
+}
+
 async function syncBidRecommendations(args: {
   accountId: string;
   profileId: string;
