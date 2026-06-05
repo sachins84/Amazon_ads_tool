@@ -20,8 +20,9 @@ import {
 import { listAllCampaigns }      from "./campaigns";
 import { listAllAdGroups }       from "./adgroups";
 import { listSPKeywords, listSPProductTargets, getSPBidRecommendations } from "./targeting";
-import { fetchAllOrdersReport, type AllOrdersItemRow } from "@/lib/sp-api/all-orders-report";
+import { fetchAllOrdersReportCached, type AllOrdersItemRow } from "@/lib/sp-api/all-orders-report";
 import { upsertAsinWarehouseDaily, type AsinWarehouseDailyRow } from "@/lib/db/asin-warehouse-store";
+import { brandKeyFromAccountName, inferBrandFromTitle } from "@/lib/sp-api/brand-split-sales";
 import {
   fetchAllProgramReports, fetchAllAdGroupReports, fetchTargetingReport,
   fetchSPPlacementReport, fetchSPAdvertisedProductReport,
@@ -332,6 +333,7 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   const asinWarehouseRowsUpserted = acct.spMarketplaceId
     ? await syncAsinWarehouseDaily({
         accountId,
+        accountName: acct.name,
         marketplaceId: acct.spMarketplaceId,
         windowStart,
         windowEnd,
@@ -420,6 +422,7 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
  */
 async function syncAsinWarehouseDaily(args: {
   accountId: string;
+  accountName: string;
   marketplaceId: string;
   windowStart: string;
   windowEnd: string;
@@ -427,10 +430,28 @@ async function syncAsinWarehouseDaily(args: {
 }): Promise<number> {
   let items: AllOrdersItemRow[];
   try {
-    items = await fetchAllOrdersReport(args.marketplaceId, args.windowStart, args.windowEnd);
+    // Same Seller Central + same marketplace = same report across all 4
+    // brand-refreshes — the cached fetcher dedupes concurrent calls and
+    // memoises for 10 min so the report only gets generated once.
+    items = await fetchAllOrdersReportCached(args.marketplaceId, args.windowStart, args.windowEnd);
   } catch (e) {
     args.errors.push({ program: "SP", error: String(e).slice(0, 300), phase: "asin_warehouse" });
     return 0;
+  }
+
+  // One Seller Central authorization spans all 4 brands' ASINs — filter the
+  // report to rows that match THIS brand by title pattern (manmatters /
+  // bebodywise / littlejoys). Falls back to the full report if the account
+  // name doesn't carry a brand token (defensive — shouldn't happen on prod).
+  const brandKey = brandKeyFromAccountName(args.accountName);
+  if (brandKey) {
+    const before = items.length;
+    items = items.filter((it) => inferBrandFromTitle(it.itemName) === brandKey);
+    args.errors.push({
+      program: "SP",
+      error: `BRAND_FILTER: ${args.accountName} matched brand=${brandKey}, kept ${items.length}/${before} order-item rows`,
+      phase: "asin_warehouse",
+    });
   }
 
   // Aggregate: (date, asin, ship_city, ship_state) → orders+units+sales.

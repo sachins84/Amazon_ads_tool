@@ -139,3 +139,33 @@ export async function fetchAllOrdersReport(
   const reportId = await createAllOrdersReport(marketplaceId, startDate, endDate);
   return waitForAllOrdersReport(reportId);
 }
+
+/**
+ * In-flight de-dup + 10-min memo, same pattern as brand-split-sales.ts.
+ * One Seller Central account = one All Orders report; if four brand
+ * refreshes fire concurrently they all share the single underlying SP
+ * report instead of each kicking off its own (Amazon-side report
+ * creation is ~30s-2min and rate-limited at 1/minute for some types).
+ */
+const inflight = new Map<string, Promise<AllOrdersItemRow[]>>();
+const memo: Map<string, { at: number; rows: AllOrdersItemRow[] }> = new Map();
+const MEMO_TTL_MS = 10 * 60 * 1000;
+
+export async function fetchAllOrdersReportCached(
+  marketplaceId: string,
+  startDate: string,
+  endDate: string,
+): Promise<AllOrdersItemRow[]> {
+  const key = `${marketplaceId}|${startDate}|${endDate}`;
+  const cached = memo.get(key);
+  if (cached && Date.now() - cached.at < MEMO_TTL_MS) return cached.rows;
+
+  const existing = inflight.get(key);
+  if (existing) return existing;
+
+  const p = fetchAllOrdersReport(marketplaceId, startDate, endDate)
+    .then((rows) => { memo.set(key, { at: Date.now(), rows }); return rows; })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
