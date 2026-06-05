@@ -330,12 +330,20 @@ export async function refreshAccountRecent(accountId: string, days = 21): Promis
   // ─── 5. ASIN × warehouse from SP-API All Orders (Seller-side, optional) ──
   // Only runs when spMarketplaceId is configured on the account. Powers the
   // /asin-warehouse tab. Non-fatal — failures here don't block the refresh.
+  // All Orders is a Seller-wide flat-file (every brand's orders). A 14-day
+  // window for a multi-brand Seller account exceeds Amazon's report-queue
+  // tolerance (881906020609 took >60 min and never finished). Pull a
+  // trailing 3-day slice on each refresh instead — small enough to process
+  // in 1-3 min, and the daily cron accumulates days into the DB so
+  // "Last 14D" is built up over a fortnight of refreshes. The UI's
+  // Yesterday + Last 7D / 14D queries all read out of the persistent table.
+  const ASIN_WAREHOUSE_WINDOW_DAYS = 3;
   const asinWarehouseRowsUpserted = acct.spMarketplaceId
     ? await syncAsinWarehouseDaily({
         accountId,
         accountName: acct.name,
         marketplaceId: acct.spMarketplaceId,
-        windowStart,
+        windowStart: daysAgoUTC(ASIN_WAREHOUSE_WINDOW_DAYS),
         windowEnd,
         errors,
       })
