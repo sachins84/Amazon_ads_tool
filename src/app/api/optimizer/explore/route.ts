@@ -60,6 +60,46 @@ function bundle(spend: number, sales: number, orders: number, clicks: number, im
   };
 }
 
+/** Inclusive list of YYYY-MM-DD dates between start and end (shared sparkline axis). */
+function enumerateDates(start: string, end: string): string[] {
+  const out: string[] = [];
+  const s = new Date(start + "T00:00:00Z");
+  const e = new Date(end + "T00:00:00Z");
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return out;
+  for (const d = new Date(s); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/**
+ * Per-entity daily ACOS series aligned to `axis`. Each entry is ACOS% for that
+ * day, or null when the day had no sales (so the sparkline shows a gap rather
+ * than a misleading zero). Drives the "how is it trending" view in the
+ * Explorer alongside the absolute 7d number.
+ */
+function buildDailyAcos(
+  rows: { id: string; date: string; cost: number; sales: number }[],
+  axis: string[],
+): Map<string, (number | null)[]> {
+  const byId = new Map<string, Map<string, { spend: number; sales: number }>>();
+  for (const r of rows) {
+    let m = byId.get(r.id);
+    if (!m) { m = new Map(); byId.set(r.id, m); }
+    const cur = m.get(r.date) ?? { spend: 0, sales: 0 };
+    cur.spend += r.cost; cur.sales += r.sales;
+    m.set(r.date, cur);
+  }
+  const out = new Map<string, (number | null)[]>();
+  for (const [id, m] of byId) {
+    out.set(id, axis.map((d) => {
+      const v = m.get(d);
+      return v && v.sales > 0 ? (v.spend / v.sales) * 100 : null;
+    }));
+  }
+  return out;
+}
+
 function exploreAccount(accountId: string, dateRange: string) {
   const r7 = dateRangeFromPreset(dateRange);
   const meta = readCampaignMeta(accountId);
@@ -80,6 +120,8 @@ function exploreAccount(accountId: string, dateRange: string) {
   const notes = countNotesByTarget(accountId);
   const { ai: aiSug, manual: manualSug } = sug;
   const topShare = topSpendShareByCampaign(accountId, r7);
+  const dates = enumerateDates(r7.startDate, r7.endDate);
+  const dailyAcos = buildDailyAcos(rows.map((r) => ({ id: r.campaignId, date: r.date, cost: r.cost, sales: r.sales })), dates);
 
   let pSpend = 0, pSales = 0, pOrders = 0, pClicks = 0, pImpressions = 0;
   const campaigns = meta.map((m) => {
@@ -98,6 +140,7 @@ function exploreAccount(accountId: string, dateRange: string) {
       dailyBudget: m.dailyBudget,
       targetAcos: resolveTarget(programKey, intent),
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
+      dailyAcos: dailyAcos.get(m.campaignId) ?? [],
       topSpendShare7d:  topShare.get(m.campaignId) ?? null,
       aiSuggestion:     aiSug.get(m.campaignId) ?? null,
       manualSuggestion: manualSug.get(m.campaignId) ?? null,
@@ -109,6 +152,7 @@ function exploreAccount(accountId: string, dateRange: string) {
   return {
     portfolio: bundle(pSpend, pSales, pOrders, pClicks, pImpressions),
     campaigns,
+    dates,
     range: r7,
   };
 }
@@ -158,6 +202,16 @@ function exploreCampaign(accountId: string, campaignId: string, dateRange: strin
   const { ai: aiSug, manual: manualSug } = sug;
   const childBuckets = childBucketsByAdGroup(accountId, campaignId);
   const notes = countNotesByTarget(accountId);
+  // Daily ACOS axis: direct ad-group rows where present, else the SP targeting
+  // roll-up (same source the totals above use), keyed by ad group.
+  const dates = enumerateDates(r7.startDate, r7.endDate);
+  const agDailyRows = [
+    ...adGroupRows.map((r) => ({ id: r.adGroupId, date: r.date, cost: r.cost, sales: r.sales })),
+    ...tgRowsForRollup
+      .filter((r) => r.program === "SP" && !adGroupsWithDirectData.has(r.adGroupId))
+      .map((r) => ({ id: r.adGroupId, date: r.date, cost: r.cost, sales: r.sales })),
+  ];
+  const dailyAcos = buildDailyAcos(agDailyRows, dates);
   const adGroups = adGroupMeta.map((m) => {
     const a = agAgg.get(m.adGroupId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
     return {
@@ -168,6 +222,7 @@ function exploreCampaign(accountId: string, campaignId: string, dateRange: strin
       state: m.state,
       defaultBid: m.defaultBid,
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
+      dailyAcos: dailyAcos.get(m.adGroupId) ?? [],
       aiSuggestion:     aiSug.get(m.adGroupId) ?? null,
       manualSuggestion: manualSug.get(m.adGroupId) ?? null,
       childBuckets: childBuckets.get(m.adGroupId) ?? {},
@@ -176,6 +231,7 @@ function exploreCampaign(accountId: string, campaignId: string, dateRange: strin
   });
 
   return {
+    dates,
     campaign: {
       campaignId: campMeta.campaignId,
       name: campMeta.name,
@@ -228,6 +284,8 @@ function exploreAdGroup(accountId: string, adGroupId: string, dateRange: string)
   const aiSug     = new Map([...kwSug.ai, ...patSug.ai]);
   const manualSug = new Map([...kwSug.manual, ...patSug.manual]);
   const notes = countNotesByTarget(accountId);
+  const dates = enumerateDates(r7.startDate, r7.endDate);
+  const dailyAcos = buildDailyAcos(tgtRows.map((r) => ({ id: r.targetId, date: r.date, cost: r.cost, sales: r.sales })), dates);
   const targets = tgtMeta.map((m) => {
     const a = tgtAgg.get(m.targetId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
     const noteKey = m.kind === "KEYWORD" ? "KEYWORD" : "PRODUCT_TARGET";
@@ -243,12 +301,14 @@ function exploreAdGroup(accountId: string, adGroupId: string, dateRange: string)
       state: m.state,
       bid: m.bid,
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
+      dailyAcos: dailyAcos.get(m.targetId) ?? [],
       aiSuggestion:     aiSug.get(m.targetId) ?? null,
       manualSuggestion: manualSug.get(m.targetId) ?? null,
     };
   });
 
   return {
+    dates,
     adGroup: {
       adGroupId: agMeta.adGroupId,
       name: agMeta.name,

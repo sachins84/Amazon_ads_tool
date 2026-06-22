@@ -8,6 +8,7 @@ import { KpiCardSkeleton, ChartSkeleton } from "@/components/shared/Skeleton";
 import { fetchOverview, fetchAllBrands, refreshAccountMetrics, type OverviewData, type AllBrandsResponse, type OverviewCampaignRow } from "@/lib/api-client";
 import { fmt, currencySymbol } from "@/lib/utils";
 import { useAccount } from "@/lib/account-context";
+import { ALL_INTENTS, intentLabel, intentColor, type Intent } from "@/lib/amazon-api/intent";
 
 interface BusinessSales {
   summary: { totalRevenue: number; totalOrders: number; totalUnits: number };
@@ -16,11 +17,26 @@ interface BusinessSales {
   code?: string;
 }
 
+interface ProductRow {
+  asin: string; title: string | null;
+  spend: number; sales: number; orders: number; clicks: number; impressions: number;
+  acos: number | null; roas: number | null;
+  byIntent: Record<Intent, number>;
+}
+interface ProductsResp {
+  currency?: string;
+  products?: ProductRow[];
+  totals?: { spend: number; sales: number; orders: number; acos: number | null; asins: number };
+  intentTotals?: Record<Intent, number>;
+  code?: string; error?: string;
+}
+
 export default function MasterOverviewPage() {
   const [dateRange, setDateRange] = useState("Last 7D");
   const [overview, setOverview]   = useState<OverviewData | null>(null);
   const [allBrands, setAllBrands] = useState<AllBrandsResponse | null>(null);
   const [businessSales, setBusinessSales] = useState<BusinessSales | null>(null);
+  const [products, setProducts]   = useState<ProductsResp | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -35,16 +51,18 @@ export default function MasterOverviewPage() {
     try {
       if (isAllBrands) {
         const data = await fetchAllBrands({ dateRange });
-        setAllBrands(data); setOverview(null); setBusinessSales(null);
+        setAllBrands(data); setOverview(null); setBusinessSales(null); setProducts(null);
       } else {
-        // Pull ad overview + SP-API business sales in parallel. The sales
-        // endpoint can fail or return CONFIG_MISSING (no SP token configured
-        // for the brand) — that's non-fatal.
-        const [overviewData, salesRes] = await Promise.all([
+        // Pull ad overview + SP-API business sales + per-product spend in
+        // parallel. The sales and products endpoints can fail or return
+        // CONFIG_MISSING — both are non-fatal decorations.
+        const [overviewData, salesRes, productsRes] = await Promise.all([
           fetchOverview({ accountId, dateRange }),
           fetch(`/api/sales?accountId=${accountId}&dateRange=${encodeURIComponent(dateRange)}&source=report`).then((r) => r.json()).catch(() => null),
+          fetch(`/api/overview/products?accountId=${accountId}&dateRange=${encodeURIComponent(dateRange)}`).then((r) => r.json()).catch(() => null),
         ]);
         setOverview(overviewData); setAllBrands(null);
+        setProducts(productsRes && !productsRes.code && !productsRes.error ? productsRes : null);
         // Belt-and-braces: only accept the response if it has the expected
         // shape. Any error / code / missing summary → render the hint card,
         // not garbage that crashes downstream.
@@ -173,7 +191,7 @@ export default function MasterOverviewPage() {
         {isAllBrands ? (
           <AllBrandsView data={allBrands} loading={loading} />
         ) : (
-          <SingleBrandView data={overview} businessSales={businessSales} loading={loading} currency={currency} chartData={chartData} topCampaigns={topCampaigns} />
+          <SingleBrandView data={overview} businessSales={businessSales} products={products} loading={loading} currency={currency} chartData={chartData} topCampaigns={topCampaigns} />
         )}
       </main>
 
@@ -185,10 +203,11 @@ export default function MasterOverviewPage() {
 // ─── Single-brand view ───────────────────────────────────────────────────────
 
 function SingleBrandView({
-  data, businessSales, loading, currency, chartData, topCampaigns,
+  data, businessSales, products, loading, currency, chartData, topCampaigns,
 }: {
   data: OverviewData | null;
   businessSales: BusinessSales | null;
+  products: ProductsResp | null;
   loading: boolean;
   currency: string;
   chartData: { date: string; spend: number; sales: number }[];
@@ -271,6 +290,8 @@ function SingleBrandView({
       {!loading && topCampaigns.length > 0 && (
         <CampaignTable rows={topCampaigns} currency={currency} />
       )}
+
+      {!loading && <ProductSpendTable data={products} currency={currency} />}
 
       {data?.errors && (data.errors.campaigns.length + data.errors.reports.length) > 0 && (
         <div style={{ marginTop: 16, padding: 12, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 11, color: "var(--text-secondary)" }}>
@@ -489,6 +510,127 @@ function CampaignTable({ rows, currency }: { rows: OverviewCampaignRow[]; curren
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ─── Product-level spend by intent (SP only) ─────────────────────────────────
+
+function ProductSpendTable({ data, currency }: { data: ProductsResp | null; currency: string }) {
+  // Intents that actually carry spend, ordered by total spend desc — keeps the
+  // legend and stacked bars focused on Brand / Generic / Competition etc. that
+  // are live for this brand.
+  const activeIntents = useMemo(() => {
+    const t = data?.intentTotals;
+    if (!t) return [] as Intent[];
+    return ALL_INTENTS.filter((i) => (t[i] ?? 0) > 0).sort((a, b) => (t[b] ?? 0) - (t[a] ?? 0));
+  }, [data]);
+
+  const products = data?.products ?? [];
+  const intentTotal = activeIntents.reduce((s, i) => s + (data?.intentTotals?.[i] ?? 0), 0);
+
+  return (
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, marginTop: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>Product spend by intent</h3>
+        <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 6px" }}>
+          Sponsored Products only
+        </span>
+      </div>
+      <p style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 12 }}>
+        Per-ASIN ad spend split across Brand / Generic / Competition / Auto / Product-targeting. SB &amp; SD have no per-product breakdown, so they&apos;re not included here.
+      </p>
+
+      {!data ? (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>
+          No per-product data for this brand/range. It populates from the SP advertised-product report on the next refresh.
+        </div>
+      ) : products.length === 0 ? (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>
+          No Sponsored Products spend in this range.
+        </div>
+      ) : (
+        <>
+          {/* Portfolio-level intent mix */}
+          {intentTotal > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <IntentStackBar byIntent={data!.intentTotals!} total={intentTotal} intents={activeIntents} height={10} />
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 8 }}>
+                {activeIntents.map((i) => {
+                  const v = data!.intentTotals![i] ?? 0;
+                  const pct = intentTotal > 0 ? (v / intentTotal) * 100 : 0;
+                  return (
+                    <span key={i} style={{ fontSize: 11, color: "var(--text-secondary)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: intentColor(i).fg }} />
+                      {intentLabel(i)} · {fmt(v, "currency", currency)} ({pct.toFixed(0)}%)
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                  <Th align="left">Product (ASIN)</Th>
+                  <Th align="right">Spend</Th>
+                  <Th align="left" title="Share of this product's spend across intents">Intent mix</Th>
+                  <Th align="right">Sales</Th>
+                  <Th align="right">Orders</Th>
+                  <Th align="right">ACOS</Th>
+                  <Th align="right">ROAS</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.slice(0, 25).map((p) => (
+                  <tr key={p.asin} style={{ borderBottom: "1px solid var(--bg-input)" }}>
+                    <Td style={{ maxWidth: 320 }}>
+                      <div style={{ color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.title ?? p.asin}>
+                        {p.title ?? p.asin}
+                      </div>
+                      {p.title && <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.asin}</div>}
+                    </Td>
+                    <Td align="right" style={{ color: "var(--text-primary)" }}>{fmt(p.spend, "currency", currency)}</Td>
+                    <Td style={{ minWidth: 160 }}>
+                      <IntentStackBar byIntent={p.byIntent} total={p.spend} intents={activeIntents} height={8} />
+                    </Td>
+                    <Td align="right" style={{ color: "var(--text-secondary)" }}>{fmt(p.sales, "currency", currency)}</Td>
+                    <Td align="right" style={{ color: "var(--text-secondary)" }}>{Math.round(p.orders)}</Td>
+                    <Td align="right" style={{ color: p.acos != null && p.acos > 0 && p.acos <= 25 ? "#22c55e" : p.acos != null && p.acos > 25 ? "#ef4444" : "var(--text-muted)" }}>
+                      {p.acos != null ? `${p.acos.toFixed(1)}%` : "—"}
+                    </Td>
+                    <Td align="right" style={{ color: p.roas != null && p.roas >= 2 ? "#22c55e" : p.roas != null && p.roas >= 1 ? "#f59e0b" : "var(--text-muted)" }}>
+                      {p.roas != null ? `${p.roas.toFixed(2)}x` : "—"}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {products.length > 25 && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Showing top 25 of {products.length} ASINs by spend.</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Thin horizontal stacked bar of intent spend shares. */
+function IntentStackBar({ byIntent, total, intents, height }: {
+  byIntent: Record<Intent, number>; total: number; intents: Intent[]; height: number;
+}) {
+  if (total <= 0) return <div style={{ height, background: "var(--bg-input)", borderRadius: height / 2 }} />;
+  return (
+    <div style={{ display: "flex", height, borderRadius: height / 2, overflow: "hidden", background: "var(--bg-input)" }}>
+      {intents.map((i) => {
+        const v = byIntent[i] ?? 0;
+        if (v <= 0) return null;
+        const pct = (v / total) * 100;
+        return <div key={i} style={{ width: `${pct}%`, height: "100%", background: intentColor(i).fg }} title={`${intentLabel(i)}: ${pct.toFixed(0)}%`} />;
+      })}
     </div>
   );
 }

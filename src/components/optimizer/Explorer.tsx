@@ -40,12 +40,14 @@ interface CampaignNode {
   intent: string; state: string | null; dailyBudget: number | null;
   targetAcos: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
   topSpendShare7d: number | null;
+  dailyAcos?: (number | null)[];
   childBuckets: BucketCounts;
   notesCount: number;
 }
 interface AdGroupNode {
   adGroupId: string; name: string | null; campaignId: string; program: string;
   state: string | null; defaultBid: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
+  dailyAcos?: (number | null)[];
   childBuckets: BucketCounts;
   notesCount: number;
 }
@@ -53,6 +55,7 @@ interface TargetNode {
   targetId: string; adGroupId: string; campaignId: string; program: string;
   kind: string | null; matchType: string | null; display: string | null;
   state: string | null; bid: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
+  dailyAcos?: (number | null)[];
   notesCount: number;
 }
 
@@ -195,6 +198,7 @@ function AccountView({ data, accountId, dataWindow, bucketFilter, currency, revi
           subtitle: `${displayProgram(c.programKey)} · ${c.intent} · budget ${fmt(c.dailyBudget ?? 0, "currency", currency)}/d${c.topSpendShare7d != null ? ` · TOP placement ${c.topSpendShare7d.toFixed(0)}%` : ""}`,
           targetAcos: c.targetAcos,
           m7d: c.m7d,
+          dailyAcos: c.dailyAcos,
           aiSuggestion:     c.aiSuggestion,
           manualSuggestion: c.manualSuggestion,
           childBuckets: c.childBuckets,
@@ -244,6 +248,7 @@ function CampaignView({ data, accountId, dataWindow, level, bucketFilter, curren
           subtitle: `Default bid ${fmt(a.defaultBid ?? 0, "currency", currency)} · ${a.state ?? "—"}`,
           targetAcos: data.campaign.targetAcos,
           m7d: a.m7d,
+          dailyAcos: a.dailyAcos,
           aiSuggestion:     a.aiSuggestion,
           manualSuggestion: a.manualSuggestion,
           childBuckets: a.childBuckets,
@@ -295,6 +300,7 @@ function AdGroupView({ data, accountId, dataWindow, bucketFilter, currency, revi
           subtitle: `${t.kind ?? ""}${t.matchType ? ` · ${t.matchType}` : ""}${t.state ? ` · ${t.state}` : ""}${t.bid != null ? ` · bid ${fmt(t.bid, "currency", currency)}` : ""}`,
           targetAcos: null,
           m7d: t.m7d,
+          dailyAcos: t.dailyAcos,
           aiSuggestion:     t.aiSuggestion,
           manualSuggestion: t.manualSuggestion,
           notesCount: t.notesCount,
@@ -362,6 +368,7 @@ interface RowItem {
   subtitle: string;
   targetAcos: number | null;
   m7d: Metric;
+  dailyAcos?: (number | null)[];
   aiSuggestion:     SuggestionLite | null;
   manualSuggestion: SuggestionLite | null;
   childBuckets?: BucketCounts;
@@ -388,7 +395,7 @@ function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowL
               <Th align="right">Spend</Th>
               <Th align="right">Sales</Th>
               <Th align="right">Orders</Th>
-              <Th align="right">ACOS</Th>
+              <Th align="right">ACOS · 7d trend</Th>
               <Th align="right">Target</Th>
               <Th>Bucket / Why</Th>
               <Th align="right">Actions</Th>
@@ -431,8 +438,13 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
       <td style={tdR}>{fmt(r.m7d.spend, "currency", currency)}</td>
       <td style={tdR}>{fmt(r.m7d.sales, "currency", currency)}</td>
       <td style={tdR}>{r.m7d.orders}</td>
-      <td style={{ ...tdR, color: acosColor, fontWeight: acosOver ? 600 : 400 }}>
-        {r.m7d.acos != null ? `${r.m7d.acos.toFixed(1)}%` : "—"}
+      <td style={tdR}>
+        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+          <span style={{ color: acosColor, fontWeight: acosOver ? 600 : 400 }}>
+            {r.m7d.acos != null ? `${r.m7d.acos.toFixed(1)}%` : "—"}
+          </span>
+          <AcosTrend series={r.dailyAcos} target={r.targetAcos} />
+        </div>
       </td>
       <td style={{ ...tdR, color: "var(--text-secondary)" }}>
         {r.targetAcos != null ? `${r.targetAcos.toFixed(1)}%` : "—"}
@@ -665,6 +677,59 @@ function ChildBucketBadges({ counts }: { counts: BucketCounts | undefined }) {
           +{n} {BUCKET_COLOR[b].label}
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Compact 7-day ACOS trend: a tiny sparkline of daily ACOS + a direction
+ * arrow. Days with no sales are gaps (null) and are skipped. Direction
+ * compares the recent half of available days against the earlier half —
+ * lower ACOS is better, so a downward trend is "improving" (green).
+ * The dashed line marks the target when it falls inside the plotted range,
+ * so reviewers see the absolute cutoff next to the direction of travel.
+ */
+function AcosTrend({ series, target }: { series?: (number | null)[]; target: number | null }) {
+  const data = series ?? [];
+  const present = data.filter((v): v is number => v != null);
+  if (present.length < 2) {
+    return <span style={{ fontSize: 9, color: "var(--text-muted)" }}>not enough data</span>;
+  }
+
+  const half = Math.floor(present.length / 2);
+  const earlier = present.slice(0, half).reduce((a, b) => a + b, 0) / half;
+  const recent  = present.slice(-half).reduce((a, b) => a + b, 0) / half;
+  const delta = earlier > 0 ? (recent - earlier) / earlier : 0;
+  const dir: "improving" | "worsening" | "flat" =
+    delta < -0.1 ? "improving" : delta > 0.1 ? "worsening" : "flat";
+
+  const color = dir === "improving" ? "var(--c-success-text)"
+              : dir === "worsening" ? "var(--c-danger-text)"
+              : "var(--text-secondary)";
+  const arrow = dir === "improving" ? "↓" : dir === "worsening" ? "↑" : "→";
+
+  const w = 56, h = 16;
+  const lo = Math.min(...present), hi = Math.max(...present);
+  const span = hi - lo || 1;
+  const n = data.length;
+  const x = (i: number) => (n > 1 ? (i / (n - 1)) * w : w / 2);
+  const y = (v: number) => h - ((v - lo) / span) * (h - 2) - 1;
+  const pts = data
+    .map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`))
+    .filter(Boolean)
+    .join(" ");
+  const showTarget = target != null && target >= lo && target <= hi;
+
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+         title={`7d ACOS ${dir} (${recent.toFixed(1)}% recent vs ${earlier.toFixed(1)}% earlier)`}>
+      <svg width={w} height={h} style={{ display: "block" }}>
+        {showTarget && (
+          <line x1={0} x2={w} y1={y(target!)} y2={y(target!)} stroke="var(--text-muted)" strokeWidth={0.5} strokeDasharray="2 2" />
+        )}
+        <polyline points={pts} fill="none" stroke={color} strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <span style={{ fontSize: 10, color, fontWeight: 600 }}>{arrow}</span>
     </div>
   );
 }

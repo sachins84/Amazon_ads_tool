@@ -281,14 +281,19 @@ function prettyDate(d: string): string {
 }
 
 function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: string; onUpdate: (id: string, status: SuggestionStatus, apply?: boolean) => void }) {
+  const [notesOpen, setNotesOpen] = useState(false);
   const statusColor = s.status === "PENDING" ? "var(--c-indigo-text)"
     : s.status === "APPROVED" ? "var(--c-warning-text)"
     : s.status === "APPLIED" ? "var(--c-success-text)"
     : s.status === "DISMISSED" ? "var(--text-muted)"
     : s.status === "HELD" ? "var(--text-muted)"
     : "var(--c-danger-text)";
+  // Optimizer suggestion target types map 1:1 to the entity-note target types.
+  const noteTargetType = (["CAMPAIGN", "AD_GROUP", "KEYWORD", "PRODUCT_TARGET"] as const)
+    .find((t) => t === s.targetType);
   return (
-    <div style={{ borderTop: "1px solid var(--bg-input)", paddingTop: 10, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+    <div style={{ borderTop: "1px solid var(--bg-input)", paddingTop: 10 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ ...pill("var(--border)", "var(--c-indigo-text)"), fontSize: 10 }}>{s.targetType}</span>
@@ -308,6 +313,20 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
             {s.expectedImpact.note ?? ""}
           </div>
         )}
+        {/* Why this action was taken: reviewer's decision note (captured on
+            dismiss / hold / approve) + who decided it. */}
+        {(s.decisionNote || s.reviewer) && (
+          <div style={{ fontSize: 11, marginTop: 4, display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+            <span style={{ ...pill("var(--bg-input)", "var(--text-secondary)"), fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em" }}>Decision</span>
+            {s.decisionNote && <span style={{ color: "var(--text-primary)" }}>{s.decisionNote}</span>}
+            {s.reviewer && <span style={{ color: "var(--text-muted)" }}>— {s.reviewer}</span>}
+          </div>
+        )}
+        {noteTargetType && (
+          <button onClick={() => setNotesOpen((v) => !v)} style={notesToggleBtn}>
+            💬 {notesOpen ? "Hide notes" : "Notes"}
+          </button>
+        )}
       </div>
       {s.status === "PENDING" && (
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -319,6 +338,47 @@ function SuggestionRow({ s, currency, onUpdate }: { s: Suggestion; currency: str
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button onClick={() => onUpdate(s.id, "APPLIED", true)} style={{ ...btnSecondary, color: "var(--c-indigo-text)", borderColor: "#6366f1" }} title="Push to Amazon">Apply to Amazon</button>
           <button onClick={() => onUpdate(s.id, "DISMISSED")} style={{ ...btnSecondary, color: "var(--text-secondary)" }}>Dismiss</button>
+        </div>
+      )}
+    </div>
+    {notesOpen && noteTargetType && (
+      <NotesList accountId={s.accountId} targetType={noteTargetType} targetId={s.targetId} />
+    )}
+    </div>
+  );
+}
+
+// ─── Inline entity-notes (read-only, lazy-loaded) ────────────────────────────
+
+interface NoteRow { id: string; body: string; author: string | null; createdAt: string }
+
+function NotesList({ accountId, targetType, targetId }: { accountId: string; targetType: string; targetId: string }) {
+  const [notes, setNotes] = useState<NoteRow[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/notes?accountId=${accountId}&targetType=${targetType}&targetId=${targetId}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (live) setNotes(j.notes ?? []); })
+      .catch(() => { if (live) setNotes([]); });
+    return () => { live = false; };
+  }, [accountId, targetType, targetId]);
+
+  return (
+    <div style={{ marginTop: 8, background: "var(--bg-base)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 10px" }}>
+      {notes == null ? (
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Loading notes…</div>
+      ) : notes.length === 0 ? (
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No notes on this entity. Add them from the Optimizer.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {notes.map((n) => (
+            <div key={n.id}>
+              <div style={{ fontSize: 11, color: "var(--text-primary)", whiteSpace: "pre-wrap" }}>{n.body}</div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                {n.author ?? "anonymous"} · {new Date(n.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -363,3 +423,7 @@ function btnPrimary(disabled: boolean): React.CSSProperties {
 function pill(bg: string, fg: string): React.CSSProperties {
   return { padding: "2px 6px", borderRadius: 4, background: bg, color: fg, fontWeight: 600 };
 }
+const notesToggleBtn: React.CSSProperties = {
+  marginTop: 6, padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 500, cursor: "pointer",
+  background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)",
+};

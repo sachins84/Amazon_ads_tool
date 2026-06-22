@@ -86,6 +86,11 @@ export interface OptimizerSignals {
   roas7d: number;                            // kept for downstream reporting (1/ACOS)
   ordersTrend7vs3: "up" | "down" | "flat";
   acosTrend7vs3:   "improving" | "worsening" | "flat";
+  /** True when the recent 3-day ACOS has already come back to (≤) target even
+   *  though the 7-day figure is still elevated — i.e. the entity is recovering.
+   *  Lets the loser branches hold instead of cutting something that's fixing
+   *  itself. Null/false when acos3d is unknown. */
+  acosRecovered3d: boolean;
   cpc7d: number;
   ctr7d: number;
   topOfSearchIS7d: number | null;
@@ -119,7 +124,7 @@ export interface OptimizerSuggestion {
 export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): OptimizerSuggestion {
   const target = effectiveTarget(e, obj);
   const signals = computeSignals(e, target);
-  const { acos7d, acos3d, ordersTrend7vs3, acosTrend7vs3,
+  const { acos7d, acos3d, ordersTrend7vs3, acosTrend7vs3, acosRecovered3d,
           zeroOrderDays, topOfSearchIS7d, topSpendShare7d,
           budgetUtilization7d, bidVsSuggestedRatio,
           vsBenchmarkCpc, cpc7d } = signals;
@@ -166,10 +171,18 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
     // losing, the placement isn't going to fix this — cut harder.
     const saturatedTop = topSpendShare7d != null && topSpendShare7d > 60;
     const excessPct = ((acos7d - target) / target) * 100;
-    const intensified = saturatedTop ? excessPct * 0.65 : excessPct * 0.5;
+    // Trend factor: the 7d figure says "loser", but the direction of travel
+    // changes how hard we cut. Worsening → lean in harder; improving (but not
+    // yet recovered — recovery is caught below) → ease off and give it room.
+    const trendFactor = acosTrend7vs3 === "worsening" ? 1.2
+                      : acosTrend7vs3 === "improving" ? 0.6
+                      : 1.0;
+    const intensified = (saturatedTop ? excessPct * 0.65 : excessPct * 0.5) * trendFactor;
     const dropPct = Math.max(cap, -Math.min(Math.abs(cap), intensified));
     const newVal = clampDelta(e.currentValue, dropPct);
     const placementNote = saturatedTop ? ` ${topSpendShare7d!.toFixed(0)}% of spend already at TOP — no placement headroom.` : "";
+    const trendNote = acosTrend7vs3 === "worsening" ? " ACOS still worsening — cutting harder."
+                    : acosTrend7vs3 === "improving" ? " ACOS trending down though — eased the cut to give the recovery room." : "";
     // If the campaign isn't even hitting budget today, a budget cut is largely
     // cosmetic — surface that so reviewers know to fix bids/targeting instead.
     const budgetUnderfilledNote = (!isBidLevel && budgetUtilization7d != null && budgetUtilization7d < 60)
@@ -179,7 +192,7 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
       bucket: isBidLevel ? "BID_DOWN" : "SCALE_DOWN",
       actionType: isBidLevel ? "SET_BID" : "SET_BUDGET",
       actionValue: round2(newVal),
-      reason: `ACOS ${fmtPct(acos7d)} is ${fmtPct(excessPct)} above target ${fmtPct(target)} (7d).${placementNote}${budgetUnderfilledNote} Cut ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)}.`,
+      reason: `ACOS ${fmtPct(acos7d)} is ${fmtPct(excessPct)} above target ${fmtPct(target)} (7d).${placementNote}${trendNote}${budgetUnderfilledNote} Cut ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)}.`,
       confidence: saturatedTop ? 0.82 : 0.75, signals,
     };
   }
@@ -246,16 +259,29 @@ export function evaluateEntity(e: OptimizerEntity, obj: OptimizerObjective): Opt
     }
   }
 
-  // ── 6. Moderate loser → small trim ──
+  // ── 6. Moderate loser → small trim (trend-aware) ──
   if (acos7d != null && acos7d > target * 1.15 && spend7 >= obj.minSpendThreshold * 1.5) {
+    // Recovery hold: the 7d ACOS is elevated by earlier days, but the recent
+    // 3d has already come back to target. Cutting now would punish something
+    // that's already fixed itself — hold and watch instead.
+    if (acosRecovered3d && acos3d != null) {
+      return {
+        bucket: "HOLD", actionType: "ENABLE", actionValue: null,
+        reason: `7d ACOS ${fmtPct(acos7d)} is above target ${fmtPct(target)}, but recent 3d ACOS ${fmtPct(acos3d)} is already at/under target — recovering. Hold and monitor rather than cut.`,
+        confidence: 0.6, signals,
+      };
+    }
     const excessPct = ((acos7d - target) / target) * 100;
-    const dropPct = Math.max(-obj.maxScaleDownPct, -Math.min(obj.maxScaleDownPct, excessPct * 0.3));
+    // Improving (but not yet recovered) → trim only half as much.
+    const trendMult = acosTrend7vs3 === "improving" ? 0.5 : 1.0;
+    const dropPct = Math.max(-obj.maxScaleDownPct, -Math.min(obj.maxScaleDownPct, excessPct * 0.3 * trendMult));
     const newVal = clampDelta(e.currentValue, dropPct);
+    const trendNote = acosTrend7vs3 === "improving" ? " ACOS trending down — trimmed lightly while it recovers." : "";
     return {
       bucket: isBidLevel ? "BID_DOWN" : "SCALE_DOWN",
       actionType: isBidLevel ? "SET_BID" : "SET_BUDGET",
       actionValue: round2(newVal),
-      reason: `ACOS ${fmtPct(acos7d)} above target ${fmtPct(target)}. Trim ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)} to improve efficiency.`,
+      reason: `ACOS ${fmtPct(acos7d)} above target ${fmtPct(target)}. Trim ${isBidLevel ? "bid" : "budget"} ${pctLabel(dropPct)} to improve efficiency.${trendNote}`,
       confidence: 0.55, signals,
     };
   }
@@ -316,6 +342,7 @@ function computeSignals(e: OptimizerEntity, target: number): OptimizerSignals {
     roas7d: e.m7d.spend > 0 ? e.m7d.sales / e.m7d.spend : 0,
     ordersTrend7vs3: classifyVolumeTrend(ordersRecent3d / 3, ordersEarlier / 4),
     acosTrend7vs3:   classifyAcosTrend(acos3d, acosEarlier),
+    acosRecovered3d: acos3d != null && acos3d <= target,
     cpc7d, ctr7d,
     topOfSearchIS7d:    e.m7d.topOfSearchIS ?? null,
     topSpendShare7d:    e.topSpendShare7d ?? null,
