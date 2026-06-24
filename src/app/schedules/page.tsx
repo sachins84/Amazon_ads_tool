@@ -220,6 +220,7 @@ function ScheduleEditor({ accountId, defaultTz, schedule, onClose, onSaved }: {
   // Campaign picker
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [search, setSearch] = useState("");
+  const [stateFilter, setStateFilter] = useState<"ENABLED" | "PAUSED" | "ALL">("ENABLED");
   useEffect(() => {
     fetch(`/api/campaigns?accountId=${accountId}`, { cache: "no-store" })
       .then((r) => r.json()).then((j) => setCampaigns(j.campaigns ?? [])).catch(() => setCampaigns([]));
@@ -233,8 +234,14 @@ function ScheduleEditor({ accountId, defaultTz, schedule, onClose, onSaved }: {
   };
   const toggleDay = (v: number) => setDays((prev) => prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v]);
 
-  const visible = campaigns.filter((c) =>
-    !search || (c.name ?? c.campaignId).toLowerCase().includes(search.toLowerCase()));
+  const enabledCount = campaigns.filter((c) => c.state === "ENABLED").length;
+  const visible = campaigns.filter((c) => {
+    // Always keep already-selected campaigns visible so editing a schedule
+    // that includes paused campaigns still shows them under any filter.
+    const stateOk = stateFilter === "ALL" || c.state === stateFilter || selectedIds.has(c.campaignId);
+    const searchOk = !search || (c.name ?? c.campaignId).toLowerCase().includes(search.toLowerCase());
+    return stateOk && searchOk;
+  });
 
   const save = async () => {
     setErr(null);
@@ -294,8 +301,15 @@ function ScheduleEditor({ accountId, defaultTz, schedule, onClose, onSaved }: {
       </Field>
 
       <div style={{ marginTop: 14 }}>
-        <Field label={`Campaigns (${selected.length} selected)`}>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search campaigns…" style={{ ...input, marginBottom: 6 }} />
+        <Field label={`Campaigns (${selected.length} selected · ${enabledCount} enabled)`}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search campaigns…" style={{ ...input, flex: 1, minWidth: 160, marginBottom: 0 }} />
+            {(["ENABLED", "PAUSED", "ALL"] as const).map((f) => (
+              <button key={f} onClick={() => setStateFilter(f)} style={chip(stateFilter === f)}>
+                {f === "ENABLED" ? "Enabled" : f === "PAUSED" ? "Paused" : "All"}
+              </button>
+            ))}
+          </div>
           <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-base)" }}>
             {campaigns.length === 0 ? (
               <div style={{ ...muted, padding: 10 }}>No campaigns stored for this brand. Refresh from Amazon on the dashboard first.</div>
