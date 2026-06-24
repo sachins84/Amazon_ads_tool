@@ -13,6 +13,7 @@ const tabs = [
   { label: "Optimizer",         href: "/optimizer"         },
   { label: "Rules",             href: "/rules"             },
   { label: "Suggestions",       href: "/suggestions"       },
+  { label: "Schedules",         href: "/schedules"         },
   { label: "Brand Analytics",   href: "/brand-analytics"   },
 ];
 

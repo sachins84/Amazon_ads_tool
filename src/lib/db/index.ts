@@ -474,6 +474,57 @@ function migrate(db: Database.Database) {
       processed_at TEXT NOT NULL DEFAULT (datetime('now')),
       row_count    INTEGER
     );
+
+    -- ─── Campaign pause/unpause scheduler ────────────────────────────────
+    -- A named list of campaigns that automatically pause and/or resume at a
+    -- user-defined local time on chosen weekdays. A single minute-tick cron
+    -- (see instrumentation-node.ts) reads enabled rows and fires due actions
+    -- through the same write path as the manual Optimizer "Apply".
+    -- enabled defaults to 0 — a schedule does nothing until explicitly turned
+    -- on, because it makes real state changes to live Amazon campaigns.
+    CREATE TABLE IF NOT EXISTS pause_schedules (
+      id                     TEXT PRIMARY KEY,
+      account_id             TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      name                   TEXT NOT NULL,
+      enabled                INTEGER NOT NULL DEFAULT 0,
+      timezone               TEXT NOT NULL DEFAULT 'UTC',   -- IANA, e.g. Asia/Kolkata
+      pause_at               TEXT,                          -- 'HH:MM' local, nullable
+      resume_at              TEXT,                          -- 'HH:MM' local, nullable
+      days_of_week           TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6', -- CSV 0=Sun..6=Sat
+      last_pause_at          TEXT,                          -- UTC ts of last pause run
+      last_resume_at         TEXT,                          -- UTC ts of last resume run
+      last_pause_local_date  TEXT,                          -- 'YYYY-MM-DD' in schedule tz
+      last_resume_local_date TEXT,
+      last_error             TEXT,
+      created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_pause_schedules_account ON pause_schedules (account_id);
+
+    -- Campaigns belonging to a schedule. program is snapshotted so the
+    -- executor knows which update endpoint (SP/SB/SD) to call without a join.
+    CREATE TABLE IF NOT EXISTS pause_schedule_campaigns (
+      schedule_id  TEXT NOT NULL REFERENCES pause_schedules(id) ON DELETE CASCADE,
+      campaign_id  TEXT NOT NULL,
+      program      TEXT NOT NULL,        -- 'SP' | 'SB' | 'SD'
+      name         TEXT,                 -- display snapshot
+      PRIMARY KEY (schedule_id, campaign_id)
+    );
+
+    -- Audit log: one row per executed action (cron or manual).
+    CREATE TABLE IF NOT EXISTS pause_schedule_runs (
+      id               TEXT PRIMARY KEY,
+      schedule_id      TEXT NOT NULL REFERENCES pause_schedules(id) ON DELETE CASCADE,
+      account_id       TEXT NOT NULL,
+      action           TEXT NOT NULL,    -- 'PAUSE' | 'RESUME'
+      trigger          TEXT NOT NULL,    -- 'cron' | 'manual'
+      fired_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      campaigns_total  INTEGER NOT NULL DEFAULT 0,
+      ok_count         INTEGER NOT NULL DEFAULT 0,
+      fail_count       INTEGER NOT NULL DEFAULT 0,
+      message          TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_pause_schedule_runs ON pause_schedule_runs (schedule_id, fired_at);
   `);
 
   // One-off: settlement_fees_daily originally had column `asin` but the v2

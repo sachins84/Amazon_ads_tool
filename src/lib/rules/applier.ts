@@ -11,11 +11,45 @@ import { getAccount } from "@/lib/db/accounts";
 import { updateSPCampaigns, updateSBCampaigns, updateSDCampaigns } from "@/lib/amazon-api/campaigns";
 import { updateSPAdGroups } from "@/lib/amazon-api/adgroups";
 import { updateSPKeywords, updateSPProductTargets } from "@/lib/amazon-api/targeting";
-import type { Suggestion } from "./types";
+import type { Program, Suggestion } from "./types";
 
 export interface ApplyResult {
   ok: boolean;
   message: string;
+}
+
+/**
+ * Batch-set the state of many campaigns of one program (SP/SB/SD) in a single
+ * PUT, returning the inspected 207 result. Shared by the manual apply path and
+ * the pause/unpause scheduler. SD uses lowercase state + numeric campaignId.
+ */
+export async function setCampaignState(
+  profileId: string,
+  accountId: string,
+  program: Program,
+  campaignIds: string[],
+  state: "ENABLED" | "PAUSED",
+): Promise<ApplyResult> {
+  if (campaignIds.length === 0) return { ok: true, message: "no campaigns" };
+  try {
+    let resp: unknown;
+    if (program === "SP") {
+      resp = await updateSPCampaigns(profileId, campaignIds.map((campaignId) => ({ campaignId, state })), accountId);
+    } else if (program === "SB") {
+      resp = await updateSBCampaigns(profileId, campaignIds.map((campaignId) => ({ campaignId, state })), accountId);
+    } else if (program === "SD") {
+      resp = await updateSDCampaigns(
+        profileId,
+        campaignIds.map((campaignId) => ({ campaignId: Number(campaignId), state: state.toLowerCase() as "enabled" | "paused" })),
+        accountId,
+      );
+    } else {
+      return { ok: false, message: `unknown program ${program}` };
+    }
+    return inspect207(resp);
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function applySuggestion(s: Suggestion): Promise<ApplyResult> {

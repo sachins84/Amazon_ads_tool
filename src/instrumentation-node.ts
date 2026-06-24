@@ -72,6 +72,24 @@ export function startRefreshCron() {
     console.log(`[cron] settlement sync registered: "${settlementSchedule}" UTC`);
   }
 
+  // ── Pause/unpause scheduler (minute tick) ──────────────────────────
+  // Reads enabled pause_schedules every minute and fires any pause/resume
+  // action that's due in the schedule's own timezone. Default '* * * * *'.
+  const schedulerSchedule = process.env.SCHEDULER_CRON || '* * * * *';
+  if (!cron.validate(schedulerSchedule)) {
+    console.error(`[cron] invalid SCHEDULER_CRON "${schedulerSchedule}", skipping`);
+  } else {
+    cron.schedule(schedulerSchedule, async () => {
+      try {
+        const { runScheduleTick } = await import('@/lib/scheduler/pause-scheduler');
+        await runScheduleTick('cron');
+      } catch (e) {
+        console.error('[cron] pause-scheduler tick failed', e);
+      }
+    }, { timezone: 'UTC' });
+    console.log(`[cron] pause-scheduler registered: "${schedulerSchedule}" UTC`);
+  }
+
   // ── Startup catch-up ────────────────────────────────────────────────
   // If the most-recent refresh is > 24h old, the server was probably down
   // when the daily cron fired. Run one now so users don't sit on stale
