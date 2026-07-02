@@ -395,8 +395,12 @@ function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowL
               <Th align="right">Spend</Th>
               <Th align="right">Sales</Th>
               <Th align="right">Orders</Th>
+              <Th align="right">ROAS</Th>
               <Th align="right">ACOS · 7d trend</Th>
               <Th align="right">Target</Th>
+              <Th align="right">CTR</Th>
+              <Th align="right">CPC</Th>
+              <Th align="right">CVR</Th>
               <Th>Bucket / Why</Th>
               <Th align="right">Actions</Th>
             </tr>
@@ -421,6 +425,12 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
   const acosUnder = r.targetAcos != null && r.m7d.acos != null && r.m7d.acos < r.targetAcos * 0.8;
   const acosColor = acosOver ? "var(--c-danger-text)" : acosUnder ? "var(--c-success-text)" : "var(--text-primary)";
 
+  // Rate metrics — derived from the same 7d bundle Target 360 uses, so the two
+  // screens read identically (CTR/CVR as %, CPC in account currency).
+  const ctr = r.m7d.impressions > 0 ? (r.m7d.clicks / r.m7d.impressions) * 100 : null;
+  const cpc = r.m7d.clicks > 0 ? r.m7d.spend / r.m7d.clicks : null;
+  const cvr = r.m7d.clicks > 0 ? (r.m7d.orders / r.m7d.clicks) * 100 : null;
+
   return (
     <>
     <tr style={{ borderBottom: "1px solid var(--bg-input)" }}>
@@ -438,6 +448,7 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
       <td style={tdR}>{fmt(r.m7d.spend, "currency", currency)}</td>
       <td style={tdR}>{fmt(r.m7d.sales, "currency", currency)}</td>
       <td style={tdR}>{r.m7d.orders}</td>
+      <td style={tdR}>{r.m7d.roas != null ? `${r.m7d.roas.toFixed(2)}x` : "—"}</td>
       <td style={tdR}>
         <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
           <span style={{ color: acosColor, fontWeight: acosOver ? 600 : 400 }}>
@@ -449,6 +460,9 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
       <td style={{ ...tdR, color: "var(--text-secondary)" }}>
         {r.targetAcos != null ? `${r.targetAcos.toFixed(1)}%` : "—"}
       </td>
+      <td style={{ ...tdR, color: "var(--text-secondary)" }}>{ctr != null ? `${ctr.toFixed(2)}%` : "—"}</td>
+      <td style={{ ...tdR, color: "var(--text-secondary)" }}>{cpc != null ? fmt(cpc, "currency", currency) : "—"}</td>
+      <td style={{ ...tdR, color: "var(--text-secondary)" }}>{cvr != null ? `${cvr.toFixed(2)}%` : "—"}</td>
       <td style={{ padding: "8px 6px", maxWidth: 380 }}>
         <SuggestionBlock label="AI"     sug={r.aiSuggestion} />
         <SuggestionBlock label="Manual" sug={r.manualSuggestion} />
@@ -484,7 +498,7 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
     </tr>
     {notesOpen && r.noteTargetType && r.noteTargetId && (
       <tr>
-        <td colSpan={9} style={{ padding: 0, background: "var(--bg-card)" }}>
+        <td colSpan={12} style={{ padding: 0, background: "var(--bg-card)" }}>
           <NotesDrawer
             accountId={accountId}
             targetType={r.noteTargetType}
