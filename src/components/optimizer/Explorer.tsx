@@ -40,6 +40,9 @@ interface CampaignNode {
   intent: string; state: string | null; dailyBudget: number | null;
   targetAcos: number | null; m7d: Metric; aiSuggestion: SuggestionLite | null; manualSuggestion: SuggestionLite | null;
   topSpendShare7d: number | null;
+  /** Top-of-Search impression share (0..100), impression-weighted over the window.
+   *  SP-only; null for SB/SD or campaigns with no impressions. */
+  topOfSearchIS: number | null;
   dailyAcos?: (number | null)[];
   childBuckets: BucketCounts;
   notesCount: number;
@@ -198,6 +201,7 @@ function AccountView({ data, accountId, dataWindow, bucketFilter, currency, revi
           subtitle: `${displayProgram(c.programKey)} · ${c.intent} · budget ${fmt(c.dailyBudget ?? 0, "currency", currency)}/d${c.topSpendShare7d != null ? ` · TOP placement ${c.topSpendShare7d.toFixed(0)}%` : ""}`,
           targetAcos: c.targetAcos,
           m7d: c.m7d,
+          topOfSearchIS: c.topOfSearchIS,
           dailyAcos: c.dailyAcos,
           aiSuggestion:     c.aiSuggestion,
           manualSuggestion: c.manualSuggestion,
@@ -212,6 +216,7 @@ function AccountView({ data, accountId, dataWindow, bucketFilter, currency, revi
         reviewer={reviewer}
         onApplied={onApplied}
         showDrill
+        showTos
         rowLevelLabel="Campaign"
       />
     </>
@@ -368,6 +373,7 @@ interface RowItem {
   subtitle: string;
   targetAcos: number | null;
   m7d: Metric;
+  topOfSearchIS?: number | null;
   dailyAcos?: (number | null)[];
   aiSuggestion:     SuggestionLite | null;
   manualSuggestion: SuggestionLite | null;
@@ -378,9 +384,9 @@ interface RowItem {
   drill?: () => void;
 }
 
-function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowLevelLabel }: {
+function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, showTos, rowLevelLabel }: {
   rows: RowItem[]; accountId: string; currency: string; reviewer: string;
-  onApplied: () => void; showDrill?: boolean; rowLevelLabel: string;
+  onApplied: () => void; showDrill?: boolean; showTos?: boolean; rowLevelLabel: string;
 }) {
   if (rows.length === 0) {
     return <div style={empty}>No rows. Try changing the bucket filter or run the optimizer.</div>;
@@ -401,6 +407,7 @@ function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowL
               <Th align="right">CTR</Th>
               <Th align="right">CPC</Th>
               <Th align="right">CVR</Th>
+              {showTos && <Th align="right">TOS share</Th>}
               <Th>Bucket / Why</Th>
               <Th align="right">Actions</Th>
             </tr>
@@ -408,7 +415,7 @@ function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowL
           <tbody>
             {rows.map((r) => (
               <ExplorerRow key={r.key} r={r} accountId={accountId} currency={currency} reviewer={reviewer}
-                           onApplied={onApplied} showDrill={!!showDrill} />
+                           onApplied={onApplied} showDrill={!!showDrill} showTos={!!showTos} />
             ))}
           </tbody>
         </table>
@@ -417,8 +424,8 @@ function Table({ rows, accountId, currency, reviewer, onApplied, showDrill, rowL
   );
 }
 
-function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }: {
-  r: RowItem; accountId: string; currency: string; reviewer: string; onApplied: () => void; showDrill: boolean;
+function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill, showTos }: {
+  r: RowItem; accountId: string; currency: string; reviewer: string; onApplied: () => void; showDrill: boolean; showTos: boolean;
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const acosOver = r.targetAcos != null && r.m7d.acos != null && r.m7d.acos > r.targetAcos;
@@ -463,6 +470,11 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
       <td style={{ ...tdR, color: "var(--text-secondary)" }}>{ctr != null ? `${ctr.toFixed(2)}%` : "—"}</td>
       <td style={{ ...tdR, color: "var(--text-secondary)" }}>{cpc != null ? fmt(cpc, "currency", currency) : "—"}</td>
       <td style={{ ...tdR, color: "var(--text-secondary)" }}>{cvr != null ? `${cvr.toFixed(2)}%` : "—"}</td>
+      {showTos && (
+        <td style={{ ...tdR, color: "var(--text-secondary)" }}>
+          {r.topOfSearchIS != null ? `${r.topOfSearchIS.toFixed(0)}%` : "—"}
+        </td>
+      )}
       <td style={{ padding: "8px 6px", maxWidth: 380 }}>
         <SuggestionBlock label="AI"     sug={r.aiSuggestion} />
         <SuggestionBlock label="Manual" sug={r.manualSuggestion} />
@@ -498,7 +510,7 @@ function ExplorerRow({ r, accountId, currency, reviewer, onApplied, showDrill }:
     </tr>
     {notesOpen && r.noteTargetType && r.noteTargetId && (
       <tr>
-        <td colSpan={12} style={{ padding: 0, background: "var(--bg-card)" }}>
+        <td colSpan={13} style={{ padding: 0, background: "var(--bg-card)" }}>
           <NotesDrawer
             accountId={accountId}
             targetType={r.noteTargetType}

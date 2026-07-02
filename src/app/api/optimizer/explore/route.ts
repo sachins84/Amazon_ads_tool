@@ -105,12 +105,18 @@ function exploreAccount(accountId: string, dateRange: string) {
   const meta = readCampaignMeta(accountId);
   const rows = readCampaignMetrics(accountId, r7.startDate, r7.endDate);
 
-  // Aggregate per campaign
-  const agg = new Map<string, { spend: number; sales: number; orders: number; clicks: number; impressions: number }>();
+  // Aggregate per campaign. TOS impression share is impression-weighted across
+  // the window's daily rows (same method as the optimizer engine's aggCampaigns),
+  // since it's a ratio that can't simply be summed.
+  const agg = new Map<string, { spend: number; sales: number; orders: number; clicks: number; impressions: number; tosWeighted: number; tosImpr: number }>();
   for (const r of rows) {
-    const cur = agg.get(r.campaignId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    const cur = agg.get(r.campaignId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0, tosWeighted: 0, tosImpr: 0 };
     cur.spend += r.cost; cur.sales += r.sales; cur.orders += r.orders;
     cur.clicks += r.clicks; cur.impressions += r.impressions;
+    if (r.topOfSearchIS != null && r.impressions > 0) {
+      cur.tosWeighted += r.topOfSearchIS * r.impressions;
+      cur.tosImpr += r.impressions;
+    }
     agg.set(r.campaignId, cur);
   }
 
@@ -127,7 +133,7 @@ function exploreAccount(accountId: string, dateRange: string) {
   const campaigns = meta.map((m) => {
     const programKey: OptimizerProgram = m.program === "SB" && m.format === "VIDEO" ? "SB_VIDEO" : m.program;
     const intent: Intent = inferIntent(m.name);
-    const a = agg.get(m.campaignId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+    const a = agg.get(m.campaignId) ?? { spend: 0, sales: 0, orders: 0, clicks: 0, impressions: 0, tosWeighted: 0, tosImpr: 0 };
     pSpend += a.spend; pSales += a.sales; pOrders += a.orders;
     pClicks += a.clicks; pImpressions += a.impressions;
     return {
@@ -142,6 +148,7 @@ function exploreAccount(accountId: string, dateRange: string) {
       m7d: bundle(a.spend, a.sales, a.orders, a.clicks, a.impressions),
       dailyAcos: dailyAcos.get(m.campaignId) ?? [],
       topSpendShare7d:  topShare.get(m.campaignId) ?? null,
+      topOfSearchIS:    a.tosImpr > 0 ? a.tosWeighted / a.tosImpr : null,
       aiSuggestion:     aiSug.get(m.campaignId) ?? null,
       manualSuggestion: manualSug.get(m.campaignId) ?? null,
       childBuckets: childBuckets.get(m.campaignId) ?? {},
